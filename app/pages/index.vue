@@ -1,10 +1,10 @@
 <script setup lang="ts">
 definePageMeta({
-  titleKey: 'freight.pages.dashboard',
+  titleKey: 'rental.nav.dashboard',
   permission: 'dashboard.view',
 })
 </script>
 
 <template>
-  <FreightDashboardView />
+  <RentalDashboardView />
 </template>

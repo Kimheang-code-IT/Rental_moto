@@ -46,7 +46,7 @@ function onHeaderRefresh() {
         <span class="shrink-0 text-muted" aria-hidden="true">&hellip;</span>
         <UIcon name="i-lucide-chevron-right" class="size-3.5 shrink-0 text-dimmed rtl:rotate-180" />
         <span class="min-w-0 truncate font-medium text-highlighted">
-          {{ displayTitle || 'LCS Freight' }}
+          {{ displayTitle || 'HollyWing Motor' }}
         </span>
       </nav>
 
@@ -72,7 +72,7 @@ function onHeaderRefresh() {
           {{ badge.label }}
         </UBadge>
       </div>
-      <span v-else class="hidden truncate text-highlighted lg:block">{{ displayTitle || 'LCS Freight' }}</span>
+      <span v-else class="hidden truncate text-highlighted lg:block">{{ displayTitle || 'HollyWing Motor' }}</span>
     </template>
 
     <div class="min-w-0 flex-1" />

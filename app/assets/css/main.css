@@ -219,3 +219,21 @@
 .freight-table-compact table tbody td button {
   font-size: 12px;
 }
+
+/* Rental invoice printing — isolate the open invoice modal for Print / Save PDF. */
+@media print {
+  body.rental-invoice-open *:not(.rental-invoice-print):not(.rental-invoice-print *) {
+    visibility: hidden !important;
+  }
+
+  body.rental-invoice-open .rental-invoice-print,
+  body.rental-invoice-open .rental-invoice-print * {
+    visibility: visible !important;
+  }
+
+  body.rental-invoice-open .rental-invoice-print {
+    position: absolute !important;
+    inset: 0 !important;
+    overflow: visible !important;
+  }
+}

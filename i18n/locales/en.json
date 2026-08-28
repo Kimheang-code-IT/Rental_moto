@@ -729,6 +729,68 @@
         "title": "Users",
         "singular": "User",
         "description": "Manage staff access by role and department."
+      },
+      "motorcycles": {
+        "fields": {
+          "code": "Motorcycle Code",
+          "model": "Model",
+          "brand": "Brand",
+          "year": "Year",
+          "color": "Color",
+          "plate": "Plate Number",
+          "chassisNo": "Chassis Number",
+          "engineNo": "Engine Number",
+          "dailyRate": "Daily Rate",
+          "monthlyRate": "Monthly Rate",
+          "assetValue": "Asset Value",
+          "currency": "Currency",
+          "status": "Status",
+          "note": "Note"
+        }
+      },
+      "rentalCustomers": {
+        "fields": {
+          "code": "Customer Code",
+          "fullName": "Full Name",
+          "identityType": "Identity Type",
+          "identityNumber": "Identity Number",
+          "phone": "Phone",
+          "email": "Email",
+          "company": "Company / Shop",
+          "address": "Address",
+          "status": "Status"
+        }
+      },
+      "rentals": {
+        "fields": {
+          "rentalNo": "Rental Number",
+          "customerId": "Customer",
+          "customer": "Customer",
+          "phone": "Phone",
+          "motorcycleId": "Motorcycle",
+          "motorcycle": "Motorcycle",
+          "plate": "Plate",
+          "startDate": "Start Date",
+          "dueDate": "Due Date",
+          "rateType": "Rate Type",
+          "rateAmount": "Rate Amount",
+          "deposit": "Deposit",
+          "discount": "Discount",
+          "currency": "Currency",
+          "rentalCharge": "Rental Charge",
+          "lateFee": "Late Fee",
+          "additionalCharges": "Additional Charges",
+          "totalDue": "Total Due",
+          "paid": "Paid",
+          "outstanding": "Outstanding",
+          "durationDays": "Duration",
+          "returnDate": "Actual Return",
+          "condition": "Motorcycle Condition",
+          "returnNote": "Return Note",
+          "note": "Note",
+          "createdBy": "Created By",
+          "status": "Status"
+        }
       }
     },
     "tables": {
@@ -926,7 +988,7 @@
       "party": "Party",
       "job": "Job",
       "overview": "Overview",
-      "saveJobFirst": "Save the job first",
+      "saveJobFirst": "Save the service order before filling this tab.",
       "saveJobFirstHint": "Register transport after the job is saved.",
       "noBooking": "No booking yet",
       "noBookingHint": "Register vehicle, container and transport provider.",
@@ -1023,7 +1085,6 @@
       "taskSaved": "Saved",
       "taskCompleted": "Completed",
       "addDocument": "Add",
-      "saveJobFirst": "Save the service order before filling this tab.",
       "fileNameCol": "File name",
       "uploadedByCol": "Uploaded By",
       "byCol": "By",
@@ -1591,9 +1652,9 @@
   },
   "docetra": {
     "brand": {
-      "name": "LCS Freight",
-      "tagline": "Freight forwarding management",
-      "logoAlt": "LCS Freight logo"
+      "name": "HollyWing Motor",
+      "tagline": "Motorcycle rental management",
+      "logoAlt": "HollyWing Motor logo"
     },
     "navigation": {
       "dashboard": "Dashboard",
@@ -1631,7 +1692,14 @@
       "appInfo": "App Info",
       "appConfig": "App Config",
       "storage": "Storage",
-      "archive": "Archive"
+      "archive": "Archive",
+      "termsDesc": "Please review the terms before using HollyWing Motor.",
+      "termsItems": [
+        "You must use HollyWing Motor only for authorized operational and financial work.",
+        "Keep your login credentials confidential and do not share your account.",
+        "Do not upload unlawful, confidential, or unauthorized content without permission.",
+        "Activity in the system may be logged for security, audit, and support purposes."
+      ]
     },
     "descriptions": {
       "meetingTopic": "Plan and track meeting topics by stage.",
@@ -1944,7 +2012,8 @@
       "duplicated": "Duplicated",
       "activated": "Activated",
       "deactivated": "Deactivated",
-      "resetDone": "Reset to defaults"
+      "resetDone": "Reset to defaults",
+      "aboutCopyright": "© HollyWing Motor"
     },
     "confirm": {
       "deleteTitle": "Delete items?",
@@ -2792,7 +2861,13 @@
     "pages": "Pages",
     "rowsPerPage": "Rows per page",
     "pageSizeAll": "All",
-    "showingRows": "Showing {start}–{end} of {total}"
+    "showingRows": "Showing {start}–{end} of {total}",
+    "brand": {
+      "name": "HollyWing Motor",
+      "tagline": "Motorcycle rental management",
+      "logoAlt": "HollyWing Motor logo"
+    },
+    "aboutCopyright": "© HollyWing Motor"
   },
   "components": {
     "select": "Select...",
@@ -2828,10 +2903,10 @@
       "termsRequired": "Terms required",
       "termsRequiredDesc": "Please accept the Terms and Conditions before signing in.",
       "termsTitle": "Terms and Conditions",
-      "termsDesc": "Please review these terms before using LCS Freight Forwarding.",
+      "termsDesc": "Please review the terms before using HollyWing Motor.",
       "termsClose": "I understand",
       "termsItems": [
-        "You must use LCS Freight Forwarding only for authorized operational and financial work.",
+        "You must use HollyWing Motor only for authorized operational and financial work.",
         "Keep your login credentials confidential and do not share your account.",
         "Do not upload unlawful, confidential, or unauthorized content without permission.",
         "Activity in the system may be logged for security, audit, and support purposes.",
@@ -2893,7 +2968,7 @@
     "dark": "Dark",
     "logout": "Log out",
     "about": "About",
-    "aboutCopyright": "© LCS Freight"
+    "aboutCopyright": "© HollyWing Motor"
   },
   "api": {
     "errorTitle": "API Error: {status}",
@@ -2903,7 +2978,123 @@
     "requestFailed": "Request failed"
   },
   "app": {
-    "description": "Freight forwarding management for jobs, customs, documents, finance, and operations.",
-    "keywords": "freight forwarding, customs, jobs, debit notes, LCS"
+    "description": "Motorcycle rental management for fleet, customers, rentals, income and reports.",
+    "keywords": "motorcycle rental, bike rental, fleet, HollyWing"
+  },
+  "rental": {
+    "nav": {
+      "motorcycles": "Motorcycles",
+      "customers": "Customers",
+      "rentals": "Rentals",
+      "incomeExpense": "Income & Expense",
+      "rentalReports": "Rental Reports",
+      "dashboard": "Dashboard"
+    },
+    "pages": {
+      "motorcycles": "Motorcycles",
+      "customers": "Customers",
+      "rentals": "Rentals",
+      "incomeExpense": "Income & Expense"
+    },
+    "ui": {
+      "addPayment": "Add Payment",
+      "addCharge": "Add Charge",
+      "closeRental": "Return / Close",
+      "printInvoice": "Print Invoice",
+      "totalDue": "Total Due",
+      "alreadyPaid": "Already Paid",
+      "outstanding": "Outstanding",
+      "amount": "Amount",
+      "paymentMethod": "Payment Method",
+      "paidAt": "Paid Date/Time",
+      "reference": "Reference",
+      "note": "Note",
+      "chargeType": "Charge Type",
+      "description": "Description",
+      "chargeToCustomer": "Charge to customer",
+      "actualReturn": "Actual Return",
+      "condition": "Motorcycle Condition",
+      "nextStatus": "Next Motorcycle Status",
+      "returnNote": "Return Note",
+      "confirmClose": "Confirm Close",
+      "savePayment": "Save Payment",
+      "saveCharge": "Save Charge",
+      "paymentSaved": "Payment recorded",
+      "chargeSaved": "Charge recorded",
+      "rentalClosed": "Rental closed",
+      "rentalCreated": "Rental created",
+      "confirmCreate": "Create this rental?",
+      "invoice": "Invoice",
+      "invoiceNo": "Invoice No.",
+      "print": "Print",
+      "savePdf": "Save PDF",
+      "customer": "Customer",
+      "motorcycle": "Motorcycle",
+      "selectCustomer": "Select customer",
+      "selectMotorcycle": "Select motorcycle (Available only)",
+      "addNewCustomer": "Add new customer",
+      "rentalSection": "Rental",
+      "startDate": "Start",
+      "dueDate": "Due",
+      "returnDate": "Return",
+      "rateType": "Rate Type",
+      "rateAmount": "Rate Amount",
+      "deposit": "Deposit",
+      "discount": "Discount",
+      "duration": "Duration",
+      "days": "days",
+      "day": "day",
+      "estimate": "Estimated charge",
+      "summary": "Summary",
+      "createRental": "Create Rental",
+      "newRental": "New Rental",
+      "rentalNo": "Rental Number",
+      "rentalCharge": "Rental Charge",
+      "lateFee": "Late Fee",
+      "additionalCharges": "Additional Charges",
+      "paid": "Paid",
+      "paymentHistory": "Payment history",
+      "noActiveRentals": "No active rentals",
+      "viewAll": "See all",
+      "paymentStatus": "Payment Status",
+      "staff": "Staff",
+      "export": "Export",
+      "income": "Income",
+      "expense": "Expense",
+      "net": "Net",
+      "date": "Date",
+      "type": "Type",
+      "addExpense": "Add Expense",
+      "expenseType": "Expense Type",
+      "expenseSaved": "Expense recorded",
+      "allMonths": "All Months"
+    },
+    "dashboard": {
+      "totalMotos": "Total Motorcycles",
+      "available": "Available",
+      "rented": "Rented",
+      "maintenance": "Maintenance",
+      "activeRentals": "Active Rentals",
+      "overdueRentals": "Overdue Rentals",
+      "totalCustomers": "Total Customers",
+      "incomeMonth": "Income This Month",
+      "expenseMonth": "Expense This Month",
+      "outstanding": "Outstanding",
+      "fleet": "FLEET",
+      "rentalsFinance": "RENTALS & FINANCE",
+      "rentalsByDay": "Rentals by Day",
+      "incomeExpenseChart": "Income / Expense",
+      "activePreview": "Active Rentals"
+    },
+    "settings": {
+      "chatId": "Chat / Group ID",
+      "notifyNewRental": "Notify New Rental",
+      "notifyOverdueRental": "Notify Overdue Rental",
+      "notifyRentalCompleted": "Notify Rental Completed",
+      "notifyPayment": "Notify Payment",
+      "dailySummaryEnabled": "Daily Summary Enabled",
+      "dailySummaryTime": "Daily Summary Time",
+      "monthlySummaryEnabled": "Monthly Summary Enabled"
+    }
   }
 }

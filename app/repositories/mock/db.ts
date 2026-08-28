@@ -1,8 +1,9 @@
 import type { FreightRecord } from '~/config/freight-seed'
 import { createLcsFreightSeed } from '~/config/lcs-seed'
+import { createRentalSeed } from '~/config/rental-seed'
 import { normalizeDocumentSequenceRecord } from '~/utils/document-sequences'
 
-export const LCS_FREIGHT_STORAGE_KEY = 'lcs-freight-data-v5'
+export const LCS_FREIGHT_STORAGE_KEY = 'lcs-freight-data-v9'
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -11,7 +12,7 @@ function clone<T>(value: T): T {
 let memory: Record<string, FreightRecord[]> | null = null
 
 export function createFreshLcsDb() {
-  const seed = createLcsFreightSeed()
+  const seed = { ...createLcsFreightSeed(), ...createRentalSeed() }
   seed.idempotency = []
   return clone(seed)
 }

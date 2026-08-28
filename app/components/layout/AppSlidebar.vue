@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import logo from '~/assets/images/logo.png'
+import logo from '~/assets/images/m-logo.png'
 import { useMenu } from '~/composables/layout/useMenu'
 
 const { open, collapsed, links, setCollapsed } = useMenu()
@@ -52,7 +52,7 @@ const sidebarUi = computed(() => ({
         to="/"
         class="flex items-center"
         :class="isCollapsed ? 'justify-center' : 'gap-3 px-1'"
-        aria-label="LCS Freight Forwarding"
+        aria-label="HollyWing Motor"
       >
         <span
           class="grid shrink-0 place-items-center overflow-hidden"
@@ -60,13 +60,13 @@ const sidebarUi = computed(() => ({
         >
           <img
             :src="logo"
-            alt="LCS Freight Forwarding logo"
+            alt="HollyWing Motor logo"
             :class="isCollapsed ? 'size-6 object-contain' : 'size-8 object-contain'"
           >
         </span>
         <span v-if="!isCollapsed" class="min-w-0">
-          <span class="app-sidebar-text block truncate text-lg font-bold tracking-tight">LCS Freight</span>
-          <span class="app-sidebar-text block truncate text-[10px] uppercase tracking-[0.16em] opacity-60">Forwarding System</span>
+          <span class="app-sidebar-text block truncate text-lg font-bold tracking-tight">HollyWing Motor</span>
+          <span class="app-sidebar-text block truncate text-[10px] uppercase tracking-[0.16em] opacity-60">Motorcycle Rental</span>
         </span>
       </NuxtLink>
 

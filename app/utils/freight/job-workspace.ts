@@ -137,7 +137,7 @@ export function displayText(value: unknown) {
 }
 
 export function isMoneyKey(key: string) {
-  return /amount|total|vat|received|outstanding|paid|revenue|profit|cost|price|buying|selling|fee|subtotal/i.test(key)
+  return /amount|total|vat|received|outstanding|paid|revenue|profit|cost|price|buying|selling|fee|rate|deposit|charge|balance|value|due/i.test(key)
     && !/date|status|type|note|method|side/i.test(key)
 }
 

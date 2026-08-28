@@ -17,7 +17,6 @@ import type { FreightRecord } from '~/config/freight-seed'
 import { freightModules, type FreightSelectOption } from '~/config/freight-modules'
 import { chargeDomainStatus, financeDomainStatus, jobDomainStatus, quotationDomainStatus } from '~/utils/lcs/states'
 import { isMoneyKey, isNumericKey, jobForQuotation, jobWorkspacePath, workspaceSectionForPath } from '~/utils/freight/job-workspace'
-import { enrichJobListRows } from '~/utils/freight/job-list'
 import { limitFilterSelects, parseFilterQuery } from '~/utils/filter/values'
 import { isFilterValueActive } from '~/utils/filter/select-ui'
 import { listTableRowMetaColumn, listTableSelectColumn } from '~/utils/table/list-columns'
@@ -42,6 +41,10 @@ const filters = reactive<Record<string, string[]>>({})
 const rowSelection = ref<Record<string, boolean>>({})
 const pending = ref(false)
 const busyId = ref('')
+const preferences = usePreferencesStore()
+const rentalModal = ref<'payment' | 'charge' | 'close' | null>(null)
+const rentalModalRow = ref<Record<string, unknown> | null>(null)
+const rentalInvoiceRow = ref<Record<string, unknown> | null>(null)
 const dateFrom = ref('')
 const dateTo = ref('')
 
@@ -80,14 +83,17 @@ const result = computed(() => {
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
   })
-  if (!isJobList.value) return queried
-  const all = enrichJobListRows(queried.all, {
-    containers: store.list('actualContainers'),
-    tasks: store.list('serviceComponents'),
-    charges: store.list('jobCharges'),
-    shipments: store.list('shipments'),
-  })
-  return { rows: all, total: all.length, all }
+  if (current.value?.collection === 'rentals') {
+    const all = queried.all
+      .filter(row => ['Active', 'Overdue'].includes(String(row.status)))
+      .map((row) => {
+        const ms = new Date(String(row.dueDate || '')).getTime() - new Date(String(row.startDate || '')).getTime()
+        const days = Number.isFinite(ms) && ms > 0 ? Math.ceil(ms / 86400000) : 0
+        return { ...row, durationDays: days }
+      })
+    return { rows: all, total: all.length, all }
+  }
+  return queried
 })
 const selectedIds = computed(() => listTableSelectedIds(rowSelection.value))
 
@@ -148,7 +154,7 @@ function recordPath(id: unknown) {
 
 function cellText(row: Record<string, unknown>, key: string) {
   const source = current.value?.collection === 'auditLogs' ? normalizeAuditLog(row as FreightRecord) : row
-  return formatFreightCell(source[key], key)
+  return formatFreightCell(source[key], key, isMoneyKey(key) ? String(source.currency || preferences.currency) : undefined)
 }
 
 function auditEntityLinkFor(row: Record<string, unknown>) {
@@ -212,6 +218,15 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
     if (relatedJob) items.push({ label: t('freight.ui.openServiceOrder'), icon: 'i-lucide-briefcase', onSelect: () => { void navigateTo(`/service-orders/${relatedJob.id}`) } })
     if (['DRAFT', 'SENT', 'ACCEPTED'].includes(status) && (lcs.can('quotation.update_draft') || lcs.can('quotation.accept'))) items.push({ label: t('freight.ui.cancel'), icon: 'i-lucide-ban', color: 'warning', onSelect: () => { void runRowAction('cancel', row) } })
   }
+  else if (collection === 'rentals') {
+    const canEditRental = auth.canAccessPage('rental.rentals.edit')
+    if (canEditRental) {
+      items.push({ label: t('rental.ui.addPayment'), icon: 'i-lucide-hand-coins', onSelect: () => { rentalModalRow.value = row; rentalModal.value = 'payment' } })
+      items.push({ label: t('rental.ui.addCharge'), icon: 'i-lucide-receipt', onSelect: () => { rentalModalRow.value = row; rentalModal.value = 'charge' } })
+      items.push({ label: t('rental.ui.closeRental'), icon: 'i-lucide-circle-check', color: 'success', onSelect: () => { rentalModalRow.value = row; rentalModal.value = 'close' } })
+    }
+    items.push({ label: t('rental.ui.printInvoice'), icon: 'i-lucide-printer', onSelect: () => { rentalInvoiceRow.value = row } })
+  }
   else if (collection === 'jobs') {
     const status = jobDomainStatus(row)
     if (lcs.can('service_order.update') && !['COMPLETED', 'CLOSED', 'CANCELLED'].includes(status)) {
@@ -266,7 +281,7 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
     if (status === 'OPEN' || status === 'REOPENED') items.push({ label: t('freight.ui.closePeriod'), icon: 'i-lucide-lock', color: 'warning', onSelect: () => { void runRowAction('closePeriod', row) } })
     if (status === 'CLOSED') items.push({ label: t('freight.ui.reopenPeriod'), icon: 'i-lucide-lock-open', onSelect: () => { void runRowAction('reopenPeriod', row) } })
   }
-  if (canMutate.value && collection !== 'jobs') {
+  if (canMutate.value && collection !== 'jobs' && collection !== 'rentals') {
     items.push({
       label: deactivationOnly.value ? t('freight.ui.deactivate') : t('freight.ui.delete'),
       icon: deactivationOnly.value ? 'i-lucide-circle-off' : 'i-lucide-trash-2',
@@ -447,6 +462,16 @@ async function deactivateIds(ids: string[]) {
   toast.add({ title: t('freight.ui.deactivated'), color: 'success' })
 }
 
+function closeRentalModal() {
+  rentalModal.value = null
+  rentalModalRow.value = null
+}
+
+function onRentalSaved() {
+  closeRentalModal()
+  store.reload()
+}
+
 function setDocumentSequenceStatus(row: Record<string, unknown>, status: 'ACTIVE' | 'INACTIVE') {
   if (!current.value || !canMutate.value) return
   store.save(current.value.collection, { ...row, id: String(row.id || ''), status } as FreightRecord)
@@ -542,6 +567,18 @@ function filterItems(filter: { options?: readonly FreightSelectOption[] | Freigh
         </template>
       </template>
     </TableAppListTable>
+    <RentalTransactionModals
+      v-if="rentalModal !== null && rentalModalRow !== null"
+      :rental="rentalModalRow"
+      :mode="rentalModal"
+      @close="closeRentalModal"
+      @saved="onRentalSaved"
+    />
+    <RentalInvoicePreview
+      v-if="rentalInvoiceRow !== null"
+      :rental="rentalInvoiceRow"
+      @close="rentalInvoiceRow = null"
+    />
   </div>
   <div v-else class="grid h-full min-h-0 flex-1 place-items-center p-8">
     <UEmpty

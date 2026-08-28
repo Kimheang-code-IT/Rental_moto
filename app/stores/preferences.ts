@@ -8,6 +8,7 @@ const THEME_NEUTRAL_KEY = 'ui:theme:neutral'
 const LOCALE_KEY = 'ui:locale'
 const LOCALE_EXPLICIT_KEY = 'ui:locale:explicit'
 const FONT_SIZE_KEY = 'ui:font-size'
+const CURRENCY_KEY = 'ui:currency'
 
 export type AppLocale = 'en' | 'km'
 
@@ -40,6 +41,8 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const isLocaleLoaded = useState('ui-locale-loaded', () => false)
   const isFontSizeLoaded = useState('ui-font-size-loaded', () => false)
   const fontSize = useState<AppFontSize>('ui-font-size', () => DEFAULT_FONT_SIZE)
+  const isCurrencyLoaded = useState('ui-currency-loaded', () => false)
+  const currency = useState<string>('ui-currency', () => 'USD')
   const availableLocales = computed<AppLocale[]>(() => {
     const configured = appLocalization.localization.value.availableLanguages
       .filter((code): code is AppLocale => code === 'en' || code === 'km')
@@ -138,6 +141,16 @@ export const usePreferencesStore = defineStore('preferences', () => {
     void i18n.setLocale(next)
   }
 
+  function loadCurrencyFromLocal() {
+    const saved = localStorage.getItem(CURRENCY_KEY)
+    if (saved) currency.value = saved
+  }
+
+  function setCurrency(next: string) {
+    currency.value = next
+    if (import.meta.client) localStorage.setItem(CURRENCY_KEY, next)
+  }
+
   async function hydrate() {
     if (!import.meta.client) return
     if (!isThemeLoaded.value) {
@@ -152,16 +165,22 @@ export const usePreferencesStore = defineStore('preferences', () => {
       loadFontSizeFromLocal()
       isFontSizeLoaded.value = true
     }
+    if (!isCurrencyLoaded.value) {
+      loadCurrencyFromLocal()
+      isCurrencyLoaded.value = true
+    }
   }
 
   return {
     uiColors,
     fontSize,
+    currency,
     availableLocales,
     fontSizePx: FONT_SIZE_PX,
     hydrate,
     applyThemeColor,
     setLocale,
+    setCurrency,
     syncLocaleWithConfig,
     setFontSize,
   }

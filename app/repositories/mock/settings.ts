@@ -38,10 +38,10 @@ function writeJson<T>(key: string, value: T) {
 
 function seedAppInfo(): AppInfo {
   return {
-    applicationName: 'LCS Freight',
-    shortName: 'LCS',
-    organizationName: 'LCS Freight Forwarding',
-    description: 'Freight forwarding management system',
+    applicationName: 'HollyWing Motor',
+    shortName: 'HWM',
+    organizationName: 'HollyWing Motor',
+    description: 'Motorcycle rental management system',
     supportEmail: 'support@lcs.com.kh',
     supportPhone: '+855 23 000 000',
     website: 'https://docetra.local',

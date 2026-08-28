@@ -455,7 +455,7 @@
       "address": "អាសយដ្ឋាន",
       "amounts": "ចំនួនទឹកប្រាក់",
       "audit": "សវនកម្ម",
-      "balance": "តុល្យភាព",
+      "balance": "សមតុល្យ",
       "bank-details": "ព័ត៌មានធនាគារ",
       "classification": "ចំណាត់ថ្នាក់",
       "closure": "ការបិទ",
@@ -523,7 +523,12 @@
       "traceability": "ការតាមដាន",
       "transport-provider": "អ្នកផ្តល់សេវាដឹក",
       "value": "តម្លៃ",
-      "version": "កំណែ"
+      "version": "កំណែ",
+      "rates": "អត្រា",
+      "identity": "អត្តសញ្ញាណ",
+      "rental": "ការជួល",
+      "charges": "ការគិតថ្លៃ",
+      "return": "ការប្រគល់"
     },
     "modules": {
       "accountingPeriods": {
@@ -729,6 +734,68 @@
         "title": "អ្នកប្រើប្រាស់",
         "singular": "អ្នកប្រើ",
         "description": "គ្រប់គ្រងសិទ្ធិបុគ្គលិកតាមតួនាទី និងនាយកដ្ឋាន។"
+      },
+      "motorcycles": {
+        "fields": {
+          "code": "លេខកូដម៉ូតូ",
+          "model": "ម៉ូដែល",
+          "brand": "ម៉ាក",
+          "year": "ឆ្នាំ",
+          "color": "ពណ៌",
+          "plate": "លេខផ្ទាំង",
+          "chassisNo": "លេខ chassis",
+          "engineNo": "លេខម៉ាស៊ីន",
+          "dailyRate": "អត្រាប្រចាំថ្ងៃ",
+          "monthlyRate": "អត្រាប្រចាំខែ",
+          "assetValue": "តម្លៃទ្រព្យ",
+          "currency": "រូបិយប័ណ្ណ",
+          "status": "ស្ថានភាព",
+          "note": "កំណត់សម្គាល់"
+        }
+      },
+      "rentalCustomers": {
+        "fields": {
+          "code": "លេខកូដអតិថិជន",
+          "fullName": "ឈ្មោះពេញ",
+          "identityType": "ប្រភេទអត្តសញ្ញាណ",
+          "identityNumber": "លេខអត្តសញ្ញាណ",
+          "phone": "ទូរស័ព្ទ",
+          "email": "អ៊ីមែល",
+          "company": "ក្រុមហ៊ុន / ហាង",
+          "address": "អាសយដ្ឋាន",
+          "status": "ស្ថានភាព"
+        }
+      },
+      "rentals": {
+        "fields": {
+          "rentalNo": "លេខការជួល",
+          "customerId": "អតិថិជន",
+          "customer": "អតិថិជន",
+          "phone": "ទូរស័ព្ទ",
+          "motorcycleId": "ម៉ូតូ",
+          "motorcycle": "ម៉ូតូ",
+          "plate": "លេខផ្ទាំង",
+          "startDate": "ថ្ងៃចាប់ផ្តើម",
+          "dueDate": "ថ្ងៃត្រូវបញ្ចប់",
+          "rateType": "ប្រភេទអត្រា",
+          "rateAmount": "ចំនួនអត្រា",
+          "deposit": "ប្រាក់កក់",
+          "discount": "បញ្ចុះតម្លៃ",
+          "currency": "រូបិយប័ណ្ណ",
+          "rentalCharge": "ថ្លៃជួល",
+          "lateFee": "ថ្លៃយឺត",
+          "additionalCharges": "ការគិតថ្លៃបន្ថែម",
+          "totalDue": "សរុបត្រូវបង់",
+          "paid": "បានបង់",
+          "outstanding": "នៅជំពាក់",
+          "durationDays": "រយៈពេល",
+          "returnDate": "ថ្ងៃប្រគល់ពិត",
+          "condition": "ស្ថានភាពម៉ូតូ",
+          "returnNote": "កំណត់សម្គាល់ប្រគល់",
+          "note": "កំណត់សម្គាល់",
+          "createdBy": "បង្កើតដោយ",
+          "status": "ស្ថានភាព"
+        }
       }
     },
     "tables": {
@@ -926,7 +993,7 @@
       "party": "ភាគី",
       "job": "ការងារ",
       "overview": "ទិដ្ឋភាពទូទៅ",
-      "saveJobFirst": "រក្សាទុកការងារជាមុន",
+      "saveJobFirst": "រក្សាទុកបញ្ជាសេវាកម្មមុនពេលបំពេញផ្ទាំងនេះ។",
       "saveJobFirstHint": "បន្ទាប់ពីរក្សាទុក អាចចុះឈ្មោះការដឹកបាន។",
       "noBooking": "មិនទាន់មានការកក់",
       "noBookingHint": "ចុះឈ្មោះយានយន្ត និងអ្នកផ្តល់សេវាដឹក។",
@@ -1023,7 +1090,6 @@
       "taskSaved": "បានរក្សាទុក",
       "taskCompleted": "បានបញ្ចប់",
       "addDocument": "បន្ថែម",
-      "saveJobFirst": "រក្សាទុកបញ្ជាសេវាកម្មមុនពេលបំពេញផ្ទាំងនេះ។",
       "fileNameCol": "ឈ្មោះឯកសារ",
       "uploadedByCol": "អ្នកផ្ទុកឡើង",
       "byCol": "ដោយ",
@@ -1473,9 +1539,9 @@
   },
   "docetra": {
     "brand": {
-      "name": "LCS Freight",
-      "tagline": "ប្រព័ន្ធគ្រប់គ្រងដឹកជញ្ជូនទំនិញ",
-      "logoAlt": "រូបសញ្ញា LCS Freight"
+      "name": "HollyWing Motor",
+      "tagline": "ការគ្រប់គ្រងជួលម៉ូតូ",
+      "logoAlt": "តូបសញ្ញា HollyWing Motor"
     },
     "navigation": {
       "dashboard": "ផ្ទាំងគ្រប់គ្រង",
@@ -1513,7 +1579,8 @@
       "appInfo": "ព័ត៌មានកម្មវិធី",
       "appConfig": "ការកំណត់កម្មវិធី",
       "storage": "ឃ្លាំងផ្ទុក",
-      "archive": "ប័ណ្ណសារ"
+      "archive": "ប័ណ្ណសារ",
+      "termsDesc": "សូមអានលក្ខខណ្ឌទាំងនេះមុនប្រើ HollyWing Motor។"
     },
     "descriptions": {
       "meetingTopic": "រៀបចំ និងតាមដានប្រធានបទកិច្ចប្រជុំតាមដំណាក់កាល។",
@@ -1744,7 +1811,8 @@
       "duplicated": "បានចម្លង",
       "activated": "បានបើក",
       "deactivated": "បានបិទ",
-      "resetDone": "បានកំណត់ឡើងវិញ"
+      "resetDone": "បានកំណត់ឡើងវិញ",
+      "aboutCopyright": "© HollyWing Motor"
     },
     "confirm": {
       "deleteTitle": "លុបធាតុ?",
@@ -2581,7 +2649,13 @@
     "pages": "ទំព័រ",
     "rowsPerPage": "ជួរក្នុងមួយទំព័រ",
     "pageSizeAll": "ទាំងអស់",
-    "showingRows": "បង្ហាញ {start}–{end} នៃ {total}"
+    "showingRows": "បង្ហាញ {start}–{end} នៃ {total}",
+    "brand": {
+      "name": "HollyWing Motor",
+      "tagline": "ការគ្រប់គ្រងជួលម៉ូតូ",
+      "logoAlt": "តូបសញ្ញា HollyWing Motor"
+    },
+    "aboutCopyright": "© HollyWing Motor"
   },
   "api": {
     "errorTitle": "កំហុស API: {status}",
@@ -2632,10 +2706,10 @@
       "termsRequired": "ត្រូវការយល់ព្រមលក្ខខណ្ឌ",
       "termsRequiredDesc": "សូមយល់ព្រមលក្ខខណ្ឌប្រើប្រាស់មុនចូលគណនី។",
       "termsTitle": "លក្ខខណ្ឌប្រើប្រាស់",
-      "termsDesc": "សូមអានលក្ខខណ្ឌទាំងនេះមុនប្រើ LCS Freight Forwarding។",
+      "termsDesc": "សូមអានលក្ខខណ្ឌទាំងនេះមុនប្រើ HollyWing Motor។",
       "termsClose": "ខ្ញុំយល់ហើយ",
       "termsItems": [
-        "អ្នកត្រូវប្រើ LCS Freight Forwarding សម្រាប់ការងារប្រតិបត្តិការ និងហិរញ្ញវត្ថុដែលបានអនុញ្ញាតតែប៉ុណ្ណោះ។",
+        "អ្នកត្រូវប្រើ HollyWing Motor សម្រាប់ការងារប្រតិបត្តិការ និងហិរញ្ញវត្ថុដែលបានអនុញ្ញាតតែប៉ុណ្ណោះ។",
         "រក្សាព័ត៌មានចូលគណនីជាសម្ងាត់ ហើយកុំចែករំលែកគណនីរបស់អ្នក។",
         "កុំផ្ទុកខ្លឹមសារខុសច្បាប់ សម្ងាត់ ឬមិនមានការអនុញ្ញាតដោយគ្មានសិទ្ធិ។",
         "សកម្មភាពក្នុងប្រព័ន្ធអាចត្រូវបានកត់ត្រាសម្រាប់សុវត្ថិភាព សវនកម្ម និងការគាំទ្រ។",
@@ -2693,6 +2767,122 @@
     "dark": "ងងឹត",
     "logout": "ចាកចេញ",
     "about": "អំពី",
-    "aboutCopyright": "© LCS Freight"
+    "aboutCopyright": "© HollyWing Motor"
+  },
+  "rental": {
+    "nav": {
+      "motorcycles": "ម៉ូតូ",
+      "customers": "អតិថិជន",
+      "rentals": "ការជួល",
+      "incomeExpense": "ចំណូល និងចំណាយ",
+      "rentalReports": "របាយការណ៍ការជួល",
+      "dashboard": "ផ្ទាំងគ្រប់គ្រង"
+    },
+    "pages": {
+      "motorcycles": "ម៉ូតូ",
+      "customers": "អតិថិជន",
+      "rentals": "ការជួល",
+      "incomeExpense": "ចំណូល និងចំណាយ"
+    },
+    "ui": {
+      "addPayment": "បន្ថែមការទូទាត់",
+      "addCharge": "បន្ថែមការគិតថ្លៃ",
+      "closeRental": "ប្រគល់ / បិទ",
+      "printInvoice": "បោះពុម្ពវិក្កយបត្រ",
+      "totalDue": "សរុបត្រូវបង់",
+      "alreadyPaid": "បានបង់រួច",
+      "outstanding": "នៅជំពាក់",
+      "amount": "ចំនួន",
+      "paymentMethod": "វិធីទូទាត់",
+      "paidAt": "ថ្ងៃ/ម៉ោងបង់",
+      "reference": "យោង",
+      "note": "កំណត់សម្គាល់",
+      "chargeType": "ប្រភេទការគិតថ្លៃ",
+      "description": "បរិយាយ",
+      "chargeToCustomer": "គិតថ្លៃអតិថិជន",
+      "actualReturn": "ថ្ងៃប្រគល់ពិត",
+      "condition": "ស្ថានភាពម៉ូតូ",
+      "nextStatus": "ស្ថានភាពម៉ូតូបន្ទាប់",
+      "returnNote": "កំណត់សម្គាល់ប្រគល់",
+      "confirmClose": "បញ្ជាក់បិទ",
+      "savePayment": "រក្សាទុកការទូទាត់",
+      "saveCharge": "រក្សាទុកការគិតថ្លៃ",
+      "paymentSaved": "បានកត់ត្រាការទូទាត់",
+      "chargeSaved": "បានកត់ត្រាការគិតថ្លៃ",
+      "rentalClosed": "បានបិទការជួល",
+      "rentalCreated": "បានបង្កើតការជួល",
+      "confirmCreate": "បង្កើតការជួលនេះ?",
+      "invoice": "វិក្កយបត្រ",
+      "invoiceNo": "លេខវិក្កយបត្រ",
+      "print": "បោះពុម្ព",
+      "savePdf": "រក្សាទុក PDF",
+      "customer": "អតិថិជន",
+      "motorcycle": "ម៉ូតូ",
+      "selectCustomer": "ជ្រើសរើសអតិថិជន",
+      "selectMotorcycle": "ជ្រើសរើសម៉ូតូ (ទំនេរតែប៉ុណ្ណោះ)",
+      "addNewCustomer": "បន្ថែមអតិថិជនថ្មី",
+      "rentalSection": "ការជួល",
+      "startDate": "ចាប់ផ្តើម",
+      "dueDate": "ត្រូវបញ្ចប់",
+      "returnDate": "ប្រគល់",
+      "rateType": "ប្រភេទអត្រា",
+      "rateAmount": "ចំនួនអត្រា",
+      "deposit": "ប្រាក់កក់",
+      "discount": "បញ្ចុះតម្លៃ",
+      "duration": "រយៈពេល",
+      "days": "ថ្ងៃ",
+      "day": "ថ្ងៃ",
+      "estimate": "ថ្លៃប៉ាន់ស្មាន",
+      "summary": "សង្ខេប",
+      "createRental": "បង្កើតការជួល",
+      "newRental": "ការជួលថ្មី",
+      "rentalNo": "លេខការជួល",
+      "rentalCharge": "ថ្លៃជួល",
+      "lateFee": "ថ្លៃយឺត",
+      "additionalCharges": "ការគិតថ្លៃបន្ថែម",
+      "paid": "បានបង់",
+      "paymentHistory": "ប្រវត្តិការទូទាត់",
+      "noActiveRentals": "មិនមានការជួលកំពុងដំណើរការ",
+      "viewAll": "មើលទាំងអស់",
+      "paymentStatus": "ស្ថានភាពទូទាត់",
+      "staff": "បុគ្គលិក",
+      "export": "នាំចេញ",
+      "income": "ចំណូល",
+      "expense": "ចំណាយ",
+      "net": "សុទ្ធ",
+      "date": "កាលបរិច្ឆេទ",
+      "type": "ប្រភេទ",
+      "addExpense": "បន្ថែមចំណាយ",
+      "expenseType": "ប្រភេទចំណាយ",
+      "expenseSaved": "បានកត់ត្រាចំណាយ",
+      "allMonths": "គ្រប់ខែ"
+    },
+    "dashboard": {
+      "totalMotos": "ម៉ូតូសរុប",
+      "available": "ម៉ូតូទំនេរ",
+      "rented": "ម៉ូតូកំពុងជួល",
+      "maintenance": "ម៉ូតូជួសជុល",
+      "activeRentals": "ការជួលកំពុងដំណើរការ",
+      "overdueRentals": "ការជួលហួសកំណត់",
+      "totalCustomers": "អតិថិជនសរុប",
+      "incomeMonth": "ចំណូលខែនេះ",
+      "expenseMonth": "ចំណាយខែនេះ",
+      "outstanding": "ប្រាក់នៅជំពាក់",
+      "fleet": "ម៉ូតូ",
+      "rentalsFinance": "ការជួល និងហិរញ្ញវត្ថុ",
+      "rentalsByDay": "ការជួលប្រចាំថ្ងៃ",
+      "incomeExpenseChart": "ចំណូល / ចំណាយ",
+      "activePreview": "ការជួលកំពុងដំណើរការ"
+    },
+    "settings": {
+      "chatId": "Chat / Group ID",
+      "notifyNewRental": "ជូនដំណឹងការជួលថ្មី",
+      "notifyOverdueRental": "ជូនដំណឹងការជួលហួសកំណត់",
+      "notifyRentalCompleted": "ជូនដំណឹងការជួលបានបិទ",
+      "notifyPayment": "ជូនដំណឹងការទូទាត់",
+      "dailySummaryEnabled": "បើកសេចក្តីសង្ខេបប្រចាំថ្ងៃ",
+      "dailySummaryTime": "ម៉ោងសេចក្តីសង្ខេបប្រចាំថ្ងៃ",
+      "monthlySummaryEnabled": "បើកសេចក្តីសង្ខេបប្រចាំខែ"
+    }
   }
 }

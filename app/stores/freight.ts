@@ -1,20 +1,14 @@
 import { defineStore } from 'pinia'
 import { freightModules, type FreightModule } from '~/config/freight-modules'
-import {
-  derivePayables,
-  deriveProfitability,
-  deriveReceivables,
-  type FreightRecord,
-} from '~/config/freight-seed'
+import { rentalModules } from '~/config/rental-modules'
+import type { FreightRecord } from '~/config/freight-seed'
 import { getLcsDb, persistLcsDb, setLcsDb } from '~/repositories/mock/db'
 import { assertMutableRecord } from '~/utils/lcs/commands'
-import { financeDomainStatus } from '~/utils/lcs/states'
-import { filterScopedRecords, stampTenant } from '~/utils/lcs/scope'
-import { sessionFromUser } from '~/utils/lcs/session-from-user'
 import { documentSequencePreview, normalizeDocumentSequenceRecord } from '~/utils/document-sequences'
-import { buildDashboardSummary, type DashboardFilters, type DashboardSummary } from '~/utils/lcs/dashboard'
 import { matchesFilter, parseFilterQuery } from '~/utils/filter/values'
 import { normalizeAuditLog } from '~/utils/freight/audit-logs'
+import { filterScopedRecords, stampTenant } from '~/utils/lcs/scope'
+import { sessionFromUser } from '~/utils/lcs/session-from-user'
 
 function newId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -59,40 +53,13 @@ export const useFreightStore = defineStore('freight', () => {
 
   function moduleByPath(path: string) {
     return freightModules.find(module => module.path === path)
+      || rentalModules.find(module => module.path === path)
   }
 
   function scoped(collection: string): FreightRecord[] {
     hydrate()
     const db = collections.value
     const current = session()
-    if (collection === 'receivables') {
-      return deriveReceivables(
-        filterScopedRecords(db.debitNotes || [], current).filter(row => String(row.documentType || 'CUSTOMER_INVOICE') === 'CUSTOMER_INVOICE'),
-        filterScopedRecords(db.customerPayments || [], current),
-      )
-    }
-    if (collection === 'payables') {
-      return derivePayables(
-        filterScopedRecords(db.supplierCosts || [], current),
-        filterScopedRecords(db.supplierPayments || [], current),
-      )
-    }
-    if (collection === 'profitability') {
-      const jobs = filterScopedRecords(db.jobs || [], current)
-      const notes = filterScopedRecords(db.debitNotes || [], current).filter(row => String(row.documentType || 'CUSTOMER_INVOICE') === 'CUSTOMER_INVOICE')
-      const costs = filterScopedRecords(db.supplierCosts || [], current)
-      return deriveProfitability(jobs, notes, costs).map((row) => {
-        const postedNotes = notes.filter(note =>
-          String(note.jobNo) === String(row.jobNo) && financeDomainStatus(note.status) === 'POSTED',
-        )
-        const postedRevenue = postedNotes.reduce((sum, note) => sum + Number(note.total || note.amount || 0), 0)
-        return {
-          ...row,
-          postedRevenue,
-          postedProfit: Number((postedRevenue - Number(row.totalCost || 0)).toFixed(2)),
-        }
-      })
-    }
     const rows = filterScopedRecords(db[collection] || [], current)
     if (collection === 'documentSequences') {
       const organizationName = String(useAuthStore().user?.organizationName || '')
@@ -229,16 +196,6 @@ export const useFreightStore = defineStore('freight', () => {
     })
   }
 
-  /**
-   * Single aggregated dashboard request (KPIs + charts).
-   * Scope and posted-only accounting rules are enforced inside the builder.
-   */
-  function dashboardSummary(filters: DashboardFilters = {}): DashboardSummary {
-    hydrate()
-    void revision.value
-    return buildDashboardSummary(collections.value, session(), filters)
-  }
-
   return {
     collections,
     hydrate,
@@ -252,6 +209,5 @@ export const useFreightStore = defineStore('freight', () => {
     addAudit,
     query,
     related,
-    dashboardSummary,
   }
 })

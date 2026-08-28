@@ -144,9 +144,12 @@ export function groupedFields(module: FreightModule) {
 
 export function statusColor(status: string): AppHeaderBadge['color'] {
   const value = status.toLowerCase()
-  if (['active', 'paid', 'cleared', 'delivered', 'approved', 'accepted', 'closed', 'completed', 'pod received', 'posted', 'issued', 'converted'].some(s => value.includes(s))) return 'success'
+  if (value === 'inactive') return 'neutral'
+  if (value === 'rented') return 'primary'
+  if (value === 'maintenance') return 'warning'
+  if (['active', 'paid', 'cleared', 'delivered', 'approved', 'accepted', 'closed', 'completed', 'pod received', 'posted', 'issued', 'converted', 'available'].some(s => value.includes(s))) return 'success'
   if (['pending', 'processing', 'partial', 'in transit', 'arriving', 'submitted', 'sent', 'in_progress', 'open', 'draft'].some(s => value.includes(s))) return 'warning'
-  if (['inactive', 'overdue', 'missing', 'on hold', 'expired', 'unpaid', 'reversed', 'rejected', 'cancelled', 'superseded'].some(s => value.includes(s))) return 'error'
+  if (['overdue', 'missing', 'on hold', 'expired', 'unpaid', 'reversed', 'rejected', 'cancelled', 'superseded'].some(s => value.includes(s))) return 'error'
   return 'neutral'
 }
 

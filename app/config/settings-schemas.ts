@@ -193,34 +193,15 @@ export const appConfigTabs: DocumentTabSchema[] = [
         titleKey: 'docetra.settings.tabs.telegram',
         fields: [
           { key: 'telegram.enabled', labelKey: 'docetra.settings.enableTelegram', type: 'boolean' },
-          { key: 'telegram.botDisplayName', labelKey: 'docetra.settings.botDisplayName', type: 'text' },
           { key: 'telegram.botToken', labelKey: 'docetra.settings.botToken', type: 'secret' },
-          { key: 'telegram.botUsername', labelKey: 'docetra.settings.botUsername', type: 'text' },
-          {
-            key: 'telegram.messageLanguage',
-            labelKey: 'docetra.settings.messageLanguage',
-            type: 'select',
-            options: [
-              { label: 'English', value: 'en' },
-              { label: 'Khmer', value: 'km' },
-            ],
-          },
-          { key: 'telegram.includeRecordLink', labelKey: 'docetra.settings.includeRecordLink', type: 'boolean' },
-          { key: 'telegram.includeOrganization', labelKey: 'docetra.settings.includeOrganization', type: 'boolean' },
-          { key: 'telegram.includeAssignedOfficer', labelKey: 'docetra.settings.includeAssignedOfficer', type: 'boolean' },
-          {
-            key: 'telegram.messageTemplate',
-            labelKey: 'docetra.settings.messageTemplate',
-            type: 'textarea',
-            colSpan: 2,
-            rows: 7,
-          },
-          {
-            key: 'telegram.destinations',
-            labelKey: 'docetra.settings.destinations',
-            type: 'telegram-destinations',
-            colSpan: 2,
-          },
+          { key: 'telegram.chatId', labelKey: 'rental.settings.chatId', type: 'text' },
+          { key: 'telegram.notifyNewRental', labelKey: 'rental.settings.notifyNewRental', type: 'boolean' },
+          { key: 'telegram.notifyOverdueRental', labelKey: 'rental.settings.notifyOverdueRental', type: 'boolean' },
+          { key: 'telegram.notifyRentalCompleted', labelKey: 'rental.settings.notifyRentalCompleted', type: 'boolean' },
+          { key: 'telegram.notifyPayment', labelKey: 'rental.settings.notifyPayment', type: 'boolean' },
+          { key: 'telegram.dailySummaryEnabled', labelKey: 'rental.settings.dailySummaryEnabled', type: 'boolean' },
+          { key: 'telegram.dailySummaryTime', labelKey: 'rental.settings.dailySummaryTime', type: 'text' },
+          { key: 'telegram.monthlySummaryEnabled', labelKey: 'rental.settings.monthlySummaryEnabled', type: 'boolean' },
           { key: '__telegramConnection', labelKey: 'docetra.connection.title', type: 'connection-status', colSpan: 2 },
         ],
       },
@@ -306,7 +287,7 @@ export const appConfigTabs: DocumentTabSchema[] = [
   },
 ]
 
-const SYSTEM_SETTINGS_TAB_IDS = new Set(['localization', 'email', 'telegram', 'security'])
+const SYSTEM_SETTINGS_TAB_IDS = new Set(['localization', 'telegram', 'security'])
 const SETTINGS_FIELD_HELP: Record<string, string> = {
   'email.enabled': 'docetra.fieldHelp.enableEmail',
   'email.replyToEmail': 'docetra.fieldHelp.replyTo',

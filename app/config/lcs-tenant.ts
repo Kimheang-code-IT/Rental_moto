@@ -9,8 +9,8 @@ export const LCS_ORGANIZATIONS = [
   {
     id: LCS_ORG_ID,
     organization_code: 'LCS',
-    legal_name: 'LCS Freight Forwarding Co., Ltd.',
-    display_name: 'LCS Freight',
+    legal_name: 'HollyWing Motor Co., Ltd.',
+    display_name: 'HollyWing Motor',
     default_currency_code: 'USD',
     timezone: 'Asia/Phnom_Penh',
     status: 'ACTIVE',

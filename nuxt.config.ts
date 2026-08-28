@@ -14,7 +14,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'LCS Freight Forwarding Management System',
+      title: 'HollyWing Motor — Motorcycle Rental Management',
       htmlAttrs: {
         lang: 'en',
       },

@@ -21,10 +21,10 @@ describe('mock login accounts', () => {
     }
 
     expect(user?.permissions).toContain('dashboard.view')
-    expect(user?.permissions).toContain('sales.quotations.view')
-    expect(user?.permissions).toContain('operations.service_orders.view')
-    expect(user?.permissions).toContain('finance.financial_documents.view')
-    expect(user?.permissions).toContain('master.reference.view')
+    expect(user?.permissions).toContain('rental.motorcycles.view')
+    expect(user?.permissions).toContain('rental.customers.view')
+    expect(user?.permissions).toContain('rental.rentals.edit')
+    expect(user?.permissions).toContain('rental.finance.view')
     expect(user?.permissions).toContain('reports.view')
   })
 
