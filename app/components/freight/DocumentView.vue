@@ -849,7 +849,7 @@ async function confirmReverse() {
     :save-label="t('docetra.common.save')"
     :confirm-save="false"
     :show-cancel="false"
-    show-comments
+    :show-comments="false"
     :show-tabs="tabs.length > 1"
     show-list-nav
     content-wide

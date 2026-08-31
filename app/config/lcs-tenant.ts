@@ -1,3 +1,5 @@
+import type { LcsOrganization } from '~/types/lcs/domain'
+
 export const LCS_ORG_ID = 1
 export const DEMO_ORG_ID = 2
 
@@ -5,12 +7,15 @@ export const BRANCH_BAVET_ID = 1
 export const BRANCH_PP_ID = 2
 export const BRANCH_DEMO_ID = 3
 
-export const LCS_ORGANIZATIONS = [
+export const LCS_ORGANIZATIONS: LcsOrganization[] = [
   {
     id: LCS_ORG_ID,
     organization_code: 'LCS',
     legal_name: 'HollyWing Motor Co., Ltd.',
     display_name: 'HollyWing Motor',
+    address: 'St. 271, Toul Tum Poung, Phnom Penh, Cambodia',
+    phone: '+855 23 555 123',
+    email: 'info@hollywingmotor.com',
     default_currency_code: 'USD',
     timezone: 'Asia/Phnom_Penh',
     status: 'ACTIVE',
@@ -24,7 +29,7 @@ export const LCS_ORGANIZATIONS = [
     timezone: 'Asia/Phnom_Penh',
     status: 'ACTIVE',
   },
-] as const
+]
 
 export const LCS_BRANCHES = [
   {

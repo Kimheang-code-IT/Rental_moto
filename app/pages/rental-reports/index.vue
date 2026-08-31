@@ -184,6 +184,6 @@ function exportCsv() {
       </template>
     </TableAppListTable>
 
-    <RentalInvoicePreview :rental="invoiceRow" @close="invoiceRow = null" />
+    <RentalInvoicePreview :rental="invoiceRow" mode="direct-print" @close="invoiceRow = null" />
   </div>
 </template>

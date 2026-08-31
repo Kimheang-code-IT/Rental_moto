@@ -577,6 +577,7 @@ function filterItems(filter: { options?: readonly FreightSelectOption[] | Freigh
     <RentalInvoicePreview
       v-if="rentalInvoiceRow !== null"
       :rental="rentalInvoiceRow"
+      mode="direct-print"
       @close="rentalInvoiceRow = null"
     />
   </div>

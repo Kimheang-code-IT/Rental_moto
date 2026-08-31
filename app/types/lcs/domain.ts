@@ -77,6 +77,9 @@ export interface LcsOrganization {
   organization_code: string
   legal_name: string
   display_name: string
+  address?: string
+  phone?: string
+  email?: string
   default_currency_code: string
   timezone: string
   status: string

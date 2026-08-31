@@ -220,20 +220,55 @@
   font-size: 12px;
 }
 
-/* Rental invoice printing — isolate the open invoice modal for Print / Save PDF. */
+/* Rental invoice printing — teleported print-only div shown, everything else hidden. */
+.rental-invoice-print-only {
+  display: none;
+}
+
 @media print {
-  body.rental-invoice-open *:not(.rental-invoice-print):not(.rental-invoice-print *) {
-    visibility: hidden !important;
+  body.rental-invoice-printing > *:not(.rental-invoice-print-only) {
+    display: none !important;
   }
 
-  body.rental-invoice-open .rental-invoice-print,
-  body.rental-invoice-open .rental-invoice-print * {
-    visibility: visible !important;
-  }
-
-  body.rental-invoice-open .rental-invoice-print {
+  body.rental-invoice-printing .rental-invoice-print-only {
+    display: block !important;
     position: absolute !important;
     inset: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 24px !important;
+    background: white !important;
+    color: black !important;
     overflow: visible !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-print-only * {
+    color: black !important;
+    background: white !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-print-only table {
+    display: table !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-print-only thead {
+    display: table-header-group !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-print-only tbody {
+    display: table-row-group !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-print-only tr {
+    display: table-row !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-print-only th,
+  body.rental-invoice-printing .rental-invoice-print-only td {
+    display: table-cell !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-print-only img {
+    max-height: 48px !important;
   }
 }
