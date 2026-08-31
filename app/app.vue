@@ -16,6 +16,8 @@ const currentLocale = computed(() => uiLocales[locale.value] || en)
 const lang = computed(() => currentLocale.value.code || locale.value)
 const dir = computed(() => currentLocale.value.dir || 'ltr')
 const siteName = computed(() => t('docetra.brand.name'))
+const siteTagline = computed(() => t('docetra.brand.tagline'))
+const logoAlt = computed(() => t('docetra.brand.logoAlt'))
 const appDescription = computed(() => t('app.description'))
 const appKeywords = computed(() => t('app.keywords'))
 const { absoluteUrl, absolutePageUrl } = useSeoAbsoluteUrl()
@@ -56,16 +58,18 @@ useHead({
 useSeoMeta({
   description: appDescription,
   ogSiteName: siteName,
-  ogTitle: siteName,
+  ogTitle: () => `${siteName.value} — ${siteTagline.value}`,
   ogDescription: appDescription,
   ogImage: () => defaultOgImage.value,
-  ogImageAlt: siteName,
+  ogImageAlt: logoAlt,
+  ogImageWidth: '1200',
+  ogImageHeight: '630',
   ogUrl: () => pageUrl.value,
   ogType: 'website',
-  twitterTitle: siteName,
+  twitterTitle: () => `${siteName.value} — ${siteTagline.value}`,
   twitterDescription: appDescription,
   twitterImage: () => defaultOgImage.value,
-  twitterImageAlt: siteName,
+  twitterImageAlt: logoAlt,
   twitterCard: 'summary_large_image',
   robots: 'noindex, nofollow',
 })

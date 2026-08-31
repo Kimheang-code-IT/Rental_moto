@@ -75,6 +75,11 @@ function onHeaderRefresh() {
       <span v-else class="hidden truncate text-highlighted lg:block">{{ displayTitle || 'HollyWing Motor' }}</span>
     </template>
 
+    <div
+      id="app-header-leading"
+      class="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2"
+    />
+
     <div class="min-w-0 flex-1" />
 
     <template #right>
@@ -113,13 +118,9 @@ function onHeaderRefresh() {
           />
         </template>
 
-        <div
-          id="app-header-leading"
-          class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2"
-        />
-
         <template v-if="actions">
           <UButton
+            v-if="actions.showRefresh !== false"
             color="neutral"
             variant="soft"
             icon="i-lucide-refresh-cw"

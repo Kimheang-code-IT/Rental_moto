@@ -1,5 +1,5 @@
-import type { FreightRecord } from '~/config/freight-seed'
-import { createLcsFreightSeed } from '~/config/lcs-seed'
+import type { AppRecord } from '~/config/admin-seed'
+import { createLcsSeed } from '~/config/lcs-seed'
 import { createRentalSeed } from '~/config/rental-seed'
 import { normalizeDocumentSequenceRecord } from '~/utils/document-sequences'
 
@@ -9,26 +9,26 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-let memory: Record<string, FreightRecord[]> | null = null
+let memory: Record<string, AppRecord[]> | null = null
 
 export function createFreshLcsDb() {
-  const seed = { ...createLcsFreightSeed(), ...createRentalSeed() }
+  const seed = { ...createLcsSeed(), ...createRentalSeed() }
   seed.idempotency = []
   return clone(seed)
 }
 
-export function getLcsDb(): Record<string, FreightRecord[]> {
+export function getLcsDb(): Record<string, AppRecord[]> {
   if (memory) return memory
   if (import.meta.client) {
     try {
       const raw = localStorage.getItem(LCS_FREIGHT_STORAGE_KEY)
       if (raw) {
-        memory = JSON.parse(raw) as Record<string, FreightRecord[]>
-        const fresh = createLcsFreightSeed()
+        memory = JSON.parse(raw) as Record<string, AppRecord[]>
+        const fresh = createLcsSeed()
         for (const [collection, rows] of Object.entries(fresh)) {
           if (!Array.isArray(memory[collection])) memory[collection] = clone(rows)
         }
-        for (const collection of ['debitNotes', 'jobCharges', 'quotations', 'users', 'componentTemplates', 'auditLogs', 'journals', 'chartOfAccounts', 'financialAccounts', 'postingRules', 'actualContainers', 'cashAccounts']) {
+        for (const collection of ['users', 'auditLogs', 'documentSequences']) {
           const freshRows = fresh[collection] || []
           const existingRows = memory[collection] || []
           const merged = freshRows.map((freshRow) => {
@@ -51,7 +51,7 @@ export function getLcsDb(): Record<string, FreightRecord[]> {
   return memory
 }
 
-export function setLcsDb(next: Record<string, FreightRecord[]>) {
+export function setLcsDb(next: Record<string, AppRecord[]>) {
   memory = next
   persistLcsDb()
 }

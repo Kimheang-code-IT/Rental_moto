@@ -8,11 +8,21 @@ export function safeExternalUrl(value: unknown): string | null {
   if (!raw) return null
   try {
     const parsed = new URL(raw)
+    if (parsed.username || parsed.password) return null
     return EXTERNAL_PROTOCOLS.has(parsed.protocol) ? parsed.toString() : null
   }
   catch {
     return null
   }
+}
+
+/** Validate the configured backend origin before credentials are attached. */
+export function safeApiBase(value: unknown, requireHttps = false): string | null {
+  const url = safeExternalUrl(value)
+  if (!url) return null
+  const parsed = new URL(url)
+  if (requireHttps && parsed.protocol !== 'https:') return null
+  return parsed.toString().replace(/\/$/, '')
 }
 
 /** Blob, previewable data URLs, or http(s) — never javascript: or other schemes. */

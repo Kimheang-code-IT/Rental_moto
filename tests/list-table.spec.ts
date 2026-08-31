@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { listTablePageSummary, listTableSelectedIds, listTableVirtualize } from '../app/utils/table/list-table'
 
 const t = (key: string, values?: Record<string, unknown>) => {
-  if (key === 'freight.ui.ofZero') return '0 of 0'
-  if (key === 'freight.ui.of') return `${values?.shown} of ${values?.total}`
+  if (key === 'app.ui.ofZero') return '0 of 0'
+  if (key === 'app.ui.of') return `${values?.shown} of ${values?.total}`
   return key
 }
 

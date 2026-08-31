@@ -9,10 +9,10 @@ import type {
   AppInfo,
   ConnectionStatus,
   CreateStorageProviderInput,
+  NotificationChannel,
   StorageProvider,
   UpdateStorageProviderInput,
 } from '~/types/docetra/settings'
-import type { NotificationChannel } from '~/types/docetra/settings'
 import { DEFAULT_TELEGRAM_TEMPLATE, NOTIFICATION_EVENTS } from '~/types/docetra/settings'
 
 const INFO_KEY = 'docetra:settings:app-info'
@@ -65,7 +65,7 @@ function seedAppConfig(): AppConfig {
       defaultLandingPage: '/',
       defaultPageSize: 20,
       defaultRecordView: 'table',
-      enableComments: true,
+      enableComments: false,
       enableSharing: true,
       enableExport: true,
       maxUploadSizeMb: 50,

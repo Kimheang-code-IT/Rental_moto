@@ -1,10 +1,10 @@
 <script setup lang="ts">
 definePageMeta({
-  titleKey: 'freight.pages.auditLogs',
+  titleKey: 'app.pages.auditLogs',
   permission: 'admin.audit_logs.view',
 })
 </script>
 
 <template>
-  <FreightWorkspaceView />
+  <ModuleWorkspaceView />
 </template>

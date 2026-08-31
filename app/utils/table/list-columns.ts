@@ -16,14 +16,14 @@ export function listTableSelectColumn<T extends Record<string, unknown>>(
       h(UCheckbox, {
         'modelValue': table.getIsSomePageRowsSelected() ? 'indeterminate' : table.getIsAllPageRowsSelected(),
         'onUpdate:modelValue': (value: unknown) => table.toggleAllPageRowsSelected(Boolean(value)),
-        'aria-label': t('freight.ui.selectAll'),
+        'aria-label': t('app.ui.selectAll'),
       }),
     ]),
     cell: ({ row }) => h('div', { class: 'flex items-center justify-center' }, [
       h(UCheckbox, {
         'modelValue': row.getIsSelected(),
         'onUpdate:modelValue': (value: unknown) => row.toggleSelected(Boolean(value)),
-        'aria-label': t('freight.ui.selectRow'),
+        'aria-label': t('app.ui.selectRow'),
       }),
     ]),
     enableSorting: false,
@@ -31,7 +31,7 @@ export function listTableSelectColumn<T extends Record<string, unknown>>(
   }
 }
 
-/** Trailing avatar / relative time / comments / ⋯ column. */
+/** Trailing row-action menu column. */
 export function listTableRowMetaColumn<T extends Record<string, unknown>>(options: {
   summary: string
   items: (row: T) => DropdownMenuItem[][]
@@ -44,9 +44,8 @@ export function listTableRowMetaColumn<T extends Record<string, unknown>>(option
     ]),
     enableSorting: false,
     enableHiding: false,
-    meta: { class: { td: 'text-end whitespace-nowrap', th: 'w-52' } },
+    meta: { class: { td: 'w-12 text-end whitespace-nowrap', th: 'w-20' } },
     cell: ({ row }) => h(TableAppTableRowMeta, {
-      row: row.original,
       items: options.items(row.original),
       loading: options.loadingId === String(row.original.id || ''),
     }),

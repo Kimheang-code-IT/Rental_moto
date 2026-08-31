@@ -3,17 +3,17 @@ import { TABLE_VIRTUALIZE_AFTER } from '~/utils/table/theme'
 
 type Translate = (key: string, values?: Record<string, unknown>) => string
 
-/** Header counter: "6 of 6" for the row-meta column. */
+/** Header counter: "6 of 6" for the row-action column. */
 export function listTablePageSummary(
   t: Translate,
   total: number,
   pagination: Pick<PaginationState, 'pageIndex' | 'pageSize'>,
 ) {
-  if (!total) return t('freight.ui.ofZero')
+  if (!total) return t('app.ui.ofZero')
   const start = pagination.pageIndex * pagination.pageSize
   const end = Math.min(start + pagination.pageSize, total)
   const shown = Math.max(0, end - start)
-  return t('freight.ui.of', { shown, total })
+  return t('app.ui.of', { shown, total })
 }
 
 export function listTableSelectedIds(selection: Record<string, boolean>) {

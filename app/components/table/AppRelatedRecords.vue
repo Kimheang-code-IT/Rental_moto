@@ -1,38 +1,38 @@
 <script setup lang="ts">
 import type { TableColumn, TableRow } from '@nuxt/ui'
-import type { FreightRelated } from '~/config/freight-modules'
-import type { FreightRecord } from '~/config/freight-seed'
-import { useFreightLabel } from '~/composables/freight/useFreight'
+import type { ModuleRelated } from '~/config/modules'
+import type { AppRecord } from '~/config/admin-seed'
+import { useModuleLabel } from '~/composables/module/useModule'
 import { freightTableUiCompact } from '~/utils/table/theme'
 
 defineProps<{
-  groups: Array<FreightRelated & { rows: FreightRecord[] }>
+  groups: Array<ModuleRelated & { rows: AppRecord[] }>
 }>()
 
 const { t } = useI18n()
-const { relatedTitle } = useFreightLabel()
+const { relatedTitle } = useModuleLabel()
 
-function titleOf(row: FreightRecord) {
+function titleOf(row: AppRecord) {
   return String(row.jobNo || row.quotationNo || row.debitNoteNo || row.documentNo || row.paymentNo || row.name || row.id)
 }
 
-const columns = computed<TableColumn<FreightRecord>[]>(() => [
+const columns = computed<TableColumn<AppRecord>[]>(() => [
   {
     id: 'title',
-    header: t('freight.ui.record'),
+    header: t('app.ui.record'),
     accessorFn: row => titleOf(row),
     enableSorting: false,
   },
   {
     accessorKey: 'status',
-    header: t('freight.ui.cols.status'),
+    header: t('app.ui.cols.status'),
     enableSorting: false,
     cell: ({ row }) => String(row.original.status || row.original.containerNo || row.original.date || '—'),
   },
 ])
 
 function openRelated(path: string) {
-  return (_event: Event, row: TableRow<FreightRecord>) => {
+  return (_event: Event, row: TableRow<AppRecord>) => {
     navigateTo(`${path}/${row.original.id}`)
   }
 }
@@ -43,17 +43,26 @@ function openRelated(path: string) {
     <section v-for="group in groups" :key="group.path" class="space-y-2">
       <div class="flex items-center justify-between">
         <h3 class="text-xs font-medium text-highlighted">{{ relatedTitle(group) }}</h3>
-        <UButton size="xs" color="neutral" variant="ghost" :to="group.path" trailing-icon="i-lucide-arrow-up-right">
-          {{ t('freight.ui.viewAll') }}
+        <UButton
+size="xs"
+color="neutral"
+variant="ghost"
+:to="group.path"
+trailing-icon="i-lucide-arrow-up-right">
+          {{ t('app.ui.viewAll') }}
         </UButton>
       </div>
       <div v-if="group.rows.length" class="overflow-x-auto">
-        <UTable :data="group.rows.slice(0, 20)" :columns="columns"
-          :get-row-id="(row: FreightRecord) => row.id" class="freight-table freight-table-compact min-w-max"
-          :ui="freightTableUiCompact" @select="openRelated(group.path)" />
+        <UTable
+:data="group.rows.slice(0, 20)"
+:columns="columns"
+          :get-row-id="(row: AppRecord) => row.id"
+class="freight-table freight-table-compact min-w-max"
+          :ui="freightTableUiCompact"
+@select="openRelated(group.path)" />
       </div>
       <div v-else class="rounded-md border border-dashed border-default px-3 py-4 text-sm text-muted">
-        {{ t('freight.ui.noRelated') }}
+        {{ t('app.ui.noRelated') }}
       </div>
     </section>
   </div>

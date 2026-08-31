@@ -1,6 +1,4 @@
 import type { ApiResponse, FieldOption } from '~/types/docetra/common'
-import { ApiEndpoints } from '~/utils/constants/api-endpoints'
-import { useConfigurationRepositories } from '~/repositories'
 
 const OPTIONS_CACHE_TTL_MS = 60_000
 const optionsCache = new Map<string, {
@@ -29,36 +27,13 @@ function endpointParams(endpoint: string) {
   return new URLSearchParams(query)
 }
 
-function mapNamedOptions<T extends { id: string, name: string }>(
-  rows: T[],
-  valueField: 'id' | 'name',
-): FieldOption[] {
-  return rows.map(row => ({
-    label: row.name,
-    value: valueField === 'name' ? row.name : row.id,
-  }))
-}
-
 export function useReferenceOptions() {
   const api = useApi()
-  const config = useRuntimeConfig()
-  const { recordTypes } = useConfigurationRepositories()
 
   async function loadReferenceOptionsUncached(endpoint: string, search = ''): Promise<FieldOption[]> {
     const path = endpointPath(endpoint)
     const params = endpointParams(endpoint)
     const valueField = optionsValueField(endpoint)
-    const useMock = config.public.useMockData !== false
-
-    if (useMock && path === `${ApiEndpoints.RECORD_TYPES}/options`) {
-      const response = await recordTypes.list({
-        q: search || undefined,
-        page: 1,
-        limit: 50,
-        status: 'active',
-      })
-      return mapNamedOptions(response.data, valueField)
-    }
 
     const response = await api.get<ApiResponse<FieldOption[]> | FieldOption[]>(path, {
       query: {

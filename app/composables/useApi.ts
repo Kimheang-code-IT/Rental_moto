@@ -8,8 +8,8 @@ import { csrfRequestHeaders } from '~/utils/security/csrf'
 type ApiRequestOptions = {
     method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
     headers?: Record<string, string>
-    body?: Record<string, any> | BodyInit | null
-    query?: Record<string, any> | TableQueryParams
+    body?: Record<string, unknown> | BodyInit | null
+    query?: object | TableQueryParams
     suppressErrorToast?: boolean
     suppressAccessAlert?: boolean
     requestKey?: string
@@ -47,7 +47,11 @@ export function useApi() {
     const pending = computed(() => activeRequests.value > 0)
     const error = ref<string | null>(null)
 
-    const baseURL = String(config.public.apiBase)
+    const requireSecureApi = import.meta.env.PROD && config.public.useMockData === false
+    const baseURL = safeApiBase(config.public.apiBase, requireSecureApi)
+    if (!baseURL) {
+        throw new Error('Invalid API base URL. Production APIs must use HTTPS.')
+    }
 
     function getRequestKey(url: string, options: ApiRequestOptions): string {
         return options.requestKey || `${options.method || 'GET'}:${url}`
@@ -89,8 +93,9 @@ export function useApi() {
                 query: compactQuery(options.query),
                 signal: controller.signal,
                 timeout: Number(config.public.apiTimeoutMs) || 30000,
-                credentials: 'same-origin',
+                credentials: config.public.authMode === 'cookie' ? 'include' : 'omit',
                 headers: {
+                    'Accept': 'application/json',
                     'X-Requested-With': 'XMLHttpRequest',
                     ...csrfRequestHeaders(
                         method,

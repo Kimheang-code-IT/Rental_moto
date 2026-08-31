@@ -57,6 +57,7 @@ export type AppHeaderActionsConfig = {
   /** When set, renders these instead of the single create button. */
   createButtons?: AppHeaderCreateButton[]
   refreshing?: boolean
+  showRefresh?: boolean
   moreItems?: DropdownMenuItem[][]
   listNav?: AppHeaderListNavConfig
   save?: AppHeaderSaveConfig

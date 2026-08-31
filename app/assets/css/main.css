@@ -226,6 +226,11 @@
 }
 
 @media print {
+  @page {
+    size: A5 portrait;
+    margin: 0;
+  }
+
   body.rental-invoice-printing > *:not(.rental-invoice-print-only) {
     display: none !important;
   }
@@ -236,15 +241,25 @@
     inset: 0 !important;
     width: 100% !important;
     max-width: none !important;
-    padding: 24px !important;
+    padding: 0 !important;
     background: white !important;
     color: black !important;
     overflow: visible !important;
   }
 
-  body.rental-invoice-printing .rental-invoice-print-only * {
-    color: black !important;
-    background: white !important;
+  body.rental-invoice-printing .rental-invoice-sheet {
+    box-sizing: border-box !important;
+    width: 148mm !important;
+    min-height: 210mm !important;
+    margin: 0 !important;
+    padding: 9mm !important;
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+  }
+
+  body.rental-invoice-printing .rental-invoice-sheet * {
+    print-color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
   }
 
   body.rental-invoice-printing .rental-invoice-print-only table {
@@ -271,4 +286,12 @@
   body.rental-invoice-printing .rental-invoice-print-only img {
     max-height: 48px !important;
   }
+}
+
+.rental-invoice-sheet {
+  box-sizing: border-box;
+  width: 148mm;
+  min-height: 210mm;
+  margin: 0 auto;
+  padding: 9mm;
 }

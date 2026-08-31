@@ -71,7 +71,11 @@ export const useAuthStore = defineStore('auth', () => {
     if (Array.isArray(currentUser.permissions)) {
       if (currentUser.permissions.includes('ALL_PAGES')) return true
       if (currentUser.permissions.includes(pageId)) return true
-      if (pageId === 'configuration.manage' && currentUser.permissions.includes('configuration.configure')) return true
+      // Document sequences historically used configuration.manage.
+      if (pageId === 'configuration.manage' && (
+        currentUser.permissions.includes('configuration.view')
+        || currentUser.permissions.includes('configuration.edit')
+      )) return true
       return false
     }
 

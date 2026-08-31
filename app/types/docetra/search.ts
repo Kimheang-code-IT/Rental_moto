@@ -1,5 +1,5 @@
 /**
- * Global Cmd+K search types (keyword / semantic / AI citations).
+ * Global Cmd+K search types for the rental app.
  */
 
 export type SearchMode = 'keyword' | 'semantic'
@@ -7,15 +7,8 @@ export type SearchMode = 'keyword' | 'semantic'
 export type SearchEntityType =
   | 'navigation'
   | 'document'
-  | 'incomingDocument'
-  | 'outgoingDocument'
-  | 'meeting'
-  | 'meetingTopic'
   | 'file'
   | 'attachment'
-  | 'company'
-  | 'department'
-  | 'officer'
   | 'user'
   | 'other'
 
@@ -26,7 +19,7 @@ export interface IndexedDocument {
   title: string
   text: string
   url: string
-  /** Entity permission code, e.g. portal.file_upload.view — empty = always visible when logged in */
+  /** Entity permission code — empty = always visible when logged in */
   permission: string
   mimeType?: string
   updatedAt: string

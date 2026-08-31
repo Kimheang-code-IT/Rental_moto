@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import type { TableColumn } from '@nuxt/ui'
+import { ULink } from '#components'
+import type { ExportFieldOption, ExportRequest } from '~/types/docetra/export'
 import { useAppHeader } from '~/composables/layout/useAppHeader'
-import { formatMoney } from '~/composables/freight/useFreight'
-import { downloadCsv } from '~/utils/export/csv'
+import { formatMoney } from '~/composables/module/useModule'
 import { RENTAL_EXPENSE_TYPES } from '~/config/rental-options'
+import { downloadCsv } from '~/utils/export/csv'
 
 definePageMeta({ titleKey: 'rental.pages.incomeExpense', permission: 'rental.finance.view' })
 
 const { t, te } = useI18n()
-const store = useFreightStore()
-const auth = useAuthStore()
+const store = useAppDataStore()
 const preferences = usePreferencesStore()
+const auth = useAuthStore()
 const { setTitle, setBreadcrumbs, clear } = useAppHeader()
 
 onBeforeUnmount(clear)
@@ -26,21 +28,19 @@ watch(() => t('rental.pages.incomeExpense'), (title) => {
 
 const money = (value: unknown, currency?: string) => formatMoney(value, currency || preferences.currency)
 
-const now = new Date()
-const year = ref(String(now.getFullYear()))
-const month = ref(String(now.getMonth() + 1).padStart(2, '0'))
-const canAddExpense = computed(() => auth.canAccessPage('rental.finance.create'))
+const q = ref('')
+const dateFrom = ref('')
+const dateTo = ref('')
+const typeFilter = ref<string[]>([])
+const expenseModalOpen = ref(false)
+const pagination = ref({ pageIndex: 0, pageSize: 20 })
+const canCreateExpense = computed(() => auth.canAccessPage('rental.finance.create'))
 
-const years = computed(() => {
-  const values = new Set<number>([now.getFullYear()])
-  for (const row of [...store.list('rentalPayments'), ...store.list('rentalExpenses')]) {
-    const y = Number(String(row.paidAt || row.date || '').slice(0, 4))
-    if (Number.isFinite(y) && y > 2000) values.add(y)
-  }
-  return [...values].sort((a, b) => b - a).map(y => ({ label: String(y), value: String(y) }))
-})
-
-const inPeriod = (day: string) => (!year.value || day.slice(0, 4) === year.value) && (month.value === 'all' || day.slice(5, 7) === month.value)
+const inPeriod = (day: string) => {
+  if (dateFrom.value && day < dateFrom.value) return false
+  if (dateTo.value && day > dateTo.value) return false
+  return true
+}
 
 const incomeRows = computed(() => store.list('rentalPayments').filter((row) => {
   const day = String(row.paidAt || '').slice(0, 10)
@@ -66,14 +66,42 @@ const kpis = computed(() => [
 ])
 
 type TxRow = Record<string, unknown> & { kind: 'income' | 'expense' }
-const rows = computed<TxRow[]>(() => [
+const transactionDate = (row: Record<string, unknown>) => String(row.paidAt || row.date || '')
+const transactionRows = computed<TxRow[]>(() => [
   ...incomeRows.value.map(row => ({ ...row, kind: 'income' as const })),
   ...expenseRows.value.map(row => ({ ...row, kind: 'expense' as const })),
-].sort((a, b) => String(b.paidAt || b.date || '').localeCompare(String(a.paidAt || a.date || ''))))
+].sort((a, b) => transactionDate(b).localeCompare(transactionDate(a))))
+
+const rows = computed(() => transactionRows.value.filter((row) => {
+  if (!typeFilter.value.length) return true
+  const type = row.kind === 'income' ? 'income' : String(row.expenseType || 'expense')
+  return typeFilter.value.includes(type)
+}))
+
+const typeFilterItems = computed(() => [
+  { label: tx('rental.ui.income', 'Income'), value: 'income' },
+  ...RENTAL_EXPENSE_TYPES.map(value => ({ label: value, value })),
+])
 
 const columns = computed<TableColumn<TxRow>[]>(() => [
   { accessorKey: 'paidAt', header: tx('rental.ui.date', 'Date'), cell: ({ row }) => h('span', { class: 'tabular-nums' }, String(row.original.paidAt || row.original.date || '—').slice(0, 10)) },
-  { accessorKey: 'docNo', header: tx('rental.ui.reference', 'Reference'), cell: ({ row }) => h('span', { class: 'font-medium' }, String(row.original.paymentNo || row.original.expenseNo || '—')) },
+  {
+    accessorKey: 'docNo',
+    header: tx('rental.ui.reference', 'Reference'),
+    cell: ({ row }) => {
+      const record = row.original
+      const label = String(record.paymentNo || record.expenseNo || '—')
+
+      if (record.kind === 'income' && record.rentalId) {
+        return h(ULink, {
+          to: `/rentals/${String(record.rentalId)}`,
+          class: 'font-medium text-highlighted hover:text-primary hover:underline',
+        }, () => label)
+      }
+
+      return h('span', { class: 'font-medium' }, label)
+    },
+  },
   { accessorKey: 'label', header: tx('rental.ui.description', 'Description'), cell: ({ row }) => h('span', { class: 'block max-w-72 truncate' }, String(row.original.customer || row.original.description || '—')) },
   {
     accessorKey: 'kind',
@@ -88,89 +116,54 @@ const columns = computed<TableColumn<TxRow>[]>(() => [
     meta: { class: { td: 'text-end', th: 'text-end' } },
     cell: ({ row }) => h('span', {
       class: `block text-end tabular-nums font-medium ${row.original.kind === 'income' ? 'text-success' : 'text-error'}`,
-    }, `${row.original.kind === 'income' ? '+' : '-'}${money(row.original.amount, row.original.currency)}`),
+    }, `${row.original.kind === 'income' ? '+' : '-'}${money(row.original.amount, String(row.original.currency || preferences.currency))}`),
   },
 ])
 
-// Add Expense modal
-const expenseOpen = ref(false)
-const expenseSaving = ref(false)
-const expenseDate = ref(new Date().toISOString().slice(0, 10))
-const expenseType = ref('Maintenance')
-const expenseDescription = ref('')
-const expenseAmount = ref(0)
+const exportFields = computed<ExportFieldOption[]>(() => [
+  { label: tx('rental.ui.date', 'Date'), value: 'date' },
+  { label: tx('rental.ui.reference', 'Reference'), value: 'reference' },
+  { label: tx('rental.ui.description', 'Description'), value: 'description' },
+  { label: tx('rental.ui.type', 'Type'), value: 'type' },
+  { label: tx('rental.ui.amount', 'Amount'), value: 'amount' },
+])
 
-function openExpense() {
-  expenseDate.value = new Date().toISOString().slice(0, 10)
-  expenseType.value = 'Maintenance'
-  expenseDescription.value = ''
-  expenseAmount.value = 0
-  expenseOpen.value = true
+function refresh() {
+  store.reload()
 }
 
-function saveExpense() {
-  if (expenseAmount.value <= 0) return
-  expenseSaving.value = true
-  try {
-    const seq = store.list('rentalExpenses').length + 1
-    store.create('rentalExpenses', {
-      expenseNo: `RNX-${String(seq).padStart(6, '0')}`,
-      date: expenseDate.value,
-      expenseType: expenseType.value,
-      description: expenseDescription.value,
-      amount: expenseAmount.value,
-      currency: preferences.currency,
-      createdBy: store.session()?.name || '',
-    }, 'rxp')
-    store.addAudit(`Expense ${money(expenseAmount.value)} (${expenseType.value})`, 'Income & Expense', expenseDate.value)
-    toast.add({ title: tx('rental.ui.expenseSaved', 'Expense recorded'), color: 'success' })
-    expenseOpen.value = false
+function exportCsv(request: ExportRequest) {
+  let exportRows = rows.value.map(row => ({
+    date: transactionDate(row).slice(0, 10),
+    reference: String(row.paymentNo || row.expenseNo || ''),
+    description: String(row.customer || row.description || ''),
+    type: row.kind === 'income' ? tx('rental.ui.income', 'Income') : String(row.expenseType || tx('rental.ui.expense', 'Expense')),
+    amount: row.kind === 'income' ? Number(row.amount || 0) : -Number(row.amount || 0),
+  }))
+  if (request.startDate) exportRows = exportRows.filter(row => row.date >= request.startDate!)
+  if (request.endDate) exportRows = exportRows.filter(row => row.date <= request.endDate!)
+  if (request.scope === 'current_page') {
+    const start = pagination.value.pageIndex * pagination.value.pageSize
+    exportRows = exportRows.slice(start, start + pagination.value.pageSize)
   }
-  finally {
-    expenseSaving.value = false
-  }
-}
-
-function exportCsv() {
+  const selected = new Set(request.fieldCodes)
   downloadCsv({
-    filename: `income-expense-${year.value}-${month.value}.csv`,
-    fields: [
-      { label: 'Date', value: 'paidAt' },
-      { label: 'Reference', value: 'docNo' },
-      { label: 'Description', value: 'label' },
-      { label: 'Type', value: 'kind' },
-      { label: 'Amount', value: 'amount' },
-    ],
-    rows: rows.value as Array<Record<string, unknown>>,
+    filename: `income-expense-${dateFrom.value || 'all'}-${dateTo.value || 'all'}.csv`,
+    fields: exportFields.value.filter(field => selected.has(field.value)),
+    rows: exportRows,
   })
 }
 </script>
 <template>
   <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/20">
-    <div class="flex items-center justify-end gap-2 border-b border-default bg-default px-3 py-2">
-      <USelect v-model="year" :items="years" class="w-24" size="sm" />
-      <USelect
-        v-model="month"
-        :items="[{ label: tx('rental.ui.allMonths', 'All Months'), value: 'all' }, ...Array.from({ length: 12 }, (_, i) => ({ label: String(i + 1).padStart(2, '0'), value: String(i + 1).padStart(2, '0') }))]"
-        class="w-32"
-        size="sm"
-      />
-      <div class="flex-1" />
-      <UButton
-        v-if="canAddExpense"
-        size="sm"
-        icon="i-lucide-plus"
-        :label="tx('rental.ui.addExpense', 'Add Expense')"
-        @click="openExpense"
-      />
-      <UButton
-        size="sm"
-        variant="soft"
-        icon="i-lucide-download"
-        :label="tx('rental.ui.export', 'Export')"
-        @click="exportCsv"
-      />
-    </div>
+    <LayoutAppHeaderPageActions
+      :can-create="canCreateExpense"
+      :create-label="tx('rental.ui.addExpense', 'Add Expense')"
+      :export-fields="exportFields"
+      @create="expenseModalOpen = true"
+      @refresh="refresh"
+      @export="exportCsv"
+    />
 
     <div class="grid grid-cols-2 gap-3 p-3 lg:grid-cols-4">
       <div
@@ -183,44 +176,26 @@ function exportCsv() {
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-hidden px-1.5 pb-1.5">
-      <TableAppListTable
-        v-model:pagination="pagination"
-        :data="rows"
-        :columns="columns"
-      />
-    </div>
-
-    <UModal
-      v-model:open="expenseOpen"
-      :title="tx('rental.ui.addExpense', 'Add Expense')"
+    <TableAppListTable
+      v-model:search="q"
+      v-model:date-start="dateFrom"
+      v-model:date-end="dateTo"
+      v-model:pagination="pagination"
+      :data="rows"
+      :columns="columns"
+      :show-date-range="true"
+      :filters-active="Boolean(dateFrom || dateTo || typeFilter.length)"
     >
-      <template #body>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <label class="mb-1 block text-sm font-medium">{{ tx('rental.ui.date', 'Date') }} <span class="text-error">*</span></label>
-            <UInput v-model="expenseDate" type="date" class="w-full" />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-medium">{{ tx('rental.ui.expenseType', 'Expense Type') }}</label>
-            <USelect v-model="expenseType" :items="[...RENTAL_EXPENSE_TYPES]" class="w-full" />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-medium">{{ tx('rental.ui.amount', 'Amount') }} <span class="text-error">*</span></label>
-            <UInput v-model.number="expenseAmount" type="number" min="0" class="w-full" />
-          </div>
-          <div class="col-span-2">
-            <label class="mb-1 block text-sm font-medium">{{ tx('rental.ui.description', 'Description') }}</label>
-            <UInput v-model="expenseDescription" class="w-full" />
-          </div>
-        </div>
+      <template #filters="{ compact }">
+        <CommonAppFilterSelect
+          v-model="typeFilter"
+          :items="typeFilterItems"
+          :placeholder="tx('rental.ui.type', 'Type')"
+          :class="compact ? 'w-full' : 'w-40'"
+        />
       </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" :label="tx('common.actions.cancel', 'Cancel')" @click="expenseOpen = false" />
-          <UButton :loading="expenseSaving" :disabled="expenseAmount <= 0" icon="i-lucide-check" :label="tx('common.actions.save', 'Save')" @click="saveExpense" />
-        </div>
-      </template>
-    </UModal>
+    </TableAppListTable>
+
+    <RentalExpenseModal v-model:open="expenseModalOpen" />
   </div>
 </template>

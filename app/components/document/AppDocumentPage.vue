@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type {
-  ActivityEvent,
   AttachmentMeta,
   DocumentTabSchema,
-  EntityComment,
   PersonSummary,
 } from '~/types/docetra/common'
 import { useConfirm } from '~/composables/common/useConfirm'
@@ -23,7 +21,6 @@ const props = withDefaults(defineProps<{
   canSave?: boolean
   saveLabel?: string
   showSave?: boolean
-  showComments?: boolean
   showMetaRail?: boolean
   showTabs?: boolean
   showListNav?: boolean
@@ -35,16 +32,7 @@ const props = withDefaults(defineProps<{
   isCreate?: boolean
   /** Force the wider document content shell (matches App Config settings width). */
   contentWide?: boolean
-  canComment?: boolean
-  comments?: EntityComment[]
-  activity?: ActivityEvent[]
   attachments?: AttachmentMeta[]
-  commentBody?: string
-  submittingComment?: boolean
-  updatingCommentId?: string | null
-  deletingCommentId?: string | null
-  hasMoreFeed?: boolean
-  loadingMoreFeed?: boolean
   currentUser?: { id: string, name: string, email?: string }
   metaTitle?: string
   metaSubtitle?: string
@@ -70,7 +58,6 @@ const props = withDefaults(defineProps<{
   readOnly: false,
   canSave: true,
   showSave: true,
-  showComments: false,
   showMetaRail: false,
   showTabs: true,
   showListNav: false,
@@ -80,16 +67,7 @@ const props = withDefaults(defineProps<{
   listNavigationDirection: null,
   isCreate: false,
   contentWide: false,
-  canComment: true,
-  comments: () => [],
-  activity: () => [],
   attachments: () => [],
-  commentBody: '',
-  submittingComment: false,
-  updatingCommentId: null,
-  deletingCommentId: null,
-  hasMoreFeed: false,
-  loadingMoreFeed: false,
   metaTags: () => [],
   exporting: false,
   canExport: true,
@@ -99,14 +77,9 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'update:activeTab': [string]
-  'update:commentBody': [string]
   'update:attachments': [AttachmentMeta[]]
   save: []
   refresh: []
-  submitComment: []
-  updateComment: [id: string, body: string]
-  deleteComment: [id: string]
-  loadMoreFeed: []
   navigatePrevious: []
   navigateNext: []
   export: [request: ExportRequest]
@@ -279,29 +252,6 @@ async function onSaveClick() {
                   </slot>
 
                   <DocumentAppDocumentContentShell
-                    v-if="showComments && !isCreate"
-                    :wide="contentWide"
-                  >
-                    <DocumentAppCommentsActivity
-                      :comments="comments"
-                      :activity="activity"
-                      :comment-body="commentBody"
-                      :submitting="submittingComment"
-                      :updating-comment-id="updatingCommentId"
-                      :deleting-comment-id="deletingCommentId"
-                      :has-more="hasMoreFeed"
-                      :loading-more="loadingMoreFeed"
-                      :can-comment="canComment"
-                      :current-user="currentUser"
-                      @update:comment-body="emit('update:commentBody', $event)"
-                      @submit="emit('submitComment')"
-                      @update-comment="emit('updateComment', $event.id, $event.body)"
-                      @delete-comment="emit('deleteComment', $event)"
-                      @load-more="emit('loadMoreFeed')"
-                    />
-                  </DocumentAppDocumentContentShell>
-
-                  <DocumentAppDocumentContentShell
                     v-if="$slots['after-form']"
                     :wide="contentWide"
                     class="space-y-3 pb-6"
@@ -356,7 +306,6 @@ async function onSaveClick() {
             :subtitle="metaSubtitle"
             :icon="metaIcon"
             :owner="metaOwner || undefined"
-            :activity="activity"
             :created-at="metaCreatedAt"
             :updated-at="metaUpdatedAt"
           />

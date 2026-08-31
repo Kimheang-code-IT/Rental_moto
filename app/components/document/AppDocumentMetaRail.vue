@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TimelineItem } from '@nuxt/ui'
-import type { ActivityEvent, PersonSummary } from '~/types/docetra/common'
+import type { PersonSummary } from '~/types/docetra/common'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 
 const props = defineProps<{
@@ -9,7 +9,6 @@ const props = defineProps<{
   /** Module icon shown in the record tile instead of the first letter. */
   icon?: string
   owner?: PersonSummary
-  activity?: ActivityEvent[]
   createdAt?: string
   updatedAt?: string
 }>()
@@ -37,27 +36,10 @@ const initial = computed(() => {
   return text ? text.charAt(0).toUpperCase() : '—'
 })
 
-const auditItems = computed<TimelineItem[]>(() => {
-  const events = [...(props.activity || [])]
-    .sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt)))
-
-  if (events.length) {
-    return events.map((event, index) => {
-      const result = event.metadata?.result ? String(event.metadata.result) : ''
-      const remark = event.metadata?.remark ? String(event.metadata.remark) : ''
-      return {
-        value: event.id || index,
-        date: formatRelativeStamp(event.occurredAt) || event.occurredAt,
-        title: event.summary || event.action,
-        description: [event.actor?.name, result, remark].filter(Boolean).join(' · '),
-        icon: 'i-lucide-history',
-      }
-    })
-  }
-
-  const fallback: TimelineItem[] = []
+const stampItems = computed<TimelineItem[]>(() => {
+  const items: TimelineItem[] = []
   if (props.updatedAt) {
-    fallback.push({
+    items.push({
       value: 'updated',
       date: formatRelativeStamp(props.updatedAt),
       title: `${t('docetra.meta.lastEditedBy')} ${t('docetra.meta.you')}`,
@@ -65,14 +47,14 @@ const auditItems = computed<TimelineItem[]>(() => {
     })
   }
   if (props.createdAt) {
-    fallback.push({
+    items.push({
       value: 'created',
       date: formatRelativeStamp(props.createdAt),
       title: `${t('docetra.meta.createdBy')} ${props.owner?.name || t('docetra.meta.you')}`,
       icon: 'i-lucide-plus',
     })
   }
-  return fallback
+  return items
 })
 </script>
 
@@ -90,13 +72,9 @@ const auditItems = computed<TimelineItem[]>(() => {
     </section>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-      <div class="mb-3 flex items-center gap-2 text-sm text-toned">
-        <UIcon name="i-lucide-history" class="size-4 shrink-0" />
-        <span class="font-medium">{{ $t('docetra.activity.title') }}</span>
-      </div>
       <UTimeline
-        v-if="auditItems.length"
-        :items="auditItems"
+        v-if="stampItems.length"
+        :items="stampItems"
         color="neutral"
         size="xs"
         class="w-full"
@@ -108,7 +86,6 @@ const auditItems = computed<TimelineItem[]>(() => {
           description: 'text-xs text-muted',
         }"
       />
-      <p v-else class="text-xs text-muted">{{ $t('docetra.activity.empty') }}</p>
     </div>
   </aside>
 </template>

@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
+import { UBadge, ULink } from '#components'
+import type { ExportFieldOption, ExportRequest } from '~/types/docetra/export'
 import { useAppHeader } from '~/composables/layout/useAppHeader'
-import { formatMoney } from '~/composables/freight/useFreight'
+import { formatMoney } from '~/composables/module/useModule'
 import { listTableRowMetaColumn } from '~/utils/table/list-columns'
 import { downloadCsv } from '~/utils/export/csv'
+import { latestRentalPaymentMethods } from '~/utils/rental/payments'
 
 definePageMeta({ titleKey: 'rental.nav.rentalReports', permission: 'reports.view' })
 
 const { t, te } = useI18n()
-const store = useFreightStore()
+const auth = useAuthStore()
+const store = useAppDataStore()
 const preferences = usePreferencesStore()
 const { setTitle, setBreadcrumbs, clear } = useAppHeader()
 const invoiceRow = ref<Record<string, unknown> | null>(null)
+const canPrintInvoice = computed(() =>
+  auth.canAccessPage('reports.print') || auth.canAccessPage('rental.rentals.print'),
+)
 
 onBeforeUnmount(clear)
 
@@ -28,27 +35,31 @@ const money = (value: unknown, currency?: string) =>
   formatMoney(value, currency || preferences.currency)
 
 const q = ref('')
-const customer = ref<string[]>([])
 const motorcycle = ref<string[]>([])
 const paymentStatus = ref<string[]>([])
-const createdBy = ref<string[]>([])
+const paymentMethod = ref<string[]>([])
 const dateFrom = ref('')
 const dateTo = ref('')
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
 
-const completed = computed(() => store.list('rentals').filter(row => String(row.status) === 'Completed'))
+const paymentMethods = computed(() => latestRentalPaymentMethods(store.list('rentalPayments')))
+const completed = computed<Array<Record<string, unknown>>>(() => store.list('rentals')
+  .filter(row => String(row.status) === 'Completed')
+  .map(row => ({
+    ...row,
+    paymentMethod: paymentMethods.value.get(String(row.id || '')) || row.paymentMethod || '—',
+  }) as Record<string, unknown>))
 
-const customerItems = computed(() => [...new Set(completed.value.map(row => String(row.customer || '')).filter(Boolean))])
-const motorcycleItems = computed(() => [...new Set(completed.value.map(row => String(row.motorcycle || '')).filter(Boolean))])
-const paymentStatusItems = computed(() => [...new Set(completed.value.map(row => String(row.paymentStatus || 'Paid')).filter(Boolean))])
-const createdByItems = computed(() => [...new Set(completed.value.map(row => String(row.createdBy || '')).filter(Boolean))])
+const selectItems = (values: string[]) => [...new Set(values.filter(Boolean))].map(value => ({ label: value, value }))
+const motorcycleItems = computed(() => selectItems(completed.value.map(row => String(row.motorcycle || ''))))
+const paymentStatusItems = computed(() => selectItems(completed.value.map(row => String(row.paymentStatus || 'Paid'))))
+const paymentMethodItems = computed(() => selectItems(completed.value.map(row => String(row.paymentMethod || ''))))
 
 const rows = computed(() => completed.value
   .filter(row => !q.value || JSON.stringify(row).toLowerCase().includes(q.value.toLowerCase()))
-  .filter(row => !customer.value.length || customer.value.includes(String(row.customer)))
   .filter(row => !motorcycle.value.length || motorcycle.value.includes(String(row.motorcycle)))
   .filter(row => !paymentStatus.value.length || paymentStatus.value.includes(String(row.paymentStatus || 'Paid')))
-  .filter(row => !createdBy.value.length || createdBy.value.includes(String(row.createdBy)))
+  .filter(row => !paymentMethod.value.length || paymentMethod.value.includes(String(row.paymentMethod)))
   .filter((row) => {
     const day = String(row.returnDate || row.dueDate || '').slice(0, 10)
     if (!dateFrom.value && !dateTo.value) return true
@@ -59,14 +70,17 @@ const rows = computed(() => completed.value
   }))
 
 function moneyCell(row: Record<string, unknown>, key: string) {
-  return h('span', { class: 'block text-end tabular-nums' }, money(row[key], row.currency))
+  return h('span', { class: 'block text-end tabular-nums' }, money(row[key], String(row.currency || preferences.currency)))
 }
 
 const columns = computed<TableColumn<Record<string, unknown>>[]>(() => [
   {
     accessorKey: 'rentalNo',
     header: tx('rental.ui.rentalNo', 'Rental Number'),
-    cell: ({ row }) => h('span', { class: 'font-medium' }, String(row.original.rentalNo || '—')),
+    cell: ({ row }) => h(ULink, {
+      to: `/rentals/${String(row.original.id)}`,
+      class: 'font-medium text-highlighted hover:text-primary hover:underline',
+    }, () => String(row.original.rentalNo || '—')),
   },
   { accessorKey: 'customer', header: tx('rental.ui.customer', 'Customer') },
   { accessorKey: 'motorcycle', header: tx('rental.ui.motorcycle', 'Motorcycle') },
@@ -87,7 +101,7 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => [
       return h(UBadge, { color: status === 'Paid' ? 'success' : 'warning', variant: 'subtle', size: 'sm' }, () => status)
     },
   },
-  { accessorKey: 'createdBy', header: tx('rental.ui.staff', 'Staff') },
+  { accessorKey: 'paymentMethod', header: tx('rental.ui.paymentMethod', 'Payment Method') },
   listTableRowMetaColumn<Record<string, unknown>>({
     summary: '',
     items: rowMenuItems,
@@ -96,46 +110,73 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => [
 ])
 
 function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
-  return [[
+  const items: DropdownMenuItem[] = [
     {
-      label: tx('freight.ui.open', 'Open'),
+      label: tx('app.ui.open', 'Open'),
       icon: 'i-lucide-eye',
       onSelect: () => { void navigateTo(`/rentals/${String(row.id)}`) },
     },
-    {
+  ]
+  if (canPrintInvoice.value) {
+    items.push({
       label: tx('rental.ui.printInvoice', 'Print Invoice'),
       icon: 'i-lucide-printer',
       onSelect: () => { invoiceRow.value = row },
-    },
-  ]]
+    })
+  }
+  return [items]
 }
 
-function exportCsv() {
+const exportFields = computed<ExportFieldOption[]>(() => [
+  { label: tx('rental.ui.rentalNo', 'Rental Number'), value: 'rentalNo' },
+  { label: tx('rental.ui.customer', 'Customer'), value: 'customer' },
+  { label: tx('rental.ui.motorcycle', 'Motorcycle'), value: 'motorcycle' },
+  { label: tx('rental.ui.startDate', 'Start'), value: 'startDate' },
+  { label: tx('rental.ui.dueDate', 'Due'), value: 'dueDate' },
+  { label: tx('rental.ui.returnDate', 'Returned'), value: 'returnDate' },
+  { label: tx('rental.ui.rentalCharge', 'Rental Charge'), value: 'rentalCharge' },
+  { label: tx('rental.ui.lateFee', 'Late Fee'), value: 'lateFee' },
+  { label: tx('rental.ui.additionalCharges', 'Additional Charges'), value: 'additionalCharges' },
+  { label: tx('rental.ui.totalDue', 'Total'), value: 'totalDue' },
+  { label: tx('rental.ui.paid', 'Paid'), value: 'paid' },
+  { label: tx('rental.ui.outstanding', 'Outstanding'), value: 'outstanding' },
+  { label: tx('rental.ui.paymentStatus', 'Payment Status'), value: 'paymentStatus' },
+  { label: tx('rental.ui.paymentMethod', 'Payment Method'), value: 'paymentMethod' },
+])
+
+function refresh() {
+  store.reload()
+}
+
+function exportCsv(request: ExportRequest) {
+  let exportRows = [...rows.value]
+  if (request.startDate) {
+    exportRows = exportRows.filter(row => String(row.returnDate || row.dueDate || '').slice(0, 10) >= request.startDate!)
+  }
+  if (request.endDate) {
+    exportRows = exportRows.filter(row => String(row.returnDate || row.dueDate || '').slice(0, 10) <= request.endDate!)
+  }
+  if (request.scope === 'current_page') {
+    const start = pagination.value.pageIndex * pagination.value.pageSize
+    exportRows = exportRows.slice(start, start + pagination.value.pageSize)
+  }
+  const selected = new Set(request.fieldCodes)
   downloadCsv({
     filename: `rental-reports-${new Date().toISOString().slice(0, 10)}.csv`,
-    fields: [
-      { label: 'Rental Number', value: 'rentalNo' },
-      { label: 'Customer', value: 'customer' },
-      { label: 'Motorcycle', value: 'motorcycle' },
-      { label: 'Start', value: 'startDate' },
-      { label: 'Due', value: 'dueDate' },
-      { label: 'Returned', value: 'returnDate' },
-      { label: 'Rental Charge', value: 'rentalCharge' },
-      { label: 'Late Fee', value: 'lateFee' },
-      { label: 'Additional Charges', value: 'additionalCharges' },
-      { label: 'Total', value: 'totalDue' },
-      { label: 'Paid', value: 'paid' },
-      { label: 'Outstanding', value: 'outstanding' },
-      { label: 'Payment Status', value: 'paymentStatus' },
-      { label: 'Staff', value: 'createdBy' },
-    ],
-    rows: rows.value as Array<Record<string, unknown>>,
+    fields: exportFields.value.filter(field => selected.has(field.value)),
+    rows: exportRows as Array<Record<string, unknown>>,
   })
 }
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/20">
+    <LayoutAppHeaderPageActions
+      :export-fields="exportFields"
+      @refresh="refresh"
+      @export="exportCsv"
+    />
+
     <TableAppListTable
       v-model:search="q"
       v-model:date-start="dateFrom"
@@ -144,15 +185,9 @@ function exportCsv() {
       :data="rows"
       :columns="columns"
       :show-date-range="true"
-      :filters-active="Boolean(customer.length || motorcycle.length || paymentStatus.length || createdBy.length || dateFrom || dateTo)"
+      :filters-active="Boolean(motorcycle.length || paymentStatus.length || paymentMethod.length || dateFrom || dateTo)"
     >
       <template #filters="{ compact }">
-        <CommonAppFilterSelect
-          v-model="customer"
-          :items="customerItems"
-          :placeholder="tx('rental.ui.customer', 'Customer')"
-          :class="compact ? 'w-full' : 'w-40'"
-        />
         <CommonAppFilterSelect
           v-model="motorcycle"
           :items="motorcycleItems"
@@ -166,20 +201,10 @@ function exportCsv() {
           :class="compact ? 'w-full' : 'w-36'"
         />
         <CommonAppFilterSelect
-          v-model="createdBy"
-          :items="createdByItems"
-          :placeholder="tx('rental.ui.staff', 'Staff')"
+          v-model="paymentMethod"
+          :items="paymentMethodItems"
+          :placeholder="tx('rental.ui.paymentMethod', 'Payment Method')"
           :class="compact ? 'w-full' : 'w-36'"
-        />
-      </template>
-      <template #actions>
-        <UButton
-          size="sm"
-          variant="soft"
-          icon="i-lucide-download"
-          :label="tx('rental.ui.export', 'Export')"
-          class="shrink-0"
-          @click="exportCsv"
         />
       </template>
     </TableAppListTable>

@@ -17,6 +17,9 @@ const props = withDefaults(defineProps<{
   createIcon?: string
   createButtons?: Array<{ label: string, icon?: string }>
   refreshing?: boolean
+  showRefresh?: boolean
+  showMoreActions?: boolean
+  allowPrintInMore?: boolean
   moreItems?: DropdownMenuItem[][]
   exportFields?: ExportFieldOption[]
   selectedCount?: number
@@ -41,6 +44,9 @@ const props = withDefaults(defineProps<{
   createIcon: 'i-lucide-plus',
   createButtons: () => [],
   refreshing: false,
+  showRefresh: true,
+  showMoreActions: true,
+  allowPrintInMore: false,
   moreItems: () => [],
   exportFields: () => [],
   selectedCount: 0,
@@ -110,12 +116,14 @@ function withoutPrint(items: DropdownMenuItem[][]): DropdownMenuItem[][] {
 }
 
 const menuItems = computed(() => {
+  if (!props.showMoreActions) return []
   const custom = props.moreItems || []
   const exportItem = defaultMoreItems.value[0] || []
-  return withoutPrint([
+  const groups = [
     [...exportItem, ...(custom[0] || [])],
     ...custom.slice(1),
-  ])
+  ]
+  return props.allowPrintInMore ? groups.filter(group => group.length > 0) : withoutPrint(groups)
 })
 
 function submitExport(request: ExportRequest) {
@@ -141,6 +149,7 @@ function syncActions() {
     createIcon: props.createIcon || 'i-lucide-plus',
     createButtons,
     refreshing: Boolean(props.refreshing),
+    showRefresh: props.showRefresh,
     moreItems: menuItems.value,
     listNav: props.showListNav
       ? {
@@ -199,6 +208,8 @@ watch(
     props.createIcon,
     props.createButtons,
     props.refreshing,
+    props.showRefresh,
+    props.showMoreActions,
     menuItems.value,
     props.showListNav,
     props.listTo,

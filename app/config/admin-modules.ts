@@ -1,10 +1,10 @@
 import { DOCUMENT_SEQUENCE_STATUSES, DOCUMENT_SEQUENCE_TYPES } from '~/utils/document-sequences'
-import type { FreightField, FreightModule } from './freight-modules'
-import { ACTIVE_STATUS, COUNTRIES, CURRENCIES, TIMEZONES } from './freight-options'
+import type { ModuleField, ModuleConfig } from './modules'
+import { ACTIVE_STATUS } from './shared-options'
 
 /** Administration modules recovered from the template's admin catalog. */
 
-type RentalFieldType = FreightField['type']
+type RentalFieldType = ModuleField['type']
 type RentalSelectOption = string | { label: string, value: string }
 
 const f = (
@@ -15,17 +15,17 @@ const f = (
   sectionKm = 'ព័ត៌មានទូទៅ',
   type: RentalFieldType = 'text',
   options?: readonly RentalSelectOption[] | RentalSelectOption[],
-  extra: Partial<FreightField> = {},
-): FreightField => ({ key, label, labelKm, section, sectionKm, type, options, ...extra })
+  extra: Partial<ModuleField> = {},
+): ModuleField => ({ key, label, labelKm, section, sectionKm, type, options, ...extra })
 
-const col = (key: string, label: string, labelKm?: string, extra: Partial<FreightField> = {}): FreightField => ({
+const col = (key: string, label: string, labelKm?: string, extra: Partial<ModuleField> = {}): ModuleField => ({
   key,
   label,
   labelKm: labelKm || label,
   ...extra,
 })
 
-function createModule(partial: Omit<FreightModule, 'canCreate'> & { canCreate?: boolean }): FreightModule {
+function createModule(partial: Omit<ModuleConfig, 'canCreate'> & { canCreate?: boolean }): ModuleConfig {
   return {
     canCreate: partial.readOnly ? false : partial.canCreate !== false,
     kind: partial.kind || 'standard',
@@ -33,87 +33,7 @@ function createModule(partial: Omit<FreightModule, 'canCreate'> & { canCreate?: 
   }
 }
 
-const YES_NO = ['Yes', 'No'] as const
-
-export const adminModules: FreightModule[] = [
-  createModule({
-    path: '/administration/organizations',
-    title: 'Organizations',
-    titleKm: 'អង្គភាព',
-    singular: 'Organization',
-    singularKm: 'អង្គភាព',
-    description: 'Legal organization, localization and default accounting context.',
-    descriptionKm: 'អង្គភាពផ្លូវការ ភាសា និងបរិបទគណនេយ្យលំនាំដើម។',
-    icon: 'i-lucide-landmark',
-    group: 'admin',
-    permission: 'admin.organization.view',
-    collection: 'organizations',
-    titleField: 'displayName',
-    canCreate: true,
-    columns: [
-      col('organizationCode', 'Organization Code', 'លេខកូដអង្គភាព'),
-      col('legalName', 'Legal Name', 'ឈ្មោះផ្លូវការ'),
-      col('displayName', 'Display Name', 'ឈ្មោះបង្ហាញ'),
-      col('taxIdentifier', 'Tax Identifier', 'លេខសម្គាល់ពន្ធ'),
-      col('country', 'Country', 'ប្រទេស'),
-      col('defaultCurrency', 'Default Currency', 'រូបិយប័ណ្ណលំនាំដើម'),
-      col('timezone', 'Timezone', 'តំបន់ពេលវេលា'),
-      col('status', 'Status', 'ស្ថានភាព'),
-    ],
-    fields: [
-      f('organizationCode', 'Organization Code', 'លេខកូដអង្គភាព', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
-      f('legalName', 'Legal Name', 'ឈ្មោះផ្លូវការ', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
-      f('displayName', 'Display Name', 'ឈ្មោះបង្ហាញ', 'General', 'ទូទៅ'),
-      f('taxIdentifier', 'Tax Identifier', 'លេខសម្គាល់ពន្ធ', 'General', 'ទូទៅ'),
-      f('country', 'Country', 'ប្រទេស', 'General', 'ទូទៅ', 'select', COUNTRIES),
-      f('defaultCurrency', 'Default Currency', 'រូបិយប័ណ្ណលំនាំដើម', 'General', 'ទូទៅ', 'select', CURRENCIES),
-      f('timezone', 'Timezone', 'តំបន់ពេលវេលា', 'General', 'ទូទៅ', 'select', TIMEZONES),
-      f('status', 'Status', 'ស្ថានភាព', 'Status', 'ស្ថានភាព', 'select', ACTIVE_STATUS),
-    ],
-    filters: [
-      f('country', 'Country', 'ប្រទេស', '', '', 'select', COUNTRIES),
-      f('status', 'Status', 'ស្ថានភាព', '', '', 'select', ACTIVE_STATUS),
-    ],
-  }),
-  createModule({
-    path: '/administration/branches',
-    title: 'Branches',
-    titleKm: 'សាខា',
-    singular: 'Branch',
-    singularKm: 'សាខា',
-    description: 'Branch ownership, location and contact context.',
-    descriptionKm: 'កម្មសិទ្ធិសាខា ទីតាំង និងព័ត៌មានទំនាក់ទំនង។',
-    icon: 'i-lucide-git-branch',
-    group: 'admin',
-    permission: 'admin.organization.view',
-    collection: 'branches',
-    titleField: 'name',
-    canCreate: true,
-    columns: [
-      col('branchCode', 'Branch Code', 'លេខកូដសាខា'),
-      col('name', 'Name', 'ឈ្មោះ'),
-      col('organizationName', 'Organization', 'អង្គភាព'),
-      col('place', 'Place', 'ទីកន្លែង'),
-      col('phone', 'Phone', 'ទូរស័ព្ទ'),
-      col('email', 'Email', 'អ៊ីមែល'),
-      col('headOffice', 'Head Office', 'ការិយាល័យកណ្តាល'),
-      col('status', 'Status', 'ស្ថានភាព'),
-    ],
-    fields: [
-      f('branchCode', 'Branch Code', 'លេខកូដសាខា', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
-      f('name', 'Name', 'ឈ្មោះ', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
-      f('organizationName', 'Organization', 'អង្គភាព', 'General', 'ទូទៅ'),
-      f('place', 'Place', 'ទីកន្លែង', 'General', 'ទូទៅ'),
-      f('phone', 'Phone', 'ទូរស័ព្ទ', 'General', 'ទូទៅ'),
-      f('email', 'Email', 'អ៊ីមែល', 'General', 'ទូទៅ'),
-      f('address', 'Address', 'អាសយដ្ឋាន', 'General', 'ទូទៅ', 'textarea', undefined, { colSpan: 2 }),
-      f('headOffice', 'Head Office', 'ការិយាល័យកណ្តាល', 'Status', 'ស្ថានភាព', 'checkbox', YES_NO),
-      f('status', 'Status', 'ស្ថានភាព', 'Status', 'ស្ថានភាព', 'select', ACTIVE_STATUS),
-    ],
-    filters: [
-      f('status', 'Status', 'ស្ថានភាព', '', '', 'select', ACTIVE_STATUS),
-    ],
-  }),
+export const adminModules: ModuleConfig[] = [
   createModule({
     path: '/administration/users',
     title: 'Users',
@@ -128,24 +48,26 @@ export const adminModules: FreightModule[] = [
     collection: 'users',
     titleField: 'displayName',
     columns: [
-      col('userCode', 'User Code', 'លេខកូដអ្នកប្រើ'),
       col('username', 'Username', 'ឈ្មោះអ្នកប្រើ'),
       col('displayName', 'Display Name', 'ឈ្មោះបង្ហាញ'),
       col('email', 'Email', 'អ៊ីមែល'),
-      col('phone', 'Phone', 'ទូរស័ព្ទ'),
+      col('role', 'Role', 'តួនាទី', { labelKey: 'docetra.fields.roleAssignments' }),
       col('status', 'Status', 'ស្ថានភាព'),
-      col('defaultBranch', 'Default Branch', 'សាខាលំនាំដើម'),
       col('lastLogin', 'Last Login', 'ចូលចុងក្រោយ'),
     ],
     fields: [
-      f('userCode', 'User Code', 'លេខកូដអ្នកប្រើ', 'General', 'ទូទៅ'),
-      f('username', 'Username', 'ឈ្មោះអ្នកប្រើ', 'General', 'ទូទៅ'),
-      f('displayName', 'Display Name', 'ឈ្មោះបង្ហាញ', 'General', 'ទូទៅ'),
-      f('email', 'Email', 'អ៊ីមែល', 'General', 'ទូទៅ'),
-      f('telegram', 'Telegram', 'តេលេក្រាម', 'General', 'ទូទៅ'),
-      f('organization', 'Organization', 'អង្គភាព', 'General', 'ទូទៅ'),
-      f('branch', 'Branch', 'សាខា', 'General', 'ទូទៅ'),
-      f('role', 'Role Name', 'ឈ្មោះតួនាទី', 'General', 'ទូទៅ'),
+      f('username', 'Username', 'ឈ្មោះអ្នកប្រើ', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
+      f('displayName', 'Display Name', 'ឈ្មោះបង្ហាញ', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
+      f('email', 'Email', 'អ៊ីមែល', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
+      f('password', 'Password', 'ពាក្យសម្ងាត់', 'General', 'ទូទៅ', 'password', undefined, {
+        required: true,
+        help: 'Login password for this user. Keep it confidential.',
+      }),
+      f('role', 'Role', 'តួនាទី', 'General', 'ទូទៅ', 'select', undefined, {
+        required: true,
+        labelKey: 'docetra.fields.roleAssignments',
+        optionsCollection: 'roles',
+      }),
       f('status', 'Status', 'ស្ថានភាព', 'General', 'ទូទៅ', 'select', ACTIVE_STATUS),
     ],
   }),
@@ -164,16 +86,22 @@ export const adminModules: FreightModule[] = [
     documentForm: 'roles',
     titleField: 'name',
     columns: [
-      col('name', 'Role name', 'ឈ្មោះតួនាទី'),
+      col('name', 'Role name', 'ឈ្មោះតួនាទី', { labelKey: 'app.modules.roles.fields.name' }),
+      col('description', 'Description', 'បរិយាយ', { labelKey: 'app.fields.description' }),
       col('userCount', 'Users', 'អ្នកប្រើ'),
       col('permissionCount', 'Permissions', 'សិទ្ធិ'),
       col('status', 'Status', 'ស្ថានភាព'),
     ],
     fields: [
-      f('code', 'Code', 'លេខកូដ', 'Main information', 'ព័ត៌មានទូទៅ', 'text', undefined, { required: true }),
-      f('name', 'Role name', 'ឈ្មោះតួនាទី', 'Main information', 'ព័ត៌មានទូទៅ', 'text', undefined, { required: true }),
-      f('status', 'Status', 'ស្ថានភាព', 'Main information', 'ព័ត៌មានទូទៅ', 'select', ACTIVE_STATUS, { colSpan: 2 }),
-      f('description', 'Description', 'បរិយាយ', 'Main information', 'ព័ត៌មានទូទៅ', 'textarea', undefined, { colSpan: 2 }),
+      f('name', 'Role name', 'ឈ្មោះតួនាទី', 'Main information', 'ព័ត៌មានទូទៅ', 'text', undefined, {
+        required: true,
+        labelKey: 'app.modules.roles.fields.name',
+      }),
+      f('status', 'Status', 'ស្ថានភាព', 'Main information', 'ព័ត៌មានទូទៅ', 'select', ACTIVE_STATUS),
+      f('description', 'Description', 'បរិយាយ', 'Main information', 'ព័ត៌មានទូទៅ', 'textarea', undefined, {
+        colSpan: 2,
+        labelKey: 'app.fields.description',
+      }),
     ],
   }),
   createModule({
@@ -186,7 +114,7 @@ export const adminModules: FreightModule[] = [
     descriptionKm: 'គ្រប់គ្រងលេខឯកសារស្វ័យប្រវត្តិតាមអង្គភាព ប្រភេទឯកសារ និងឆ្នាំ។',
     icon: 'i-lucide-list-ordered',
     group: 'admin',
-    permission: 'configuration.manage',
+    permission: 'configuration.view',
     collection: 'documentSequences',
     titleField: 'documentType',
     canCreate: true,
@@ -238,8 +166,6 @@ export const adminModules: FreightModule[] = [
       col('action', 'Action', 'សកម្មភាព'),
       col('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ'),
       col('entity', 'Entity', 'អង្គភាពទិន្នន័យ'),
-      col('organizationName', 'Organization', 'អង្គភាព'),
-      col('branchName', 'Branch', 'សាខា'),
       col('result', 'Result', 'លទ្ធផល'),
       col('reason', 'Reason', 'មូលហេតុ'),
       col('requestId', 'Request ID', 'លេខសំណើ'),
@@ -251,8 +177,6 @@ export const adminModules: FreightModule[] = [
       f('action', 'Action', 'សកម្មភាព', 'Log', 'កំណត់ហេតុ'),
       f('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ', 'Entity', 'អង្គភាពទិន្នន័យ'),
       f('entity', 'Entity', 'អង្គភាពទិន្នន័យ', 'Entity', 'អង្គភាពទិន្នន័យ'),
-      f('organizationName', 'Organization', 'អង្គភាព', 'Scope', 'វិសាលភាព'),
-      f('branchName', 'Branch', 'សាខា', 'Scope', 'វិសាលភាព'),
       f('result', 'Result', 'លទ្ធផល', 'Result', 'លទ្ធផល'),
       f('reason', 'Reason', 'មូលហេតុ', 'Result', 'លទ្ធផល', 'textarea'),
       f('requestId', 'Request ID', 'លេខសំណើ', 'Traceability', 'ការតាមដាន'),
@@ -265,12 +189,10 @@ export const adminModules: FreightModule[] = [
       f('user', 'Actor', 'អ្នកប្រើ', '', ''),
       f('eventType', 'Event Type', 'ប្រភេទព្រឹត្តិការណ៍', '', ''),
       f('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ', '', ''),
-      f('organizationName', 'Organization', 'អង្គភាព', '', ''),
-      f('branchName', 'Branch', 'សាខា', '', ''),
       f('result', 'Result', 'លទ្ធផល', '', '', 'select', ['SUCCESS', 'FAILED', 'DENIED']),
     ],
   }),
 ]
 
 /** Field helper re-export keeps admin module field types explicit. */
-export type { FreightField }
+export type { ModuleField }

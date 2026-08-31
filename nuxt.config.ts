@@ -4,7 +4,6 @@
 export default defineNuxtConfig({
   modules: [
     '@nuxt/ui',
-    '@nuxt/image',
     '@vueuse/nuxt',
     '@nuxtjs/i18n',
     '@nuxt/fonts',
@@ -20,7 +19,11 @@ export default defineNuxtConfig({
       },
       meta: [
         { name: 'format-detection', content: 'telephone=no' },
-        { name: 'theme-color', content: '#0f766e' },
+        { name: 'theme-color', content: '#000000' },
+        {
+          name: 'description',
+          content: 'HollyWing Motor — motorcycle rental management for fleet, customers, rentals, income & expense, and reports.',
+        },
       ],
       link: [
         { rel: 'icon', type: 'image/png', href: '/logo.png' },
@@ -175,10 +178,6 @@ export default defineNuxtConfig({
         'echarts/renderers',
         'vue-echarts',
       ],
-    },
-    css: {
-      // Silence noisy Uppy package sourcemap warnings in dev
-      devSourcemap: false,
     },
   }
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filePreviewBlob, mimeFromFileName, mockPdfBytes } from '../app/utils/freight/attachments'
+import { filePreviewBlob, mimeFromFileName, mockPdfBytes } from '../app/utils/module/attachments'
 import { safeExternalUrl, safeFilePreviewUrl } from '../app/utils/security/url'
 
 describe('file preview', () => {

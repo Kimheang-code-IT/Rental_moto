@@ -3,5 +3,5 @@ definePageMeta({ titleKey: 'rental.pages.motorcycles', permission: 'rental.motor
 </script>
 
 <template>
-  <FreightModulePage />
+  <ModulePage />
 </template>

@@ -1,4 +1,4 @@
-import type { FreightRecord } from '~/config/freight-seed'
+import type { AppRecord } from '~/config/admin-seed'
 
 export const DOCUMENT_SEQUENCE_TYPES = [
   'QUOTATION',
@@ -51,7 +51,7 @@ export function documentSequencePreview(record: Record<string, unknown>) {
   return [prefix, year, String(next).padStart(padding, '0')].filter(Boolean).join('-')
 }
 
-export function normalizeDocumentSequenceRecord(record: FreightRecord): FreightRecord {
+export function normalizeDocumentSequenceRecord(record: AppRecord): AppRecord {
   const documentType = LEGACY_TYPES[String(record.documentType || '')] || String(record.documentType || '')
   return {
     ...record,

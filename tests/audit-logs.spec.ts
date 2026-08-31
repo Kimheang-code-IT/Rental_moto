@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { FreightModule } from '../app/config/freight-modules'
-import { normalizeAuditLog, resolveAuditEntityPath } from '../app/utils/freight/audit-logs'
+import type { ModuleConfig } from '../app/config/modules'
+import { normalizeAuditLog, resolveAuditEntityPath } from '../app/utils/module/audit-logs'
 
-const moduleStub = (partial: Partial<FreightModule>): FreightModule => ({
-  path: '/service-orders', title: 'Service Orders', titleKm: '', singular: 'Service Order', singularKm: '',
-  description: '', descriptionKm: '', icon: '', group: 'operations', permission: 'operations.service_orders.view',
-  collection: 'jobs', titleField: 'jobNo', columns: [], fields: [], canCreate: true, kind: 'job',
+const moduleStub = (partial: Partial<ModuleConfig>): ModuleConfig => ({
+  path: '/rentals', title: 'Rentals', titleKm: '', singular: 'Rental', singularKm: '',
+  description: '', descriptionKm: '', icon: '', group: 'rental', permission: 'rental.rentals.view',
+  collection: 'rentals', titleField: 'rentalNo', columns: [], fields: [], canCreate: true,
   ...partial,
 })
 
@@ -18,12 +18,12 @@ describe('audit log table logic', () => {
 
   it('links an entity to an existing accessible record', () => {
     const path = resolveAuditEntityPath(
-      { id: 'log-1', entityType: 'Service Order', entity: 'JOB-1' },
+      { id: 'log-1', entityType: 'Rental', entity: 'RNT-001' },
       [moduleStub({})],
-      collection => collection === 'jobs' ? [{ id: 'job-1', jobNo: 'JOB-1' }] : [],
+      collection => collection === 'rentals' ? [{ id: 'rent-1', rentalNo: 'RNT-001' }] : [],
       () => true,
     )
-    expect(path).toBe('/service-orders/job-1')
+    expect(path).toBe('/rentals/rent-1')
   })
 
   it('does not create broken or unauthorized links', () => {

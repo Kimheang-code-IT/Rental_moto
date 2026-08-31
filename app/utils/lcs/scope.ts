@@ -1,4 +1,4 @@
-import type { FreightRecord } from '~/config/freight-seed'
+import type { AppRecord } from '~/config/admin-seed'
 import type { LcsSession } from '~/types/lcs/session'
 import { domainError } from '~/utils/lcs/errors'
 
@@ -43,7 +43,7 @@ export function filterScopedRecords<T extends Record<string, unknown>>(rows: T[]
   return rows.filter(row => isRecordVisible(row, session))
 }
 
-export function assertRecordAccess(record: FreightRecord | Record<string, unknown> | null | undefined, session: LcsSession) {
+export function assertRecordAccess(record: AppRecord | Record<string, unknown> | null | undefined, session: LcsSession) {
   if (!record) {
     throw domainError('REFERENCE_NOT_FOUND', 'The requested record was not found.', { statusCode: 404 })
   }

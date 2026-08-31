@@ -8,17 +8,11 @@ const outPath = join(root, 'public', 'og-image.png')
 
 const WIDTH = 1200
 const HEIGHT = 630
-const LOGO_MAX_HEIGHT = 300
+const LOGO_MAX_HEIGHT = 420
 
+// Match the HollyWing logo plate (gold mark on black).
 const background = Buffer.from(`<svg width="${WIDTH}" height="${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fce8e4"/>
-      <stop offset="45%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#f5f0ee"/>
-    </linearGradient>
-  </defs>
-  <rect width="100%" height="100%" fill="url(#bg)"/>
+  <rect width="100%" height="100%" fill="#000000"/>
 </svg>`)
 
 const logo = await sharp(logoPath)
@@ -37,4 +31,4 @@ await sharp(background)
   .png()
   .toFile(outPath)
 
-console.log(`Wrote ${outPath} (${WIDTH}x${HEIGHT})`)
+console.log(`Wrote ${outPath} (${WIDTH}x${HEIGHT}) from public/logo.png`)

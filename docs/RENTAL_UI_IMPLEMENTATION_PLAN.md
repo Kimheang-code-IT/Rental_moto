@@ -22,8 +22,8 @@ The template is **config-driven**; we add modules, not bespoke pages:
 |---|---|---|
 | Module config factory (`createModule`, `f()`, `col()`) | `app/config/freight-modules.ts` | New `app/config/rental-modules.ts` defining Motorcycle, Customer, Rental |
 | Generic list/form/detail renderer | `app/components/freight/ModulePage.vue`, `WorkspaceView.vue` | All rental list + detail screens |
-| Dashboard kit | `DashboardAppKpiSection`, `DashboardAppChartGrid`, `DashboardAppChartPanel`, `DashboardAppEChart` (`app/components/dashboard/`) | Rental dashboard (spec §4) |
-| Table kit | `app/components/table/AppListTable.vue`, `app/utils/table/*` (badges, pagination, row-meta) | All tables incl. Active Rental preview |
+| Dashboard kit | `DashboardAppKpiSection`, `DashboardAppSummaryCard`, `DashboardAppEChart` (`app/components/dashboard/`) | Rental dashboard (spec §4) |
+| Table kit | `app/components/table/AppListTable.vue`, `app/utils/table/*` (badges, pagination, row actions) | All tables incl. Active Rental preview |
 | Form kit | `FieldGrid.vue`, `FieldInput.vue`, `AppDocumentForm.vue` | Motorcycle/Customer/Rental forms |
 | Dialogs | `AppConfirmDialog`, `AppExportDialog`, `AppDatePickerPopover`, `AppDateRangeFilter` | Close-rental confirm, exports, filters |
 | Settings page | `app/components/settings/SystemSettingsPage.vue` + `app/config/settings-schemas.ts` (`systemSettingsTabs` = filtered `appConfigTabs`) | Trim to exactly 3 tabs (spec §22) |
@@ -144,7 +144,7 @@ Mostly **exists**; changes are trims/labels:
 
 ### Phase 2H — States, responsive, polish (spec §23/§24 + ERP pattern §22)
 - Empty states: Khmer messages, e.g. `មិនមានការជួលកំពុងដំណើរការ` on Rentals; loading skeletons (template pattern); retryable error banners.
-- Responsive pass: tables → horizontal scroll, action column → three-dot menu on mobile (template already does this via row-meta), dashboard stacks.
+- Responsive pass: tables → horizontal scroll, action column → three-dot menu on mobile, dashboard stacks.
 - Print stylesheet for invoice only.
 - **Branding → HollyWing Motor** (owner decision; logo provided at
   `app/assets/images/m-logo.png`):

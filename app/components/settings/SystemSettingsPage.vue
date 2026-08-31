@@ -24,13 +24,17 @@ const testingTelegram = ref(false)
 const activeTab = ref('localization')
 const model = ref<AppConfig | null>(null)
 
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback
+}
+
 async function load() {
   pending.value = true
   try {
     model.value = await appConfig.get()
   }
-  catch (e: any) {
-    toast.add({ title: e?.message || t('docetra.common.loadFailed'), color: 'error' })
+  catch (error: unknown) {
+    toast.add({ title: errorMessage(error, t('docetra.common.loadFailed')), color: 'error' })
   }
   finally {
     pending.value = false
@@ -89,18 +93,18 @@ async function setFieldValue(key: string, value: unknown) {
       })
       if (!ok) return
     }
-    setByPath(model.value as any, key, value)
+    setByPath(model.value, key, value)
     return
   }
 
   if (key === 'general.defaultPageSize' || key === 'system.paginationDefault' || key === 'localization.firstDayOfWeek') {
     const n = Number(value)
     const fallback = key === 'localization.firstDayOfWeek' ? 1 : 20
-    setByPath(model.value as any, key, Number.isFinite(n) ? n : fallback)
+    setByPath(model.value, key, Number.isFinite(n) ? n : fallback)
     return
   }
 
-  setByPath(model.value as any, key, value)
+  setByPath(model.value, key, value)
 }
 
 async function save() {
@@ -112,8 +116,8 @@ async function save() {
     usePreferencesStore().syncLocaleWithConfig()
     toast.add({ title: t('docetra.common.saved'), color: 'success' })
   }
-  catch (e: any) {
-    toast.add({ title: e?.message || t('docetra.common.saveFailed'), color: 'error' })
+  catch (error: unknown) {
+    toast.add({ title: errorMessage(error, t('docetra.common.saveFailed')), color: 'error' })
   }
   finally {
     saving.value = false
@@ -153,20 +157,19 @@ async function testTelegram() {
 }
 
 onMounted(() => void load())
-useAppPageTitle(() => t('freight.pages.settings'))
+useAppPageTitle(() => t('app.pages.settings'))
 </script>
 
 <template>
   <DocumentAppDocumentPage
-    :tabs="systemSettingsTabs"
     v-model:active-tab="activeTab"
+    :tabs="systemSettingsTabs"
     :field-value="fieldValue"
     :set-field-value="setFieldValue"
     :pending="pending || !model"
     :saving="saving"
     :read-only="!canEdit"
     :can-save="canEdit"
-    :show-comments="false"
     :show-list-nav="false"
     content-wide
     @save="save"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-definePageMeta({ titleKey: 'freight.pages.documentSequences', permission: 'configuration.manage' })
+definePageMeta({ titleKey: 'app.pages.documentSequences', permission: 'configuration.view' })
 </script>
 
 <template>
-  <FreightModulePage />
+  <ModulePage />
 </template>

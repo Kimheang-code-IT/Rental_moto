@@ -16,7 +16,6 @@ describe('mock login accounts', () => {
 
     const deniedPrefixes = ['configuration.', 'admin.', 'settings.']
     for (const key of user?.permissions || []) {
-      expect(key).not.toBe('configuration.manage')
       expect(deniedPrefixes.some(prefix => key.startsWith(prefix))).toBe(false)
     }
 

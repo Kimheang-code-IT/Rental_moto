@@ -124,10 +124,18 @@ function submit() {
 
     <template #footer>
       <div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" :disabled="loading" @click="open = false">
+        <UButton
+color="neutral"
+variant="ghost"
+:disabled="loading"
+@click="open = false">
           {{ $t('actions.cancel') }}
         </UButton>
-        <UButton icon="i-lucide-download" :loading="loading" :disabled="!canSubmit" @click="submit">
+        <UButton
+icon="i-lucide-download"
+:loading="loading"
+:disabled="!canSubmit"
+@click="submit">
           {{ $t('actions.export') }}
         </UButton>
       </div>

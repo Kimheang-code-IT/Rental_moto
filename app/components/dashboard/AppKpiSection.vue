@@ -8,7 +8,6 @@ export type DashboardKpiCard = {
 }
 
 withDefaults(defineProps<{
-  title: string
   cards: DashboardKpiCard[]
   loading?: boolean
 }>(), {
@@ -22,9 +21,6 @@ const emit = defineEmits<{
 
 <template>
   <section class="shrink-0">
-    <h2 class="px-0.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
-      {{ title }}
-    </h2>
     <div class="mt-1 grid grid-cols-2 gap-2 lg:grid-cols-4">
       <DashboardAppSummaryCard
         v-for="card in cards"

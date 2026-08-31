@@ -26,6 +26,7 @@ export function compactAuthUser(user: AuthUser): AuthUser {
 /** Allow application-relative navigation only; rejects protocol-relative, control chars, and /auth/ loops. */
 export function safeInternalPath(value: unknown): string | null {
   const raw = typeof value === 'string' ? value.trim() : ''
-  if (!raw.startsWith('/') || raw.startsWith('//') || /[\u0000-\u001f]/.test(raw) || raw.startsWith('/auth/')) return null
+  const containsControlCharacter = [...raw].some(character => character.charCodeAt(0) <= 31)
+  if (!raw.startsWith('/') || raw.startsWith('//') || containsControlCharacter || raw.startsWith('/auth/')) return null
   return raw
 }

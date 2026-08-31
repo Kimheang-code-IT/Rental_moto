@@ -64,18 +64,21 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
     <UAuthForm
       :schema="schema"
       :title="t('pages.forgetPassword.title')"
-      icon="i-lucide-key-round"
+      icon="i-lucide-send"
       :fields="fields"
       :loading="submitting"
       :submit="{
         label: t('pages.forgetPassword.submitBtn'),
         class: 'w-full h-10! text-xl font-normal',
         loading: submitting,
+        icon: 'i-lucide-send',
       }"
       @submit="onSubmit"
     >
       <template #leading>
-        <img src="/assets/images/logo.png" alt="Logo" class="mx-auto h-20 w-auto">
+        <div class="mx-auto flex size-24 items-center justify-center overflow-hidden">
+          <img src="/logo.png" alt="HollyWing Motor" class="h-full w-full object-contain p-1">
+        </div>
       </template>
 
       <template #description>

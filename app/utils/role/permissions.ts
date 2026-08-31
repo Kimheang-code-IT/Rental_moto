@@ -1,19 +1,17 @@
 import type { AppRolePermissionRow } from '~/types/docetra/entities'
 
-/** Canonical action codes accepted by the future authorization API. */
+/**
+ * Actions used by HollyWing Motor page authorization.
+ * Keys expand to `{permissionPrefix}.{action}` (e.g. rental.motorcycles.view).
+ */
 export const ROLE_PERMISSION_ACTIONS = [
   'view',
   'create',
   'edit',
-  'archive',
-  'restore',
   'delete',
-  'purge',
-  'assign',
-  'share',
   'export',
-  'comment',
-  'transition',
+  'print',
+  'return',
   'configure',
 ] as const
 
@@ -26,22 +24,30 @@ export interface RoleDocumentTypeDefinition {
   actions: readonly RolePermissionAction[]
 }
 
-/** Matrix rows map to the same namespace used by page and API authorization. */
-const FREIGHT_ACTIONS: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'delete', 'export']
-const FREIGHT_VIEW_ACTIONS: readonly RolePermissionAction[] = ['view', 'export']
+const CRUD: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'delete']
+const CRUD_EXPORT: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'delete', 'export']
+const RENTALS: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'delete', 'export', 'print', 'return']
+const VIEW_EXPORT: readonly RolePermissionAction[] = ['view', 'export']
+const VIEW_EXPORT_PRINT: readonly RolePermissionAction[] = ['view', 'export', 'print']
+const FINANCE: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'export']
+const SETTINGS: readonly RolePermissionAction[] = ['view', 'edit', 'configure']
 
+/**
+ * One matrix row per app page / menu entry.
+ * Keep in sync with `useMenu` routes and `definePageMeta({ permission })`.
+ */
 export const ROLE_DOCUMENT_TYPES: readonly RoleDocumentTypeDefinition[] = [
-  { value: 'dashboard', labelKey: 'freight.pages.dashboard', permissionPrefix: 'dashboard', actions: ['view'] },
-  { value: 'rental_motorcycles', labelKey: 'rental.pages.motorcycles', permissionPrefix: 'rental.motorcycles', actions: FREIGHT_ACTIONS },
-  { value: 'rental_customers', labelKey: 'rental.pages.customers', permissionPrefix: 'rental.customers', actions: FREIGHT_ACTIONS },
-  { value: 'rental_rentals', labelKey: 'rental.pages.rentals', permissionPrefix: 'rental.rentals', actions: FREIGHT_ACTIONS },
-  { value: 'rental_finance', labelKey: 'rental.pages.incomeExpense', permissionPrefix: 'rental.finance', actions: ['view', 'create', 'export'] },
-  { value: 'reports', labelKey: 'rental.nav.rentalReports', permissionPrefix: 'reports', actions: FREIGHT_VIEW_ACTIONS },
-  { value: 'admin_organization', labelKey: 'freight.pages.organizations', permissionPrefix: 'admin.organization', actions: FREIGHT_VIEW_ACTIONS },
-  { value: 'admin_users', labelKey: 'freight.pages.users', permissionPrefix: 'admin.users', actions: FREIGHT_ACTIONS },
-  { value: 'admin_roles', labelKey: 'freight.pages.roles', permissionPrefix: 'admin.roles', actions: FREIGHT_ACTIONS },
-  { value: 'admin_audit', labelKey: 'freight.pages.auditLogs', permissionPrefix: 'admin.audit_logs', actions: FREIGHT_VIEW_ACTIONS },
-  { value: 'app_config', labelKey: 'docetra.pages.appConfig', permissionPrefix: 'settings.app_config', actions: ['view', 'edit', 'configure'] },
+  { value: 'dashboard', labelKey: 'app.pages.dashboard', permissionPrefix: 'dashboard', actions: ['view'] },
+  { value: 'rental_motorcycles', labelKey: 'rental.pages.motorcycles', permissionPrefix: 'rental.motorcycles', actions: CRUD_EXPORT },
+  { value: 'rental_customers', labelKey: 'rental.pages.customers', permissionPrefix: 'rental.customers', actions: CRUD_EXPORT },
+  { value: 'rental_rentals', labelKey: 'rental.pages.rentals', permissionPrefix: 'rental.rentals', actions: RENTALS },
+  { value: 'rental_finance', labelKey: 'rental.pages.incomeExpense', permissionPrefix: 'rental.finance', actions: FINANCE },
+  { value: 'reports', labelKey: 'rental.nav.rentalReports', permissionPrefix: 'reports', actions: VIEW_EXPORT_PRINT },
+  { value: 'admin_users', labelKey: 'app.pages.users', permissionPrefix: 'admin.users', actions: CRUD },
+  { value: 'admin_roles', labelKey: 'app.pages.roles', permissionPrefix: 'admin.roles', actions: CRUD },
+  { value: 'admin_sequences', labelKey: 'app.pages.documentSequences', permissionPrefix: 'configuration', actions: CRUD },
+  { value: 'app_config', labelKey: 'app.pages.settings', permissionPrefix: 'settings.app_config', actions: SETTINGS },
+  { value: 'admin_audit', labelKey: 'app.pages.auditLogs', permissionPrefix: 'admin.audit_logs', actions: VIEW_EXPORT },
 ] as const
 
 const ACTION_SET = new Set<string>(ROLE_PERMISSION_ACTIONS)
@@ -49,9 +55,14 @@ const LEGACY_ACTION_MAP: Record<string, RolePermissionAction | undefined> = {
   select: 'view',
   read: 'view',
   write: 'edit',
-  email: 'comment',
+  manage: 'edit',
+  archive: 'delete',
+  purge: 'delete',
+  share: 'export',
   report: 'view',
   import: 'create',
+  transition: 'edit',
+  assign: 'edit',
   mask: 'view',
 }
 
@@ -80,8 +91,8 @@ export function normalizePermissionRows(
     return {
       id: existing?.id || `perm_${definition.value}`,
       documentType: definition.value,
-      onlyIfCreator: actions.length && !actions.includes('purge') ? Boolean(existing?.onlyIfCreator) : false,
-      level: Math.min(9, Math.max(0, Number(existing?.level || 0))),
+      onlyIfCreator: false,
+      level: 0,
       actions,
     }
   })
@@ -113,7 +124,7 @@ export function setPermissionAction(
   return {
     ...row,
     actions: ordered,
-    onlyIfCreator: ordered.length && !ordered.includes('purge') ? Boolean(row.onlyIfCreator) : false,
+    onlyIfCreator: false,
   }
 }
 
@@ -129,27 +140,42 @@ export function permissionRowsToFlatKeys(rows: AppRolePermissionRow[]): string[]
   return [...keys].sort()
 }
 
-export type SeedRolePermissionMode = 'all' | 'operations' | 'finance' | 'customs'
+export type SeedRolePermissionMode = 'all' | 'staff' | 'viewer'
 
-/** Fixture rows for seeded roles in the mock workspace. */
+/** Fixture rows for seeded roles (Admin / Rental Staff / Report Viewer). */
 export function seedRolePermissionRows(mode: SeedRolePermissionMode): AppRolePermissionRow[] {
   const allow = (prefix: string) => {
     if (mode === 'all') return true
-    if (mode === 'operations') return prefix.startsWith('rental') || prefix === 'reports' || prefix === 'dashboard'
-    if (mode === 'finance') return prefix.startsWith('rental') || prefix === 'reports' || prefix === 'dashboard' || prefix.startsWith('admin.audit')
-    return prefix.startsWith('rental') || prefix === 'reports'
+    if (mode === 'staff') {
+      return prefix === 'dashboard'
+        || prefix.startsWith('rental.')
+        || prefix === 'reports'
+    }
+    // viewer
+    return prefix === 'dashboard'
+      || prefix.startsWith('rental.')
+      || prefix === 'reports'
   }
+
   const allowedActions = (prefix: string, actions: readonly RolePermissionAction[]) => {
-    if (mode === 'finance') return actions.filter(action => action === 'view' || action === 'export')
+    if (mode === 'viewer') {
+      return actions.filter(action => action === 'view' || action === 'export' || action === 'print')
+    }
+    if (mode === 'staff' && (prefix.startsWith('admin.') || prefix === 'configuration' || prefix.startsWith('settings.'))) {
+      return []
+    }
     return [...actions]
   }
+
   return normalizePermissionRows(
     ROLE_DOCUMENT_TYPES.map(definition => ({
       id: `perm_${definition.value}`,
       documentType: definition.value,
       onlyIfCreator: false,
       level: 0,
-      actions: allow(definition.permissionPrefix) ? allowedActions(definition.permissionPrefix, definition.actions) : [],
+      actions: allow(definition.permissionPrefix)
+        ? allowedActions(definition.permissionPrefix, definition.actions)
+        : [],
     })),
   )
 }

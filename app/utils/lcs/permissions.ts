@@ -5,20 +5,17 @@ import type { AuthUser } from '~/types/auth-user'
 /** Map UI page keys to source permission codes. Frontend hiding is not authorization. */
 export const PAGE_TO_SOURCE: Record<string, SourcePermission | SourcePermission[]> = {
   'dashboard.view': 'report.read',
-  'sales.quotations.view': 'quotation.read',
-  'sales.quotations.create': 'quotation.create',
-  'sales.quotations.edit': 'quotation.update_draft',
-  'operations.service_orders.view': 'service_order.read',
-  'finance.service_charges.view': 'service_charge.create',
-  'finance.financial_documents.view': 'financial_document.read',
+  'rental.motorcycles.view': 'report.read',
+  'rental.customers.view': 'report.read',
+  'rental.rentals.view': 'report.read',
+  'rental.finance.view': 'report.read',
   'reports.view': 'report.read',
   'admin.users.view': 'user.read',
   'admin.roles.view': 'role.read',
   'admin.audit_logs.view': 'audit_log.read',
-  'master.reference.view': ['organization.read', 'branch.read'],
-  'configuration.manage': 'service_order.update',
-  'admin.organization.view': ['organization.read', 'branch.read'],
-  'finance.accounting.view': ['journal_entry.read', 'accounting_period.read'],
+  'configuration.view': 'organization.read',
+  'configuration.manage': 'organization.read',
+  'settings.app_config.view': 'organization.read',
 }
 
 export function allSourcePermissions(): SourcePermission[] {

@@ -13,8 +13,9 @@ export function useAuth() {
   }
 
   async function requestPasswordReset(_email: string) {
+    // Mock: reset code is delivered via Telegram bot (not email).
     await mockLatency(null, 80)
-    return ok({ sent: true })
+    return ok({ sent: true, channel: 'telegram' as const })
   }
 
   async function verifyPasswordResetCode(_email: string, code: string) {
@@ -25,8 +26,9 @@ export function useAuth() {
   }
 
   async function resendPasswordResetCode(_email: string) {
+    // Mock: resend via Telegram bot chatbot.
     await mockLatency(null, 80)
-    return ok({ sent: true })
+    return ok({ sent: true, channel: 'telegram' as const })
   }
 
   async function resetPasswordWithCode(input: {

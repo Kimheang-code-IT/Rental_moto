@@ -4,31 +4,21 @@ import type {
   DocumentFieldSchema,
   FieldOption,
 } from '~/types/docetra/common'
-import type {
-  AttributeDataType,
-  AttributeOption,
-  ConfigWorkflowStage,
-  RecordAttribute,
-  RecordTypeAttribute,
-  RecordTypeNumbering,
-  ValidationRule,
-  VisibilityRule,
-  WorkflowTransition,
-} from '~/types/docetra/configuration'
 import type { ConnectionStatus, NotificationRule, TelegramDestination } from '~/types/docetra/settings'
+import type { AppRolePermissionRow } from '~/types/docetra/entities'
 import { TELEGRAM_TEMPLATE_VARIABLES } from '~/types/docetra/settings'
 import { createClientId } from '~/utils/client-id'
 import { TELEGRAM_DESTINATION_TYPE_OPTIONS } from '~/utils/constants/select-options'
 import { resolveFieldHelp } from '~/utils/field-help'
 import { useReferenceOptions } from '~/composables/common/useReferenceOptions'
-import type { FreightRelated, FreightTable } from '~/config/freight-modules'
-import type { FreightRecord } from '~/config/freight-seed'
-import { asNumber } from '~/composables/freight/useFreight'
+import type { ModuleRelated, ModuleTable } from '~/config/modules'
+import type { AppRecord } from '~/config/admin-seed'
+import { asNumber } from '~/composables/module/useModule'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import {
-  freightDocumentLineActionKey,
-  freightDocumentRecordKey,
-} from '~/utils/freight/document-tabs'
+  moduleDocumentLineActionKey,
+  moduleDocumentRecordKey,
+} from '~/utils/module/document-tabs'
 
 const props = defineProps<{
   field: DocumentFieldSchema
@@ -96,8 +86,8 @@ const multiValue = computed({
 })
 
 const permissionRows = computed({
-  get: () => (Array.isArray(props.modelValue) ? props.modelValue as any[] : []),
-  set: (v: any[]) => emit('update:modelValue', v),
+  get: () => (Array.isArray(props.modelValue) ? props.modelValue as AppRolePermissionRow[] : []),
+  set: (v: AppRolePermissionRow[]) => emit('update:modelValue', v),
 })
 
 const csvValue = computed({
@@ -223,27 +213,21 @@ const isTelegramDestinations = computed(() => props.field.type === 'telegram-des
 const isNotificationRules = computed(() => props.field.type === 'notification-rules')
 const isConnectionStatus = computed(() => props.field.type === 'connection-status')
 const isAlert = computed(() => props.field.type === 'alert')
-const isAssignedAttributes = computed(() => props.field.type === 'assigned-attributes')
-const isWorkflowBuilder = computed(() => props.field.type === 'workflow-builder')
-const isNumberingPreview = computed(() => props.field.type === 'numbering-preview')
-const isValidationBuilder = computed(() => props.field.type === 'validation-builder')
-const isOptionsBuilder = computed(() => props.field.type === 'options-builder')
-const isVisibilityBuilder = computed(() => props.field.type === 'visibility-builder')
 const isLineTable = computed(() => props.field.type === 'line-table')
 const isRelatedRecords = computed(() => props.field.type === 'related-records')
 const isFile = computed(() => props.field.type === 'file')
 
-const lineAction = inject(freightDocumentLineActionKey, undefined)
-const recordAccess = inject(freightDocumentRecordKey, null)
+const lineAction = inject(moduleDocumentLineActionKey, undefined)
+const recordAccess = inject(moduleDocumentRecordKey, null)
 
-const lineTable = computed(() => props.field.meta?.table as FreightTable | undefined)
+const lineTable = computed(() => props.field.meta?.table as ModuleTable | undefined)
 const lineRows = computed({
   get: () => (Array.isArray(props.modelValue) ? props.modelValue as Array<Record<string, unknown>> : []),
   set: (rows: Array<Record<string, unknown>>) => emit('update:modelValue', rows),
 })
 const relatedGroups = computed(() =>
   Array.isArray(props.modelValue)
-    ? props.modelValue as Array<FreightRelated & { rows: FreightRecord[] }>
+    ? props.modelValue as Array<ModuleRelated & { rows: AppRecord[] }>
     : [],
 )
 const showPricingTotals = computed(() => Boolean(props.field.meta?.showPricingTotals))
@@ -272,148 +256,6 @@ const iconValue = computed({
   get: () => String(props.modelValue ?? ''),
   set: (v: string) => emit('update:modelValue', v),
 })
-
-const assignedAttributes = computed({
-  get: () => (Array.isArray(props.modelValue) ? props.modelValue as RecordTypeAttribute[] : []),
-  set: (v: RecordTypeAttribute[]) => emit('update:modelValue', v),
-})
-
-const attributeCatalog = computed(() =>
-  (Array.isArray(props.field.meta?.catalog) ? props.field.meta!.catalog as RecordAttribute[] : []),
-)
-
-const recordTypeIdForAssign = computed(() => String(props.field.meta?.typeId || ''))
-
-const assignmentStageItems = computed(() => {
-  const configured = Array.isArray(props.field.meta?.stages)
-    ? props.field.meta.stages as ConfigWorkflowStage[]
-    : []
-  return [
-    { label: t('docetra.config.allStages'), value: '__all_stages__' },
-    ...[...configured]
-      .sort((a, b) => a.order - b.order)
-      .map(stage => ({ label: stage.name, value: stage.code })),
-  ]
-})
-
-const selectedAttributeId = ref<string>()
-const searchAttributes = computed(() =>
-  props.field.meta?.searchAttributes as ((query: string) => void) | undefined,
-)
-
-function goCreateAttribute() {}
-
-function goOpenAttribute(_attributeId: string) {}
-
-const workflowValue = computed({
-  get: () => {
-    const raw = props.modelValue as { stages?: ConfigWorkflowStage[], transitions?: WorkflowTransition[] } | null
-    return {
-      stages: raw?.stages || [],
-      transitions: raw?.transitions || [],
-    }
-  },
-  set: (v: { stages: ConfigWorkflowStage[], transitions: WorkflowTransition[] }) => emit('update:modelValue', v),
-})
-
-const workflowStages = computed({
-  get: () => workflowValue.value.stages,
-  set: (stages: ConfigWorkflowStage[]) => {
-    workflowValue.value = { ...workflowValue.value, stages }
-  },
-})
-
-const workflowTransitions = computed({
-  get: () => workflowValue.value.transitions,
-  set: (transitions: WorkflowTransition[]) => {
-    workflowValue.value = { ...workflowValue.value, transitions }
-  },
-})
-
-const numberingPreview = computed(() =>
-  (props.modelValue && typeof props.modelValue === 'object'
-    ? props.modelValue as RecordTypeNumbering
-    : { prefix: 'DOC', sequenceLength: 4, includeYear: true, resetYearly: true }),
-)
-
-const validationValue = computed({
-  get: () => (props.modelValue && typeof props.modelValue === 'object' ? props.modelValue as ValidationRule : {}),
-  set: (v: ValidationRule) => emit('update:modelValue', v),
-})
-
-const validationDataType = computed(() =>
-  (props.field.meta?.dataType as AttributeDataType) || 'short_text',
-)
-
-const optionsBuilderValue = computed({
-  get: () => (Array.isArray(props.modelValue) ? props.modelValue as AttributeOption[] : []),
-  set: (v: AttributeOption[]) => emit('update:modelValue', v),
-})
-
-const visibilityValue = computed({
-  get: () => (props.modelValue == null ? null : props.modelValue as VisibilityRule),
-  set: (v: VisibilityRule | null) => emit('update:modelValue', v),
-})
-
-const visibilityFieldOptions = computed(() =>
-  (props.field.options || []).map(o => ({
-    label: o.labelKey ? t(o.labelKey) : o.label,
-    value: o.value,
-  })),
-)
-
-function addAssignedAttribute() {
-  const id = selectedAttributeId.value
-  if (!id) return
-  const attr = attributeCatalog.value.find(a => a.id === id)
-  if (!attr) return
-  const row: RecordTypeAttribute = {
-    attributeId: attr.id,
-    attributeCode: attr.code,
-    attributeLabel: attr.label,
-    dataType: attr.dataType,
-    required: attr.required,
-    readOnly: attr.readOnly,
-    visible: true,
-    searchable: attr.searchable,
-    filterable: attr.filterable,
-    showInList: attr.showInList,
-    section: 'General',
-    order: assignedAttributes.value.length,
-  }
-  assignedAttributes.value = [...assignedAttributes.value, row]
-  selectedAttributeId.value = undefined
-}
-
-function updateAssigned(id: string, patch: Partial<RecordTypeAttribute>) {
-  assignedAttributes.value = assignedAttributes.value.map(a =>
-    a.attributeId === id ? { ...a, ...patch } : a,
-  )
-}
-
-function removeAssigned(id: string) {
-  assignedAttributes.value = assignedAttributes.value
-    .filter(a => a.attributeId !== id)
-    .map((a, index) => ({ ...a, order: index }))
-}
-
-function onReorderAssigned(items: Array<RecordTypeAttribute & { id: string }>) {
-  assignedAttributes.value = items.map((a, index) => ({
-    attributeId: a.attributeId,
-    attributeCode: a.attributeCode,
-    attributeLabel: a.attributeLabel,
-    dataType: a.dataType,
-    required: a.required,
-    readOnly: a.readOnly,
-    visible: a.visible,
-    searchable: a.searchable,
-    filterable: a.filterable,
-    showInList: a.showInList,
-    stageCode: a.stageCode,
-    section: a.section,
-    order: index,
-  }))
-}
 
 const textareaHelp = computed(() => {
   if (props.field.key === 'telegram.messageTemplate') {
@@ -486,22 +328,22 @@ function removeDestination(id: string) {
       class="ms-auto grid w-full max-w-sm gap-1 px-1 py-1.5 text-xs"
     >
       <div class="flex items-center justify-between gap-4">
-        <span class="text-muted">{{ $t('freight.fields.subtotal') }}</span>
+        <span class="text-muted">{{ $t('app.fields.subtotal') }}</span>
         <span class="font-medium text-highlighted">{{ moneyLabel(moneyAmount('subtotal')) }}</span>
       </div>
       <div class="flex items-center justify-between gap-4">
-        <span class="text-muted">{{ $t('freight.fields.discount') }}</span>
+        <span class="text-muted">{{ $t('app.fields.discount') }}</span>
         <span class="font-medium text-highlighted">− {{ moneyLabel(moneyAmount('discount')) }}</span>
       </div>
       <div
         v-if="includeTaxTotal"
         class="flex items-center justify-between gap-4"
       >
-        <span class="text-muted">{{ $t('freight.fields.tax') }}</span>
+        <span class="text-muted">{{ $t('app.fields.tax') }}</span>
         <span class="font-medium text-highlighted">{{ moneyLabel(moneyAmount('tax')) }}</span>
       </div>
       <div class="mt-1 flex items-center justify-between gap-4 border-t border-default pt-2 text-base">
-        <span class="font-semibold text-highlighted">{{ $t('freight.fields.total') }}</span>
+        <span class="font-semibold text-highlighted">{{ $t('app.fields.total') }}</span>
         <span class="font-bold text-primary">{{ moneyLabel(moneyAmount('total')) }}</span>
       </div>
     </div>
@@ -554,171 +396,7 @@ function removeDestination(id: string) {
     :disabled="disabled || field.readOnly"
   />
 
-  <ConfigurationAppNumberingPreview
-    v-else-if="isNumberingPreview"
-    class="md:col-span-2"
-    :numbering="numberingPreview"
-  />
-
-  <ConfigurationAppValidationRuleBuilder
-    v-else-if="isValidationBuilder"
-    v-model="validationValue"
-    class="md:col-span-2"
-    :data-type="validationDataType"
-  />
-
-  <ConfigurationAppAttributeOptionsBuilder
-    v-else-if="isOptionsBuilder"
-    v-model="optionsBuilderValue"
-    class="md:col-span-2"
-  />
-
-  <ConfigurationAppVisibilityRuleBuilder
-    v-else-if="isVisibilityBuilder"
-    v-model="visibilityValue"
-    class="md:col-span-2"
-    :field-options="visibilityFieldOptions"
-  />
-
-  <div v-else-if="isWorkflowBuilder" class="md:col-span-2">
-    <ConfigurationAppWorkflowStageBuilder
-      v-model:stages="workflowStages"
-      v-model:transitions="workflowTransitions"
-    />
-  </div>
-
-  <div
-    v-else-if="isAssignedAttributes"
-    class="space-y-4 md:col-span-2"
-  >
-    <div class="flex flex-wrap items-end gap-2">
-      <UFormField :label="t('docetra.config.assignAttribute')" class="min-w-64 flex-1" :help="t('docetra.fieldHelp.assignAttribute')">
-        <UInputMenu
-          v-model="selectedAttributeId"
-          :items="selectItems"
-          value-key="value"
-          class="w-full"
-          :disabled="disabled || field.readOnly"
-          :loading="optionsPending"
-          @update:search-term="searchAttributes?.($event)"
-        />
-      </UFormField>
-      <UButton
-        icon="i-lucide-plus"
-        :disabled="!selectedAttributeId || disabled || field.readOnly"
-        @click="addAssignedAttribute"
-      >
-        {{ t('docetra.config.addAttribute') }}
-      </UButton>
-      <UButton
-        icon="i-lucide-list-plus"
-        color="neutral"
-        variant="outline"
-        :disabled="disabled || field.readOnly"
-        @click="goCreateAttribute"
-      >
-        {{ t('docetra.config.createAttribute') }}
-      </UButton>
-    </div>
-
-    <CommonAppSortableList
-      :items="assignedAttributes.map(a => ({ ...a, id: a.attributeId }))"
-      @reorder="onReorderAssigned($event as any)"
-    >
-      <template #default="{ item }">
-        <div class="space-y-2">
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <p class="text-sm font-medium">
-                {{ item.attributeLabel }}
-              </p>
-              <p class="text-xs text-muted">
-                {{ item.attributeCode }} · {{ item.dataType }}
-              </p>
-            </div>
-            <div class="flex items-center gap-1">
-              <UButton
-                icon="i-lucide-external-link"
-                color="neutral"
-                variant="ghost"
-                size="xs"
-                :aria-label="t('docetra.config.openAttribute')"
-                @click="goOpenAttribute(item.attributeId)"
-              />
-              <UButton
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
-                size="xs"
-                :disabled="disabled || field.readOnly"
-                @click="removeAssigned(item.attributeId)"
-              />
-            </div>
-          </div>
-          <div class="grid gap-2 sm:grid-cols-3">
-            <UCheckbox
-              :model-value="item.required"
-              :label="t('docetra.fields.required')"
-              :disabled="disabled || field.readOnly"
-              @update:model-value="updateAssigned(item.attributeId, { required: Boolean($event) })"
-            />
-            <UCheckbox
-              :model-value="item.readOnly"
-              :label="t('docetra.config.readOnly')"
-              :disabled="disabled || field.readOnly"
-              @update:model-value="updateAssigned(item.attributeId, { readOnly: Boolean($event) })"
-            />
-            <UCheckbox
-              :model-value="item.visible"
-              :label="t('docetra.config.visible')"
-              :disabled="disabled || field.readOnly"
-              @update:model-value="updateAssigned(item.attributeId, { visible: Boolean($event) })"
-            />
-            <UCheckbox
-              :model-value="item.searchable"
-              :label="t('docetra.config.searchable')"
-              :disabled="disabled || field.readOnly"
-              @update:model-value="updateAssigned(item.attributeId, { searchable: Boolean($event) })"
-            />
-            <UCheckbox
-              :model-value="item.filterable"
-              :label="t('docetra.config.filterable')"
-              :disabled="disabled || field.readOnly"
-              @update:model-value="updateAssigned(item.attributeId, { filterable: Boolean($event) })"
-            />
-            <UCheckbox
-              :model-value="item.showInList"
-              :label="t('docetra.config.showInList')"
-              :disabled="disabled || field.readOnly"
-              @update:model-value="updateAssigned(item.attributeId, { showInList: Boolean($event) })"
-            />
-          </div>
-          <UInput
-            :model-value="item.section || ''"
-            size="sm"
-            :placeholder="t('docetra.config.section')"
-            :disabled="disabled || field.readOnly"
-            @update:model-value="updateAssigned(item.attributeId, { section: String($event) })"
-          />
-          <UFormField :label="t('docetra.config.assignedStage')" :help="t('docetra.fieldHelp.assignedStage')">
-            <USelect
-              :model-value="item.stageCode || '__all_stages__'"
-              :items="assignmentStageItems"
-              value-key="value"
-              label-key="label"
-              size="sm"
-              class="w-full"
-              :disabled="disabled || field.readOnly"
-              @update:model-value="updateAssigned(item.attributeId, { stageCode: $event === '__all_stages__' ? undefined : String($event || '') || undefined })"
-            />
-          </UFormField>
-        </div>
-      </template>
-      <template #empty>
-        {{ t('docetra.config.noAssignedAttributes') }}
-      </template>
-    </CommonAppSortableList>
-  </div>
+  <!-- Configuration builders removed (numbering-preview, validation, options, visibility, workflow) -->
 
   <div
     v-else-if="isTelegramDestinations"

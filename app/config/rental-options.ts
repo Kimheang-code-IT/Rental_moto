@@ -1,6 +1,6 @@
 /** Option lists for the HollyWing Motor rental modules. */
 
-export const MOTORCYCLE_STATUS = ['Available', 'Rented', 'Maintenance', 'Inactive'] as const
+export const MOTORCYCLE_STATUS = ['Available', 'Progressing', 'Maintenance'] as const
 
 export const RENTAL_STATUS = ['Active', 'Overdue', 'Completed', 'Cancelled'] as const
 
@@ -17,6 +17,9 @@ export const RENTAL_CHARGE_TYPES = ['Damage', 'Lost item', 'Cleaning', 'Other'] 
 export const MOTORCYCLE_CONDITIONS = ['Good', 'Minor issues', 'Damaged'] as const
 
 export const RENTAL_EXPENSE_TYPES = ['Fuel', 'Maintenance', 'Salary', 'Rent', 'Marketing', 'Other'] as const
+
+/** Statuses staff can set after return (Progressing is rental-driven). */
+export const MOTORCYCLE_RETURN_STATUSES = ['Available', 'Maintenance'] as const
 
 /** Currency preference options (owner mockup — `CODE — Name` labels). */
 export const RENTAL_CURRENCY_OPTIONS = [
@@ -35,10 +38,10 @@ export const RENTAL_CURRENCY_OPTIONS = [
 /** Status → badge color mapping (template convention: color badge + text). */
 export const RENTAL_STATUS_COLORS: Record<string, 'success' | 'warning' | 'error' | 'neutral' | 'primary'> = {
   Available: 'success',
-  Rented: 'primary',
+  Progressing: 'primary',
   Maintenance: 'warning',
+  Active: 'success',
   Inactive: 'neutral',
-  Active: 'primary',
   Overdue: 'error',
   Completed: 'success',
   Cancelled: 'neutral',

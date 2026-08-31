@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DocumentTabSchema } from '~/types/docetra/common'
-import { freightDocumentRecordKey } from '~/utils/freight/document-tabs'
+import { moduleDocumentRecordKey } from '~/utils/module/document-tabs'
 
 const props = withDefaults(defineProps<{
   tabs: DocumentTabSchema[]
@@ -17,7 +17,7 @@ const props = withDefaults(defineProps<{
 
 const { t, te } = useI18n()
 
-provide(freightDocumentRecordKey, {
+provide(moduleDocumentRecordKey, {
   get: (key: string) => props.fieldValue(key),
 })
 
@@ -54,12 +54,6 @@ function isFullWidthField(field: DocumentTabSchema['sections'][0]['fields'][0]) 
     || field.type === 'notification-rules'
     || field.type === 'connection-status'
     || field.type === 'alert'
-    || field.type === 'assigned-attributes'
-    || field.type === 'workflow-builder'
-    || field.type === 'numbering-preview'
-    || field.type === 'validation-builder'
-    || field.type === 'options-builder'
-    || field.type === 'visibility-builder'
     || field.type === 'line-table'
     || field.type === 'related-records'
 }

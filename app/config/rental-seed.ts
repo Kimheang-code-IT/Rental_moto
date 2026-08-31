@@ -1,4 +1,4 @@
-import type { FreightRecord } from './freight-seed'
+import type { AppRecord } from './admin-seed'
 import { BRANCH_BAVET_ID, LCS_ORG_ID } from './lcs-tenant'
 
 /**
@@ -7,7 +7,7 @@ import { BRANCH_BAVET_ID, LCS_ORG_ID } from './lcs-tenant'
  * Dates fixed around 2026-08-28 (system clock) so OVERDUE rows are genuinely overdue.
  */
 
-function stamp(row: FreightRecord): FreightRecord {
+function stamp(row: AppRecord): AppRecord {
   return { organizationId: LCS_ORG_ID, branchId: BRANCH_BAVET_ID, createdByUserId: 1, ...row }
 }
 
@@ -15,22 +15,31 @@ function id(prefix: string, n: number) {
   return `${prefix}-${String(n).padStart(3, '0')}`
 }
 
-const motorcycles: FreightRecord[] = [
-  { id: id('mc', 1), code: 'MC-001', model: 'Honda Click 125i', brand: 'Honda', year: 2023, color: 'Black', plate: 'PP-1K-2345', chassisNo: 'JC34-102938', engineNo: 'JC34E-445566', dailyRate: 8, monthlyRate: 180, assetValue: 1400, currency: 'USD', status: 'Rented' },
-  { id: id('mc', 2), code: 'MC-002', model: 'Honda Vario 150', brand: 'Honda', year: 2023, color: 'Red', plate: 'PP-2K-3456', chassisNo: 'KF30-203948', engineNo: 'KF30E-556677', dailyRate: 12, monthlyRate: 260, assetValue: 2200, currency: 'USD', status: 'Rented' },
-  { id: id('mc', 3), code: 'MC-003', model: 'Yamaha NMAX 155', brand: 'Yamaha', year: 2024, color: 'Blue', plate: 'PP-3K-4567', chassisNo: 'NMAX-304957', engineNo: 'NMAXE-667788', dailyRate: 15, monthlyRate: 320, assetValue: 2900, currency: 'USD', status: 'Rented' },
-  { id: id('mc', 4), code: 'MC-004', model: 'Honda PCX 160', brand: 'Honda', year: 2024, color: 'White', plate: 'PP-4K-5678', chassisNo: 'PCX-405966', engineNo: 'PCXE-778899', dailyRate: 15, monthlyRate: 320, assetValue: 3000, currency: 'USD', status: 'Rented' },
-  { id: id('mc', 5), code: 'MC-005', model: 'Suzuki Address 110', brand: 'Suzuki', year: 2022, color: 'Silver', plate: 'PP-5K-6789', chassisNo: 'ADR-506975', engineNo: 'ADRE-889900', dailyRate: 7, monthlyRate: 150, assetValue: 1100, currency: 'USD', status: 'Rented' },
-  { id: id('mc', 6), code: 'MC-006', model: 'Honda Click 125i', brand: 'Honda', year: 2023, color: 'White', plate: 'PP-6K-7890', chassisNo: 'JC34-607984', engineNo: 'JC34E-990011', dailyRate: 8, monthlyRate: 180, assetValue: 1400, currency: 'USD', status: 'Available' },
-  { id: id('mc', 7), code: 'MC-007', model: 'Yamaha Mio i 125', brand: 'Yamaha', year: 2023, color: 'Cyan', plate: 'PP-7K-8901', chassisNo: 'MIO-708993', engineNo: 'MIOE-110122', dailyRate: 8, monthlyRate: 170, assetValue: 1300, currency: 'USD', status: 'Available' },
-  { id: id('mc', 8), code: 'MC-008', model: 'Honda Vision 110', brand: 'Honda', year: 2022, color: 'Black', plate: 'PP-8K-9012', chassisNo: 'VIS-809002', engineNo: 'VISE-220133', dailyRate: 7, monthlyRate: 150, assetValue: 1000, currency: 'USD', status: 'Available' },
-  { id: id('mc', 9), code: 'MC-009', model: 'Honda Adv 150', brand: 'Honda', year: 2024, color: 'Matte Black', plate: 'PP-9K-0123', chassisNo: 'ADV-900011', engineNo: 'ADVE-330244', dailyRate: 16, monthlyRate: 350, assetValue: 3200, currency: 'USD', status: 'Available' },
-  { id: id('mc', 10), code: 'MC-010', model: 'Yamaha NMAX 155', brand: 'Yamaha', year: 2023, color: 'Grey', plate: 'PP-10K-1234', chassisNo: 'NMAX-010120', engineNo: 'NMAXE-440355', dailyRate: 14, monthlyRate: 300, assetValue: 2700, currency: 'USD', status: 'Available' },
-  { id: id('mc', 11), code: 'MC-011', model: 'Honda Wave 110', brand: 'Honda', year: 2021, color: 'Red', plate: 'PP-11K-2345', chassisNo: 'WAV-110229', engineNo: 'WAVE-550466', dailyRate: 6, monthlyRate: 130, assetValue: 850, currency: 'USD', status: 'Maintenance' },
-  { id: id('mc', 12), code: 'MC-012', model: 'Suzuki Burgman Street', brand: 'Suzuki', year: 2023, color: 'Blue', plate: 'PP-12K-3456', chassisNo: 'BRG-120338', engineNo: 'BRGE-660577', dailyRate: 13, monthlyRate: 280, assetValue: 2400, currency: 'USD', status: 'Inactive' },
-]
+function withTierRates(row: AppRecord): AppRecord {
+  const daily = Number(row.dailyRate || 0)
+  return {
+    ...row,
+    threeDayRate: row.threeDayRate ?? Number((daily * 3).toFixed(2)),
+    weeklyRate: row.weeklyRate ?? Number((daily * 6.5).toFixed(2)),
+  }
+}
 
-const rentalCustomers: FreightRecord[] = [
+const motorcycles: AppRecord[] = [
+  { id: id('mc', 1), code: 'MC-001', model: 'Honda Click 125i', brand: 'Honda', year: 2023, color: 'Black', plate: 'PP-1K-2345', chassisNo: 'JC34-102938', engineNo: 'JC34E-445566', dailyRate: 8, threeDayRate: 24, weeklyRate: 52, monthlyRate: 180, assetValue: 1400, currency: 'USD', status: 'Progressing' },
+  { id: id('mc', 2), code: 'MC-002', model: 'Honda Vario 150', brand: 'Honda', year: 2023, color: 'Red', plate: 'PP-2K-3456', chassisNo: 'KF30-203948', engineNo: 'KF30E-556677', dailyRate: 12, threeDayRate: 36, weeklyRate: 78, monthlyRate: 260, assetValue: 2200, currency: 'USD', status: 'Progressing' },
+  { id: id('mc', 3), code: 'MC-003', model: 'Yamaha NMAX 155', brand: 'Yamaha', year: 2024, color: 'Blue', plate: 'PP-3K-4567', chassisNo: 'NMAX-304957', engineNo: 'NMAXE-667788', dailyRate: 15, threeDayRate: 45, weeklyRate: 97.5, monthlyRate: 320, assetValue: 2900, currency: 'USD', status: 'Progressing' },
+  { id: id('mc', 4), code: 'MC-004', model: 'Honda PCX 160', brand: 'Honda', year: 2024, color: 'White', plate: 'PP-4K-5678', chassisNo: 'PCX-405966', engineNo: 'PCXE-778899', dailyRate: 15, threeDayRate: 45, weeklyRate: 97.5, monthlyRate: 320, assetValue: 3000, currency: 'USD', status: 'Progressing' },
+  { id: id('mc', 5), code: 'MC-005', model: 'Suzuki Address 110', brand: 'Suzuki', year: 2022, color: 'Silver', plate: 'PP-5K-6789', chassisNo: 'ADR-506975', engineNo: 'ADRE-889900', dailyRate: 7, threeDayRate: 21, weeklyRate: 45.5, monthlyRate: 150, assetValue: 1100, currency: 'USD', status: 'Progressing' },
+  { id: id('mc', 6), code: 'MC-006', model: 'Honda Click 125i', brand: 'Honda', year: 2023, color: 'White', plate: 'PP-6K-7890', chassisNo: 'JC34-607984', engineNo: 'JC34E-990011', dailyRate: 8, threeDayRate: 24, weeklyRate: 52, monthlyRate: 180, assetValue: 1400, currency: 'USD', status: 'Available' },
+  { id: id('mc', 7), code: 'MC-007', model: 'Yamaha Mio i 125', brand: 'Yamaha', year: 2023, color: 'Cyan', plate: 'PP-7K-8901', chassisNo: 'MIO-708993', engineNo: 'MIOE-110122', dailyRate: 8, threeDayRate: 24, weeklyRate: 52, monthlyRate: 170, assetValue: 1300, currency: 'USD', status: 'Available' },
+  { id: id('mc', 8), code: 'MC-008', model: 'Honda Vision 110', brand: 'Honda', year: 2022, color: 'Black', plate: 'PP-8K-9012', chassisNo: 'VIS-809002', engineNo: 'VISE-220133', dailyRate: 7, threeDayRate: 21, weeklyRate: 45.5, monthlyRate: 150, assetValue: 1000, currency: 'USD', status: 'Available' },
+  { id: id('mc', 9), code: 'MC-009', model: 'Honda Adv 150', brand: 'Honda', year: 2024, color: 'Matte Black', plate: 'PP-9K-0123', chassisNo: 'ADV-900011', engineNo: 'ADVE-330244', dailyRate: 16, threeDayRate: 48, weeklyRate: 104, monthlyRate: 350, assetValue: 3200, currency: 'USD', status: 'Available' },
+  { id: id('mc', 10), code: 'MC-010', model: 'Yamaha NMAX 155', brand: 'Yamaha', year: 2023, color: 'Grey', plate: 'PP-10K-1234', chassisNo: 'NMAX-010120', engineNo: 'NMAXE-440355', dailyRate: 14, threeDayRate: 42, weeklyRate: 91, monthlyRate: 300, assetValue: 2700, currency: 'USD', status: 'Available' },
+  { id: id('mc', 11), code: 'MC-011', model: 'Honda Wave 110', brand: 'Honda', year: 2021, color: 'Red', plate: 'PP-11K-2345', chassisNo: 'WAV-110229', engineNo: 'WAVE-550466', dailyRate: 6, threeDayRate: 18, weeklyRate: 39, monthlyRate: 130, assetValue: 850, currency: 'USD', status: 'Maintenance' },
+  { id: id('mc', 12), code: 'MC-012', model: 'Suzuki Burgman Street', brand: 'Suzuki', year: 2023, color: 'Blue', plate: 'PP-12K-3456', chassisNo: 'BRG-120338', engineNo: 'BRGE-660577', dailyRate: 13, threeDayRate: 39, weeklyRate: 84.5, monthlyRate: 280, assetValue: 2400, currency: 'USD', status: 'Available' },
+].map(withTierRates)
+
+const rentalCustomers: AppRecord[] = [
   { id: id('rc', 1), code: 'CUS-001', fullName: 'Sok Dara', identityType: 'National ID', identityNumber: 'KH-120345678', phone: '+855 12 345 001', email: 'dara.sok@gmail.com', company: '', address: 'St. 271, Phnom Penh', status: 'Active' },
   { id: id('rc', 2), code: 'CUS-002', fullName: 'Chan Sophea', identityType: 'National ID', identityNumber: 'KH-120987654', phone: '+855 92 456 002', email: 'sophea.c@gmail.com', company: 'Angkor Tours', address: 'Siem Reap', status: 'Active' },
   { id: id('rc', 3), code: 'CUS-003', fullName: 'John Miller', identityType: 'Passport', identityNumber: 'US-548201973', phone: '+855 78 111 003', email: 'john.miller@gmail.com', company: '', address: 'Riverside, Phnom Penh', status: 'Active' },
@@ -44,7 +53,7 @@ const rentalCustomers: FreightRecord[] = [
 ]
 
 // Active (5) + overdue (3). Outstanding = totalDue - paid.
-const rentalsActive: FreightRecord[] = [
+const rentalsActive: AppRecord[] = [
   { id: id('rt', 1), rentalNo: 'RNT-2026-000001', customerId: 'rc-001', customer: 'Sok Dara', phone: '+855 12 345 001', motorcycleId: 'mc-001', motorcycle: 'Honda Click 125i', plate: 'PP-1K-2345', startDate: '2026-08-20T09:00', dueDate: '2026-09-19T09:00', rateType: 'Monthly', rateAmount: 180, deposit: 100, discount: 0, currency: 'USD', rentalCharge: 180, lateFee: 0, additionalCharges: 0, totalDue: 180, paid: 90, outstanding: 90, status: 'Active', createdBy: 'Nita (Staff)' },
   { id: id('rt', 2), rentalNo: 'RNT-2026-000002', customerId: 'rc-003', customer: 'John Miller', phone: '+855 78 111 003', motorcycleId: 'mc-003', motorcycle: 'Yamaha NMAX 155', plate: 'PP-3K-4567', startDate: '2026-08-24T10:00', dueDate: '2026-09-02T10:00', rateType: 'Daily', rateAmount: 15, deposit: 150, discount: 0, currency: 'USD', rentalCharge: 135, lateFee: 0, additionalCharges: 0, totalDue: 135, paid: 60, outstanding: 75, status: 'Active', createdBy: 'Nita (Staff)' },
   { id: id('rt', 3), rentalNo: 'RNT-2026-000003', customerId: 'rc-005', customer: 'Touch Vannak', phone: '+855 10 333 005', motorcycleId: 'mc-002', motorcycle: 'Honda Vario 150', plate: 'PP-2K-3456', startDate: '2026-08-18T08:30', dueDate: '2026-09-17T08:30', rateType: 'Monthly', rateAmount: 260, deposit: 200, discount: 10, currency: 'USD', rentalCharge: 250, lateFee: 0, additionalCharges: 0, totalDue: 250, paid: 250, outstanding: 0, status: 'Active', createdBy: 'Sokha (Staff)' },
@@ -56,7 +65,7 @@ const rentalsActive: FreightRecord[] = [
 ]
 
 // Completed history — the Rental Reports dataset. Not shown on the Rental page.
-const rentalsCompleted: FreightRecord[] = [
+const rentalsCompleted: AppRecord[] = [
   { id: id('rt', 11), rentalNo: 'RNT-2026-000011', customerId: 'rc-001', customer: 'Sok Dara', phone: '+855 12 345 001', motorcycleId: 'mc-006', motorcycle: 'Honda Click 125i', plate: 'PP-6K-7890', startDate: '2026-07-01T09:00', dueDate: '2026-07-31T09:00', returnDate: '2026-07-30T17:00', condition: 'Good', rateType: 'Monthly', rateAmount: 180, deposit: 100, discount: 0, currency: 'USD', rentalCharge: 180, lateFee: 0, additionalCharges: 0, totalDue: 180, paid: 180, outstanding: 0, paymentStatus: 'Paid', createdBy: 'Nita (Staff)', status: 'Completed' },
   { id: id('rt', 12), rentalNo: 'RNT-2026-000012', customerId: 'rc-002', customer: 'Chan Sophea', phone: '+855 92 456 002', motorcycleId: 'mc-010', motorcycle: 'Yamaha NMAX 155', plate: 'PP-10K-1234', startDate: '2026-07-05T09:00', dueDate: '2026-07-12T09:00', returnDate: '2026-07-12T10:00', condition: 'Good', rateType: 'Daily', rateAmount: 14, deposit: 140, discount: 0, currency: 'USD', rentalCharge: 98, lateFee: 0, additionalCharges: 0, totalDue: 98, paid: 98, outstanding: 0, paymentStatus: 'Paid', createdBy: 'Sokha (Staff)', status: 'Completed' },
   { id: id('rt', 13), rentalNo: 'RNT-2026-000013', customerId: 'rc-003', customer: 'John Miller', phone: '+855 78 111 003', motorcycleId: 'mc-009', motorcycle: 'Honda Adv 150', plate: 'PP-9K-0123', startDate: '2026-07-10T10:00', dueDate: '2026-07-20T10:00', returnDate: '2026-07-21T14:00', condition: 'Minor issues', rateType: 'Daily', rateAmount: 16, deposit: 160, discount: 0, currency: 'USD', rentalCharge: 160, lateFee: 16, additionalCharges: 15, totalDue: 191, paid: 191, outstanding: 0, paymentStatus: 'Paid', createdBy: 'Nita (Staff)', status: 'Completed' },
@@ -75,13 +84,13 @@ const rentalsCompleted: FreightRecord[] = [
 ]
 
 // One cancelled quote-style record keeps the status set complete.
-const rentalsCancelled: FreightRecord[] = [
+const rentalsCancelled: AppRecord[] = [
   { id: id('rt', 30), rentalNo: 'RNT-2026-000030', customerId: 'rc-010', customer: 'Anna Petrova', phone: '+855 81 888 010', motorcycleId: 'mc-010', motorcycle: 'Yamaha NMAX 155', plate: 'PP-10K-1234', startDate: '2026-08-25T09:00', dueDate: '2026-09-01T09:00', rateType: 'Daily', rateAmount: 14, deposit: 140, discount: 0, currency: 'USD', rentalCharge: 98, lateFee: 0, additionalCharges: 0, totalDue: 0, paid: 0, outstanding: 0, status: 'Cancelled', createdBy: 'Nita (Staff)' },
 ]
 
 const rentals = [...rentalsActive, ...rentalsCompleted, ...rentalsCancelled]
 
-const rentalPayments: FreightRecord[] = [
+const rentalPayments: AppRecord[] = [
   { id: id('rp', 1), paymentNo: 'RNP-000001', rentalId: 'rt-001', rentalNo: 'RNT-2026-000001', customer: 'Sok Dara', amount: 90, currency: 'USD', paymentMethod: 'Cash', paidAt: '2026-08-20T09:10', reference: '', note: 'Partial on start' },
   { id: id('rp', 2), paymentNo: 'RNP-000002', rentalId: 'rt-002', rentalNo: 'RNT-2026-000002', customer: 'John Miller', amount: 60, currency: 'USD', paymentMethod: 'Card', paidAt: '2026-08-24T10:05', reference: 'CARD-8812', note: '' },
   { id: id('rp', 3), paymentNo: 'RNP-000003', rentalId: 'rt-003', rentalNo: 'RNT-2026-000003', customer: 'Touch Vannak', amount: 250, currency: 'USD', paymentMethod: 'Bank Transfer', paidAt: '2026-08-18T08:40', reference: 'ABA-108823', note: 'Monthly in full' },
@@ -92,14 +101,14 @@ const rentalPayments: FreightRecord[] = [
   { id: id('rp', 8), paymentNo: 'RNP-000008', rentalId: 'rt-008', rentalNo: 'RNT-2026-000008', customer: 'Nguyen Thi Lan', amount: 100, currency: 'USD', paymentMethod: 'Card', paidAt: '2026-08-12T13:05', reference: 'CARD-9034', note: '' },
 ]
 
-const rentalCharges: FreightRecord[] = [
+const rentalCharges: AppRecord[] = [
   { id: id('rg', 1), chargeNo: 'RNC-000001', rentalId: 'rt-007', rentalNo: 'RNT-2026-000007', customer: 'Kim Sreyleap', chargeType: 'Cleaning', description: 'Deep clean after muddy trip', amount: 5, currency: 'USD', chargeToCustomer: 'Yes', createdBy: 'Sokha (Staff)' },
   { id: id('rg', 2), chargeNo: 'RNC-000002', rentalId: 'rt-025', rentalNo: 'RNT-2026-000025', customer: 'Leng Dara', chargeType: 'Damage', description: 'Scratched side panel + broken mirror', amount: 45, currency: 'USD', chargeToCustomer: 'Yes', createdBy: 'Nita (Staff)' },
   { id: id('rg', 3), chargeNo: 'RNC-000003', rentalId: 'rt-013', rentalNo: 'RNT-2026-000013', customer: 'John Miller', chargeType: 'Lost item', description: 'Missing helmet', amount: 15, currency: 'USD', chargeToCustomer: 'Yes', createdBy: 'Nita (Staff)' },
 ]
 
 // Operating expenses for the Income & Expense screen (income = rental payments).
-const rentalExpenses: FreightRecord[] = [
+const rentalExpenses: AppRecord[] = [
   { id: id('rx', 1), expenseNo: 'RNX-000001', date: '2026-06-05', expenseType: 'Rent', description: 'Shop rent June 2026', amount: 350, currency: 'USD', createdBy: 'Admin' },
   { id: id('rx', 2), expenseNo: 'RNX-000002', date: '2026-06-28', expenseType: 'Maintenance', description: 'Oil change x6 + brake pads', amount: 120, currency: 'USD', createdBy: 'Sokha (Staff)' },
   { id: id('rx', 3), expenseNo: 'RNX-000003', date: '2026-07-05', expenseType: 'Rent', description: 'Shop rent July 2026', amount: 350, currency: 'USD', createdBy: 'Admin' },
@@ -112,7 +121,7 @@ const rentalExpenses: FreightRecord[] = [
 ]
 
 /** Rental seed keyed by collection; merged into the mock DB in `repositories/mock/db.ts`. */
-export function createRentalSeed(): Record<string, FreightRecord[]> {
+export function createRentalSeed(): Record<string, AppRecord[]> {
   return {
     motorcycles: motorcycles.map(stamp),
     rentalCustomers: rentalCustomers.map(stamp),

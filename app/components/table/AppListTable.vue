@@ -60,10 +60,10 @@ const paginationOptions = { getPaginationRowModel: getPaginationRowModel() }
 const selectedIds = computed(() => listTableSelectedIds(rowSelection.value))
 const total = computed(() => props.data.length)
 const virtualize = computed(() => listTableVirtualize(total.value, pagination.value.pageSize))
-const searchPlaceholderText = computed(() => props.searchPlaceholder || t('freight.ui.search'))
-const dateLabelText = computed(() => props.dateLabel || t('freight.ui.date'))
-const emptyTitleText = computed(() => props.emptyTitle || t('freight.ui.noRecords'))
-const emptyDescriptionText = computed(() => props.emptyDescription || t('freight.ui.noRecordsHint'))
+const searchPlaceholderText = computed(() => props.searchPlaceholder || t('app.ui.search'))
+const dateLabelText = computed(() => props.dateLabel || t('app.ui.date'))
+const emptyTitleText = computed(() => props.emptyTitle || t('app.ui.noRecords'))
+const emptyDescriptionText = computed(() => props.emptyDescription || t('app.ui.noRecordsHint'))
 const pageSizeItems = TABLE_PAGE_SIZES.map(value => ({ label: String(value), value: String(value) }))
 
 function rowId(row: T) {
@@ -115,6 +115,7 @@ function onSelect(event: Event, row: TableRow<T>) {
       <div class="min-h-0 flex-1 overflow-hidden">
         <UTable
           v-if="total"
+          v-model:global-filter="search"
           v-model:row-selection="rowSelection"
           v-model:pagination="pagination"
           :data="data"

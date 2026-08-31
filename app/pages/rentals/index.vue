@@ -3,5 +3,5 @@ definePageMeta({ titleKey: 'rental.pages.rentals', permission: 'rental.rentals.v
 </script>
 
 <template>
-  <FreightWorkspaceView />
+  <ModuleWorkspaceView />
 </template>

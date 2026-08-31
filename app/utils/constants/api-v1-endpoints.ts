@@ -1,4 +1,4 @@
-/** Source OpenAPI `/api/v1` operations. Do not invent alternate verbs. */
+/** Reserved `/api/v1` auth and admin operations for future API wiring. */
 export const ApiV1Endpoints = {
   LOGIN: '/api/v1/auth/login',
   LOGOUT: '/api/v1/auth/logout',
@@ -7,27 +7,6 @@ export const ApiV1Endpoints = {
   BRANCHES: (organizationId: number) => `/api/v1/organizations/${organizationId}/branches`,
   USERS: '/api/v1/users',
   ROLE_ASSIGNMENTS: (userId: number) => `/api/v1/users/${userId}/role-assignments`,
-  QUOTATIONS: '/api/v1/quotations',
-  QUOTATION_REVISIONS: (quotationId: number | string) => `/api/v1/quotations/${quotationId}/revisions`,
-  QUOTATION_SEND: (revisionId: number | string) => `/api/v1/quotation-revisions/${revisionId}/send`,
-  QUOTATION_ACCEPT: (revisionId: number | string) => `/api/v1/quotation-revisions/${revisionId}/accept`,
-  QUOTATION_CONVERT: (revisionId: number | string) => `/api/v1/quotation-revisions/${revisionId}/convert`,
-  SERVICE_ORDERS: '/api/v1/service-orders',
-  SERVICE_ORDER: (id: number | string) => `/api/v1/service-orders/${id}`,
-  SERVICE_ORDER_CONTAINERS: (id: number | string) => `/api/v1/service-orders/${id}/containers`,
-  SERVICE_ORDER_COMPONENTS: (id: number | string) => `/api/v1/service-orders/${id}/components`,
-  COMPONENT_VALUES: (id: number | string) => `/api/v1/service-order-components/${id}/values`,
-  COMPONENT_COMPLETE: (id: number | string) => `/api/v1/service-order-components/${id}/complete`,
-  SERVICE_ORDER_CHARGES: (id: number | string) => `/api/v1/service-orders/${id}/charges`,
-  CHARGE_ISSUE: (id: number | string) => `/api/v1/service-charges/${id}/issue`,
-  CHARGE_CREATE_INVOICE: (id: number | string) => `/api/v1/service-charges/${id}/create-finance-invoice`,
-  FINANCIAL_DOCUMENTS: '/api/v1/financial-documents',
-  FINANCIAL_POST: (id: number | string) => `/api/v1/financial-documents/${id}/post`,
-  FINANCIAL_ALLOCATE: (id: number | string) => `/api/v1/financial-documents/${id}/allocate`,
-  FINANCIAL_REVERSE: (id: number | string) => `/api/v1/financial-documents/${id}/reverse`,
-  JOURNALS: '/api/v1/journal-entries',
-  JOURNAL_POST: (id: number | string) => `/api/v1/journal-entries/${id}/post`,
-  PERIOD_CLOSE: (id: number | string) => `/api/v1/accounting-periods/${id}/close`,
   ATTACHMENTS_PRESIGN: '/api/v1/attachments/presign',
   AUDIT_EVENTS: '/api/v1/audit-events',
 } as const

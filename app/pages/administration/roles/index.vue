@@ -1,10 +1,10 @@
 <script setup lang="ts">
 definePageMeta({
-  titleKey: 'freight.pages.roles',
+  titleKey: 'app.pages.roles',
   permission: 'admin.roles.view',
 })
 </script>
 
 <template>
-  <FreightWorkspaceView />
+  <ModuleWorkspaceView />
 </template>

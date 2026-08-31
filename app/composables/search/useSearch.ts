@@ -13,16 +13,15 @@ import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 
 /** Simple synonym map for mock semantic ranking. */
 const SEMANTIC_SYNONYMS: Record<string, string[]> = {
-  meeting: ['session', 'conference', 'agenda', 'topic'],
-  document: ['file', 'record', 'paper', 'letter', 'pdf'],
-  incoming: ['inbound', 'received', 'inbox'],
-  outgoing: ['outbound', 'sent', 'dispatch'],
-  approve: ['approval', 'authorized', 'sign-off', 'signed'],
-  department: ['unit', 'division', 'office', 'org'],
-  company: ['partner', 'organization', 'firm', 'corp'],
-  upload: ['file', 'attachment', 'portal'],
-  tax: ['gdt', 'revenue', 'taxation'],
-  urgent: ['priority', 'asap', 'critical'],
+  rental: ['hire', 'lease', 'booking'],
+  motorcycle: ['bike', 'moto', 'scooter'],
+  customer: ['client', 'renter'],
+  payment: ['paid', 'receipt', 'invoice'],
+  overdue: ['late', 'past due'],
+  report: ['summary', 'analytics'],
+  expense: ['cost', 'spend'],
+  document: ['file', 'record', 'pdf'],
+  upload: ['file', 'attachment'],
 }
 
 export function useSearch() {

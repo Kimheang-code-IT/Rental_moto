@@ -9,9 +9,6 @@ export const ApiEndpoints = {
   AUTH_CHANGE_PASSWORD: '/api/v2/auth/change-password',
   AUTH_PROFILE_AVATAR: '/api/v2/auth/profile/avatar',
 
-  RECORD_TYPES: '/api/v2/configuration/record-types',
-  RECORD_ATTRIBUTES: '/api/v2/configuration/record-attributes',
-
   APP_INFO: '/api/v2/settings/app-info',
   APP_INFO_RESET: '/api/v2/settings/app-info/reset',
   APP_CONFIG: '/api/v2/settings/app-config',

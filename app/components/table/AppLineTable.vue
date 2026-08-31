@@ -2,17 +2,16 @@
 import type { TableColumn } from '@nuxt/ui'
 import { h, type Component } from 'vue'
 import { CommonAppInputDate, UButton, UCheckbox, UDropdownMenu, UIcon, UInput, UInputNumber, USelect } from '#components'
-import type { FreightLineColumn, FreightTable } from '~/config/freight-modules'
-import { useFreightLabel } from '~/composables/freight/useFreight'
+import type { ModuleLineColumn, ModuleTable } from '~/config/modules'
+import { useModuleLabel } from '~/composables/module/useModule'
 import type { DatePickerGranularity } from '~/utils/date-picker'
-import { fileTableRowBy, fileTableRowCreated, fileTableRowName, filePreviewHref, revokeFilePreview, useFileAttachments } from '~/utils/freight/attachments'
-import { containerPaymentAmounts } from '~/utils/freight/job-containers'
+import { fileTableRowBy, fileTableRowCreated, fileTableRowName, filePreviewHref, revokeFilePreview, useFileAttachments } from '~/utils/module/attachments'
 import { fileTypeIcon } from '~/utils/file-icon'
 import { formatDate, formatDateTime, formatMoney, formatNumber } from '~/utils/format/format-service'
 import { freightTableUiCompactReadonly, freightTableUiLine } from '~/utils/table/theme'
 
 const props = withDefaults(defineProps<{
-  table: FreightTable
+  table: ModuleTable
   modelValue: Array<Record<string, unknown>>
   disabled?: boolean
   compact?: boolean
@@ -27,8 +26,12 @@ const emit = defineEmits<{
 }>()
 
 const { t, te } = useI18n()
-const { fieldLabel, tableTitle } = useFreightLabel()
+const { fieldLabel, tableTitle } = useModuleLabel()
 const { inputRef, openPicker, rowsFromInput } = useFileAttachments()
+
+function setFileInput(element: unknown) {
+  inputRef.value = element as HTMLInputElement | null
+}
 
 const TableButton = UButton as Component
 const TableCheckbox = UCheckbox as Component
@@ -46,7 +49,7 @@ const tableUi = computed(() => props.compact ? freightTableUiCompactReadonly : f
 const moneyKeys = new Set(['unitPrice', 'discountPercent', 'taxPercent', 'discountAmount', 'discount', 'taxAmount', 'lineTotal', 'total', 'amount'])
 const numericKeys = new Set(['quantity', 'actualQuantity', 'remaining', 'netWeightKg', 'grossWeightKg', 'weightKg', 'taxRate', ...moneyKeys])
 
-function columnCellClass(column: FreightLineColumn) {
+function columnCellClass(column: ModuleLineColumn) {
   if (column.key === 'blNo' || column.key === 'truckNo' || column.key === 'containerNo') return 'w-36 min-w-28'
   if (column.key === 'quantity' || column.key === 'actualQuantity' || column.key === 'remaining') return 'w-20 min-w-20 text-right tabular-nums'
   if (column.key === 'unit') return 'w-24 min-w-24'
@@ -63,7 +66,7 @@ function columnCellClass(column: FreightLineColumn) {
   return 'min-w-28'
 }
 
-function displayValue(column: FreightLineColumn, value: unknown, row?: Record<string, unknown>) {
+function displayValue(column: ModuleLineColumn, value: unknown, row?: Record<string, unknown>) {
   if (isFileTable.value && row) {
     if (column.key === 'fileName') return fileTableRowName(row) || '—'
     if (column.key === 'uploadedBy') return fileTableRowBy(row) || '—'
@@ -88,7 +91,7 @@ function displayValue(column: FreightLineColumn, value: unknown, row?: Record<st
   return String(value)
 }
 
-function lineDateGranularity(column: FreightLineColumn): DatePickerGranularity | null {
+function lineDateGranularity(column: ModuleLineColumn): DatePickerGranularity | null {
   if (column.type === 'datetime') return 'minute'
   if (column.type === 'date') return 'day'
   if (/At$|Time$/i.test(column.key)) return 'minute'
@@ -96,7 +99,7 @@ function lineDateGranularity(column: FreightLineColumn): DatePickerGranularity |
   return null
 }
 
-function columnHeader(column: FreightLineColumn) {
+function columnHeader(column: ModuleLineColumn) {
   return h('div', { class: numericKeys.has(column.key) ? 'text-right' : '' }, [
     h('span', fieldLabel(column)),
     column.required
@@ -105,7 +108,7 @@ function columnHeader(column: FreightLineColumn) {
   ])
 }
 
-function inlineNumberFieldsCell(column: FreightLineColumn, row: Record<string, unknown>, index: number) {
+function inlineNumberFieldsCell(column: ModuleLineColumn, row: Record<string, unknown>, index: number) {
   const inlineFields = column.inlineFields || []
   const formatInlineNumber = (value: unknown) =>
     formatNumber(value, { maximumFractionDigits: 2, minimumFractionDigits: 0 })
@@ -137,7 +140,7 @@ function inlineNumberFieldsCell(column: FreightLineColumn, row: Record<string, u
   ])
 }
 
-function inlineMoneyCell(column: FreightLineColumn, row: Record<string, unknown>, index: number) {
+function inlineMoneyCell(column: ModuleLineColumn, row: Record<string, unknown>, index: number) {
   const inlineFields = column.inlineFields || []
   const main = h('span', {
     class: [columnCellClass(column), 'block truncate text-xs'],
@@ -215,11 +218,7 @@ function updateCell(index: number, key: string, value: unknown) {
     const tax = Number(row.taxAmount || row.tax || 0)
     next[index] = { ...row, amount: Number((taxable + tax).toFixed(2)) }
   }
-  if (props.table.key === 'containerPayments') {
-    const row = next[index]
-    if (!row) return
-    next[index] = { ...row, ...containerPaymentAmounts(row) }
-  }
+
   rows.value = next
 }
 
@@ -238,17 +237,6 @@ function addRow() {
     for (const inline of column.inlineFields || []) {
       if (!(inline.key in blank)) blank[inline.key] = 0
     }
-  }
-  if (props.table.key === 'containerPayments') {
-    const last = rows.value[rows.value.length - 1]
-    blank.quantity = Number(last?.quantity || 1) || 1
-    blank.containerNo = String(last?.containerNo || '')
-    blank.feeType = String(last?.feeType || blank.feeType || '')
-    blank.unitPrice = 0
-    blank.discountAmount = 0
-    blank.taxAmount = 0
-    blank.description = ''
-    blank.lineTotal = 0
   }
   if (props.table.key === 'containerRequirements') {
     blank.quantity = 1
@@ -290,7 +278,7 @@ function fileNameCell(row: Record<string, unknown>) {
       rel: 'noopener noreferrer',
       class: [labelClass, 'hover:text-primary hover:underline'],
       title: name,
-      'aria-label': t('freight.ui.previewFile', { name }),
+      'aria-label': t('app.ui.previewFile', { name }),
     }, name)
     : h('span', { class: labelClass, title: name }, name)
   return h('div', { class: 'flex min-w-0 items-center gap-1.5' }, [
@@ -393,7 +381,7 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => {
         const actions = items[0]!
         if (isFileTable.value && filePreviewHref(row.original)) {
           actions.push({
-            label: t('freight.ui.preview'),
+            label: t('app.ui.preview'),
             icon: 'i-lucide-external-link',
             onSelect: () => {
               const href = filePreviewHref(row.original)
@@ -446,16 +434,29 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => {
       <h3 :class="compact ? 'text-xs font-medium text-highlighted' : 'text-sm font-medium text-highlighted'">
         {{ tableTitle(table) }}
       </h3>
-      <UButton v-if="!disabled" :size="compact ? 'xs' : 'sm'" color="neutral" variant="soft"
+      <UButton
+v-if="!disabled"
+:size="compact ? 'xs' : 'sm'"
+color="neutral"
+variant="soft"
         :icon="isFileTable ? 'i-lucide-upload' : 'i-lucide-plus'"
-        :label="table.addLabelKey && te(table.addLabelKey) ? t(table.addLabelKey) : (table.addLabel || t('freight.ui.addRow'))"
+        :label="table.addLabelKey && te(table.addLabelKey) ? t(table.addLabelKey) : (table.addLabel || t('app.ui.addRow'))"
         @click="addRow" />
     </div>
-    <input v-if="isFileTable && !disabled" ref="inputRef" type="file" multiple class="hidden" @change="onFilesChosen">
+    <input
+v-if="isFileTable && !disabled"
+:ref="setFileInput"
+type="file"
+multiple
+class="hidden"
+@change="onFilesChosen">
     <div class="overflow-x-auto">
-      <UTable :data="tableRows" :columns="columns"
+      <UTable
+:data="tableRows"
+:columns="columns"
         :get-row-id="(row: Record<string, unknown>) => String(row._rowIndex ?? '')"
-        :class="['freight-table min-w-max', compact ? 'freight-table-compact' : '']" :ui="tableUi" />
+        :class="['freight-table min-w-max', compact ? 'freight-table-compact' : '']"
+:ui="tableUi" />
     </div>
   </section>
 </template>

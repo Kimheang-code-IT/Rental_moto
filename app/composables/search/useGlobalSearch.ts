@@ -1,7 +1,7 @@
 /**
  * Cmd+K global search: keyword / semantic modes, Ask AI on demand, source links.
  */
-import type { CommandPaletteItem, CommandPaletteGroup } from '@nuxt/ui'
+import type { CommandPaletteItem, CommandPaletteGroup, NavigationMenuItem } from '@nuxt/ui'
 import type { SearchHit, SearchMode } from '~/types/docetra/search'
 import { ensureSearchIndexSeeded } from '~/utils/search/seed-index'
 import { useMenu } from '~/composables/layout/useMenu'
@@ -41,7 +41,7 @@ export function useGlobalSearch() {
       })
     }
 
-    for (const link of navLinks as any[]) {
+    for (const link of navLinks as NavigationMenuItem[]) {
       if (link.children?.length) {
         for (const child of link.children) {
           if (child.to) pushLink(String(child.label), String(child.to), child.icon || link.icon)
@@ -118,8 +118,8 @@ export function useGlobalSearch() {
       description: `${hit.sourceLabel} · ${hit.snippet}`,
       icon: hit.entityType === 'file' || hit.entityType === 'attachment'
         ? 'i-lucide-paperclip'
-        : hit.entityType === 'meeting' || hit.entityType === 'meetingTopic'
-          ? 'i-lucide-video'
+        : hit.entityType === 'user'
+          ? 'i-lucide-user'
           : 'i-lucide-file-text',
       to: hit.url,
       onSelect: () => {

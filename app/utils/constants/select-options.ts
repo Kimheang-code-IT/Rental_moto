@@ -83,11 +83,11 @@ export const PAGE_SIZE_OPTIONS: FieldOption[] = [
 
 export const LANDING_PAGE_OPTIONS: FieldOption[] = [
   { label: 'Dashboard', value: '/' },
-  { label: 'Service Orders', value: '/service-orders' },
-  { label: 'Business Parties', value: '/master-data/business-parties' },
-  { label: 'Quotations', value: '/quotations' },
-  { label: 'Financial Documents', value: '/finance/documents' },
-  { label: 'Reports', value: '/reports' },
+  { label: 'Motorcycles', value: '/motorcycles' },
+  { label: 'Customers', value: '/customers' },
+  { label: 'Rentals', value: '/rentals' },
+  { label: 'Income & Expense', value: '/income-expense' },
+  { label: 'Rental Reports', value: '/rental-reports' },
 ]
 
 export const AWS_REGION_OPTIONS: FieldOption[] = [

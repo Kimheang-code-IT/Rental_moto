@@ -48,7 +48,7 @@ export function usePageSeo(options: PageSeoOptions) {
     ogTitle: () => title.value,
     ogDescription: () => description.value,
     ogImage: () => ogImage.value,
-    ogImageAlt: () => title.value,
+    ogImageAlt: () => t('docetra.brand.logoAlt'),
     ogImageWidth: '1200',
     ogImageHeight: '630',
     ogUrl: () => pageUrl.value || undefined,
@@ -56,7 +56,7 @@ export function usePageSeo(options: PageSeoOptions) {
     twitterTitle: () => title.value,
     twitterDescription: () => description.value,
     twitterImage: () => ogImage.value,
-    twitterImageAlt: () => title.value,
+    twitterImageAlt: () => t('docetra.brand.logoAlt'),
     // Large card so messengers show a big preview image (like YouTube links).
     twitterCard: 'summary_large_image',
     robots: () => robots.value,

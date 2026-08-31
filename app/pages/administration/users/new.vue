@@ -1,10 +1,10 @@
 <script setup lang="ts">
 definePageMeta({
-  titleKey: 'freight.pages.users',
+  titleKey: 'app.pages.users',
   permission: 'admin.users.view',
 })
 </script>
 
 <template>
-  <FreightModulePage />
+  <ModulePage />
 </template>
