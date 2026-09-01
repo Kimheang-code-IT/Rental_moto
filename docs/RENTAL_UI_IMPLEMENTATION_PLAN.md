@@ -148,13 +148,12 @@ Mostly **exists**; changes are trims/labels:
 - Print stylesheet for invoice only.
 - **Branding → HollyWing Motor** (owner decision; logo provided at
   `app/assets/images/m-logo.png`):
-  - `AppSlidebar.vue`: logo swap, `LCS Freight` → `HollyWing Motor`, tagline
+  - `AppSlidebar.vue`: logo swap to `HollyWing Motor`, tagline
     `Forwarding System` → `MOTORCYCLE RENTAL` (assumption — confirm), aria/alt text.
-  - `AppHeader.vue`: two `displayTitle || 'LCS Freight'` fallbacks → `HollyWing Motor`.
+  - `AppHeader.vue`: title fallbacks → `HollyWing Motor`.
   - i18n `common.brand.{name,tagline,logoAlt}`, `aboutCopyright`, login-page terms strings
-    (`LCS Freight Forwarding` mentions), `app.description/keywords` SEO strings in `nuxt.config`.
-  - `lcs-tenant.ts` `display_name`, mock-login `organizationName`, settings mock
-    `applicationName` — so user-visible org name reads HollyWing Motor.
+    (legacy forwarding mentions), `app.description/keywords` SEO strings in `nuxt.config`.
+  - Mock login and settings `applicationName` use HollyWing Motor. The final system is single-business and has no organization or branch entities.
   - `public/logo.png` + OG image regeneration (`scripts/generate-og-image.mjs`) with the new logo.
 
 ### Phase 2I — Freight module removal (owner decision: "remove, we don't need it anymore")
@@ -163,10 +162,10 @@ Runs **last**, after 2A–2H are visually approved. Delete in one clean cutover:
 | Layer | Removed | Kept (shared infra) |
 |---|---|---|
 | Pages | `pages/quotations/*`, `service-orders/*`, `service-charges/*`, `finance/*`, `master-data/*`, `configuration/*`, `reports/*` | all rental + administration + auth pages |
-| Config | `freight-modules.ts` (freight module entries), `freight-reports.ts`, freight options (directions/containers/customs…) | `rental-*` configs; `settings-schemas.ts`; `lcs-reference-modules.ts` trimmed to admin-only entries |
-| Seed | `freight-seed.ts`, freight collections in `lcs-seed.ts` (quotations, jobs, shipments, customs, chartOfAccounts…) | users/roles/audit/orgs/branches/documentSequences/systemSettings seed |
+| Config | Legacy forwarding module entries, reports, and options (directions/containers/customs…) | `rental-*` configs and `settings-schemas.ts` |
+| Seed | Legacy quotations, jobs, shipments, customs, and accounting collections | users/roles/audit/documentSequences/systemSettings seed; no organizations or branches |
 | Components | freight business components (`Job*`, `DocumentView` freight-specifics) | `ModulePage`, `WorkspaceView`, dashboard kit, table/form/dialog kit |
-| i18n | `freight.*` keys not reused by rental/admin | `rental.*`, `docetra.*`, `common.*` |
+| i18n | Legacy forwarding keys not reused by rental/admin | `rental.*`, `core.*`, `app.*` |
 | Tests | specs covering deleted routes (`job-*`, `quotations`-related, `freight` format specs) | admin/auth/table/setting specs |
 | Nav | freight `ROUTE_PERMISSION` entries, freight search-index seeds | rental + admin entries |
 

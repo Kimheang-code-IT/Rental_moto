@@ -1,0 +1,206 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rental}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rental}
+      POSTGRES_DB: ${POSTGRES_DB:-rental_moto}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rental} -d ${POSTGRES_DB:-rental_moto}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-rental}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-rental}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-rental}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - exportdata:/srv/data/exports
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD:-rental}@db:5432/${POSTGRES_DB:-rental_moto}
+      REDIS_URL: redis://redis:6379/0
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-rental}:${RABBITMQ_PASSWORD:-rental}@rabbitmq:5672/${RABBITMQ_VHOST:-rental}
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-rental}:${RABBITMQ_PASSWORD:-rental}@rabbitmq:5672/${RABBITMQ_VHOST:-rental}
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-secret-change-me-in-production-0123456789abcdef}
+      TELEGRAM_BOT_CLIENT_ID: ${TELEGRAM_BOT_CLIENT_ID:-rental-telegram-bot}
+      TELEGRAM_BOT_CLIENT_SECRET: ${TELEGRAM_BOT_CLIENT_SECRET:-dev-only-telegram-secret-change-me-0123456789abcdef}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@gmail.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-123456}
+      ENVIRONMENT: development
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker-default:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker -Q reports,maintenance --loglevel=INFO
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping", "--timeout", "15"]
+      interval: 30s
+      timeout: 20s
+      start_period: 40s
+      retries: 5
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD:-rental}@db:5432/${POSTGRES_DB:-rental_moto}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-rental}:${RABBITMQ_PASSWORD:-rental}@rabbitmq:5672/${RABBITMQ_VHOST:-rental}
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-rental}:${RABBITMQ_PASSWORD:-rental}@rabbitmq:5672/${RABBITMQ_VHOST:-rental}
+    depends_on:
+      api:
+        condition: service_started
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker-telegram:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker -Q critical,telegram --concurrency=2 --loglevel=INFO
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping", "--timeout", "15"]
+      interval: 30s
+      timeout: 20s
+      start_period: 40s
+      retries: 5
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD:-rental}@db:5432/${POSTGRES_DB:-rental_moto}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-rental}:${RABBITMQ_PASSWORD:-rental}@rabbitmq:5672/${RABBITMQ_VHOST:-rental}
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    depends_on:
+      api:
+        condition: service_started
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  worker-export:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker -Q exports --concurrency=2 --loglevel=INFO
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping", "--timeout", "15"]
+      interval: 30s
+      timeout: 20s
+      start_period: 40s
+      retries: 5
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD:-rental}@db:5432/${POSTGRES_DB:-rental_moto}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-rental}:${RABBITMQ_PASSWORD:-rental}@rabbitmq:5672/${RABBITMQ_VHOST:-rental}
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      EXPORT_DIR: /srv/data/exports
+    volumes:
+      - exportdata:/srv/data/exports
+    depends_on:
+      api:
+        condition: service_started
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=INFO
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rental}:${POSTGRES_PASSWORD:-rental}@db:5432/${POSTGRES_DB:-rental_moto}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-rental}:${RABBITMQ_PASSWORD:-rental}@rabbitmq:5672/${RABBITMQ_VHOST:-rental}
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      api:
+        condition: service_started
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.telegram
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8000
+      REDIS_URL: redis://redis:6379/1
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_MODE: ${TELEGRAM_BOT_MODE:-polling}
+      TELEGRAM_BOT_CLIENT_ID: ${TELEGRAM_BOT_CLIENT_ID:-rental-telegram-bot}
+      TELEGRAM_BOT_CLIENT_SECRET: ${TELEGRAM_BOT_CLIENT_SECRET:-dev-only-telegram-secret-change-me-0123456789abcdef}
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  exportdata:

@@ -1,0 +1,42 @@
+---
+description: HollyWing Motor repository conventions for frontend, backend, rental logic, API integration, and verification
+globs:
+alwaysApply: true
+---
+
+# HollyWing Motor project rule
+
+Work from repository evidence and keep changes focused. Read the relevant sections of `docs/GLM_SYSTEM_GUIDE.md` before changing domain behavior. For planned backend work, also read `docs/BACKEND_IMPLEMENTATION_PLAN.md`.
+
+## Repository facts
+
+- The active frontend is under `frontend/` and uses Nuxt 4, Vue 3, TypeScript, Pinia, Nuxt UI, Vitest, and English/Khmer i18n.
+- Resolve documentation paths such as `app/...` as `frontend/app/...`.
+- `backend/` is reserved for a planned FastAPI/PostgreSQL/Redis/RabbitMQ/Celery implementation; inspect it before assuming code exists.
+
+## Change rules
+
+- Search for existing types, utilities, repositories, components, tests, and translation keys before adding code.
+- Reuse established module, table, form, composable, and repository patterns.
+- Keep English and Khmer keys synchronized and avoid hard-coded UI text where i18n is used.
+- Preserve `/api/v2`, `{ data, meta }` responses, bearer access tokens, and rotating refresh tokens.
+- Do not add cookie sessions, CSRF-token authentication, end-user API keys, or tenant/branch claims.
+- PostgreSQL is authoritative; Redis contains only cache and transient state.
+- Keep rental, payment, charge, return, motorcycle status, pricing, audit, and outbox updates consistent.
+- Use decimal-safe backend money calculations.
+- Preserve unrelated edits and avoid destructive Git or filesystem commands.
+- Add or update tests for changed business logic, regressions, permissions, or API contracts.
+
+## Verification
+
+Run relevant checks from the repository root:
+
+```text
+pnpm --dir frontend test
+pnpm --dir frontend typecheck
+pnpm --dir frontend lint
+pnpm --dir frontend build
+```
+
+Use focused tests while iterating. Never report a check as passing unless it was actually run. If blocked, identify the exact unverified check.
+
