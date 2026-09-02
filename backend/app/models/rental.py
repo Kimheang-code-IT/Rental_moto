@@ -56,6 +56,7 @@ class Rental(Base, TimestampMixin):
     cancel_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     overdue_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline_alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     payments: Mapped[list["RentalPayment"]] = relationship(back_populates="rental", lazy="selectin")
     charges: Mapped[list["RentalCharge"]] = relationship(back_populates="rental", lazy="selectin")

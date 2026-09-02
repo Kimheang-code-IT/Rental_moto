@@ -37,6 +37,7 @@ const wideForm = computed(() =>
     tab.sections.some(section =>
       section.fields.some(field =>
         field.type === 'telegram-destinations'
+        || field.type === 'telegram-user-access'
         || field.type === 'notification-rules'
         || field.type === 'line-table'
         || field.type === 'related-records',
@@ -51,6 +52,7 @@ function isFullWidthField(field: DocumentTabSchema['sections'][0]['fields'][0]) 
     || field.type === 'image'
     || field.type === 'permission-matrix'
     || field.type === 'telegram-destinations'
+    || field.type === 'telegram-user-access'
     || field.type === 'notification-rules'
     || field.type === 'connection-status'
     || field.type === 'alert'

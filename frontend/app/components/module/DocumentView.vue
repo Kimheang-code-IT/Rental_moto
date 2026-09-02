@@ -13,7 +13,7 @@ import type { AppRecord } from '~/config/admin-seed'
 import { useModuleRecordChrome } from '~/composables/module/useModuleRecordChrome'
 import { normalizePermissionRows, permissionRowsToFlatKeys } from '~/utils/role/permissions'
 import type { AppRolePermissionRow } from '~/types/rental/entities'
-import { documentSequencePreview, documentSequenceTypeLabel } from '~/utils/document-sequences'
+import { documentSequencePreview, documentSequenceTypeLabel, documentSequenceTypeOptions, normalizeDocumentSequenceType } from '~/utils/document-sequences'
 import {
   moduleDocumentLineActionKey,
   moduleDocumentTabs,
@@ -30,10 +30,12 @@ const { setBreadcrumbs, setBadges, clear } = useAppHeader()
 const { confirm } = useConfirm()
 
 const saving = ref(false)
+const loadingRecord = ref(false)
 const activeTab = ref('general')
 const model = ref<AppRecord>({ id: '' } as AppRecord)
 const originalModel = ref<AppRecord | null>(null)
 const notFound = ref(false)
+let loadGeneration = 0
 
 const {
   currentUser,
@@ -59,9 +61,18 @@ function applyRoleMatrix() {
   }
 }
 
-function load() {
+function applyLoadedRecord(record: AppRecord) {
+  model.value = { ...record } as AppRecord
+  originalModel.value = { ...record } as AppRecord
+  notFound.value = false
+  applyRoleMatrix()
+}
+
+async function load() {
+  const generation = ++loadGeneration
   if (!module.value) return
   if (isCreate.value) {
+    loadingRecord.value = false
     model.value = emptyModuleRecord(module.value) as AppRecord
     if (module.value.collection === 'documentSequences') {
       model.value.nextNumberPreview = documentSequencePreview(model.value)
@@ -77,29 +88,39 @@ function load() {
     return
   }
   const found = store.get(module.value.collection, recordId.value)
-  if (store.isHttpMode && !found) {
-    void store.fetchOne(module.value.collection, recordId.value).then((record) => {
-      if (record) {
-        model.value = { ...record } as AppRecord
-        originalModel.value = { ...record } as AppRecord
-        notFound.value = false
-        applyRoleMatrix()
-      }
-      else {
-        notFound.value = true
-      }
-    })
+  if (found) {
+    loadingRecord.value = false
+    applyLoadedRecord(found)
     return
   }
+  if (store.isHttpMode) {
+    if (!import.meta.client) {
+      loadingRecord.value = true
+      return
+    }
+    loadingRecord.value = true
+    notFound.value = false
+    const record = await store.fetchOne(module.value.collection, recordId.value)
+    if (generation !== loadGeneration) return
+    loadingRecord.value = false
+    if (record) applyLoadedRecord(record)
+    else notFound.value = true
+    return
+  }
+  loadingRecord.value = false
   notFound.value = !found
-  model.value = found ? { ...found } as AppRecord : emptyModuleRecord(module.value) as AppRecord
-  originalModel.value = found ? { ...found } as AppRecord : null
+  if (found) {
+    applyLoadedRecord(found)
+    return
+  }
+  model.value = emptyModuleRecord(module.value) as AppRecord
+  originalModel.value = null
   applyRoleMatrix()
 }
 
 watch(
   [() => module.value?.path, recordId, isCreate, () => Boolean(module.value && store.get(module.value.collection, recordId.value))],
-  load,
+  () => { void load() },
   { immediate: true },
 )
 
@@ -128,23 +149,44 @@ const related = computed(() => module.value && !isCreate.value ? store.related(m
 const readOnly = computed(() => {
   if (!module.value) return true
   if (module.value.readOnly) return true
-  if (!auth.user?.pageAccess?.includes('ALL_PAGES')) {
-    if (module.value.group === 'master' || module.value.group === 'configuration') return true
-  }
-  return false
+  if (module.value.collection === 'roles' && model.value.name === 'SuperAdmin') return true
+  const prefix = module.value.permission.replace(/\.view$/, '')
+  return !auth.canAccessPage(`${prefix}.${isCreate.value ? 'create' : 'edit'}`)
 })
 const canMutateRecord = computed(() => Boolean(module.value) && !readOnly.value && !isCreate.value && Boolean(model.value.id))
+const canDeleteRecord = computed(() => {
+  if (!module.value || isCreate.value || !model.value.id) return false
+  if (module.value.collection === 'roles' && (model.value.isSystem || Number(model.value.userCount || 0) > 0)) return false
+  return auth.canAccessPage(`${module.value.permission.replace(/\.view$/, '')}.delete`)
+})
 const deactivationOnly = computed(() => module.value?.group === 'master' || module.value?.collection === 'documentSequences')
 
 const tabs = computed(() => {
   if (!module.value) return []
-  return moduleDocumentTabs(module.value, {
+  const base = moduleDocumentTabs(module.value, {
     isCreate: isCreate.value,
     includeRelated: related.value.length > 0,
     readOnlyKeys: module.value.collection === 'documentSequences' && !isCreate.value
-      ? ['documentType', 'year']
+      ? ['documentType']
       : [],
   })
+  if (module.value.collection !== 'documentSequences') return base
+  const typeOptions = documentSequenceTypeOptions(store.list('documentSequences'))
+  return base.map(tab => ({
+    ...tab,
+    sections: tab.sections.map(section => ({
+      ...section,
+      fields: section.fields.map((field) => {
+        if (field.key !== 'documentType' || field.readOnly) return field
+        return {
+          ...field,
+          type: 'select' as const,
+          options: typeOptions,
+          meta: { ...field.meta, creatable: true },
+        }
+      }),
+    })),
+  }))
 })
 
 watch(tabs, (value) => {
@@ -165,7 +207,29 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
     }]]
   }
 
-  if (canMutateRecord.value) {
+  if (module.value?.collection === 'users') {
+    const items: DropdownMenuItem[] = []
+    const active = String(model.value.status || '') === 'Active'
+    if (canMutateRecord.value) {
+      items.push({
+        label: t(active ? 'core.rowActions.deactivate' : 'core.rowActions.activate'),
+        icon: active ? 'i-lucide-circle-off' : 'i-lucide-circle-check',
+        color: active ? 'warning' as const : 'success' as const,
+        onSelect: () => { void setUserStatus(active ? 'Inactive' : 'Active') },
+      })
+    }
+    if (canDeleteRecord.value) {
+      items.push({
+        label: t('app.ui.delete'),
+        icon: 'i-lucide-trash-2',
+        color: 'error' as const,
+        onSelect: () => { void deleteRecord() },
+      })
+    }
+    return items.length ? [items] : []
+  }
+
+  if (canDeleteRecord.value) {
     return [[{
       label: t(deactivationOnly.value ? 'app.ui.deactivate' : 'app.ui.delete'),
       icon: deactivationOnly.value ? 'i-lucide-circle-off' : 'i-lucide-trash-2',
@@ -178,6 +242,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
 
 function setRolePermissions(rows: AppRolePermissionRow[]) {
   const normalized = normalizePermissionRows(rows)
+  if (JSON.stringify(model.value.permissionRows || []) === JSON.stringify(normalized)) return
   model.value = {
     ...model.value,
     permissionRows: normalized,
@@ -186,6 +251,9 @@ function setRolePermissions(rows: AppRolePermissionRow[]) {
 }
 
 function setField(key: string, value: unknown) {
+  const current = model.value[key]
+  if (Object.is(current, value)) return
+  if (key === 'roleId' && String(current ?? '') === String(value ?? '')) return
   model.value = { ...model.value, [key]: value } as AppRecord
   recalculate()
 }
@@ -233,22 +301,21 @@ async function save() {
     recalculate()
     const payload = { ...model.value }
     if (module.value.collection === 'documentSequences') {
+      payload.documentType = normalizeDocumentSequenceType(payload.documentType)
       payload.prefix = String(payload.prefix || '').trim()
       const sequenceYear = Number(payload.year)
-      const lastValue = Number(payload.lastValue)
       const paddingLength = Number(payload.paddingLength)
-      payload.year = sequenceYear
-      payload.lastValue = lastValue
+      payload.year = Number.isInteger(sequenceYear) && sequenceYear >= 1000 && sequenceYear <= 9999 ? sequenceYear : null
       payload.paddingLength = paddingLength
       payload.status = String(payload.status || 'ACTIVE').toUpperCase()
       payload.nextNumberPreview = documentSequencePreview(payload)
 
-      if (!Number.isInteger(sequenceYear) || sequenceYear < 1000 || sequenceYear > 9999) {
-        toast.add({ title: 'Year must be a positive 4-digit year.', color: 'error' })
+      if (!payload.documentType) {
+        toast.add({ title: 'Document type is required.', color: 'error' })
         return
       }
-      if (!Number.isInteger(lastValue) || lastValue < 0) {
-        toast.add({ title: 'Last Value must be a whole number greater than or equal to 0.', color: 'error' })
+      if (!payload.prefix) {
+        toast.add({ title: 'Prefix is required.', color: 'error' })
         return
       }
       if (!Number.isInteger(paddingLength) || paddingLength <= 0) {
@@ -261,29 +328,22 @@ async function save() {
       }
       const duplicate = store.list('documentSequences').find(row =>
         String(row.id) !== String(payload.id || '')
-        && String(row.documentType) === String(payload.documentType)
-        && Number(row.year) === Number(payload.year),
+        && normalizeDocumentSequenceType(row.documentType) === payload.documentType,
       )
       if (duplicate) {
         toast.add({
-          title: 'A document sequence already exists for this document type and year.',
-          description: `${documentSequenceTypeLabel(payload.documentType)} / ${payload.year}`,
+          title: 'A document sequence already exists for this document type.',
+          description: documentSequenceTypeLabel(payload.documentType),
           color: 'error',
         })
         return
       }
-      if (!isCreate.value && originalModel.value && Number(payload.lastValue) !== Number(originalModel.value.lastValue)) {
-        const ok = await confirm({
-          kind: 'generic',
-          title: 'Change the last sequence value?',
-          description: 'Changing the last value can create duplicate or skipped document numbers. Continue only after verifying the numbering history.',
-          confirmLabel: 'Change Last Value',
-          confirmColor: 'warning',
-        })
-        if (!ok) return
-      }
     }
-    const missing = module.value.fields.filter(field => field.required && !field.computed && !String(payload[field.key] ?? '').trim())
+    const missing = module.value.fields.filter((field) => {
+      if (isCreate.value && field.hideOnCreate) return false
+      if (!isCreate.value && field.createOnly) return false
+      return field.required && !field.computed && !String(payload[field.key] ?? '').trim()
+    })
     if (missing.length) {
       toast.add({ title: t('app.ui.missingRequired'), description: missing.map(fieldLabel).join(', '), color: 'error' })
       return
@@ -294,24 +354,14 @@ async function save() {
       payload.status ||= 'Active'
       payload.currency ||= 'USD'
     }
-    let saved: AppRecord
-    if (store.isHttpMode) {
-      saved = isCreate.value || !payload.id
-        ? await store.createRemote(module.value.collection, payload)
-        : await store.updateRemote(module.value.collection, String(payload.id), payload)
-    }
-    else {
-      saved = isCreate.value || !payload.id
-        ? store.create(module.value.collection, payload, module.value.collection.slice(0, 3))
-        : store.save(module.value.collection, payload as AppRecord)
-    }
-    store.addAudit('Saved', module.value.title, String(saved[module.value.titleField] || saved.id))
-    toast.add({ title: t('app.ui.save'), color: 'success' })
-    if (isCreate.value) await navigateTo(`${module.value.path}/${saved.id}`)
-    else {
-      model.value = saved
-      originalModel.value = { ...saved }
-    }
+    await (isCreate.value || !payload.id
+      ? store.createRemote(module.value.collection, payload)
+      : store.updateRemote(module.value.collection, String(payload.id), payload))
+    toast.add({ title: t('core.common.saved'), color: 'success' })
+    await navigateTo(module.value.path)
+  }
+  catch {
+    // useApi already surfaced the API error
   }
   finally {
     saving.value = false
@@ -324,7 +374,6 @@ async function setDocumentSequenceStatus(status: 'ACTIVE' | 'INACTIVE') {
   try {
     model.value = await store.updateRemote(module.value.collection, String(model.value.id), { status }) as AppRecord
     originalModel.value = { ...model.value }
-    store.addAudit(status === 'ACTIVE' ? 'Activated' : 'Deactivated', module.value.title, String(model.value.documentType || model.value.id))
     toast.add({ title: t(status === 'ACTIVE' ? 'core.common.activated' : 'core.common.deactivated'), color: 'success' })
   }
   finally {
@@ -332,14 +381,26 @@ async function setDocumentSequenceStatus(status: 'ACTIVE' | 'INACTIVE') {
   }
 }
 
+async function setUserStatus(status: 'Active' | 'Inactive') {
+  if (module.value?.collection !== 'users' || !canMutateRecord.value) return
+  saving.value = true
+  try {
+    model.value = await store.updateRemote(module.value.collection, String(model.value.id), { status }) as AppRecord
+    originalModel.value = { ...model.value }
+    toast.add({ title: t(status === 'Active' ? 'core.common.activated' : 'core.common.deactivated'), color: 'success' })
+  }
+  finally {
+    saving.value = false
+  }
+}
+
 async function deleteRecord() {
-  if (!module.value || !canMutateRecord.value) return
+  if (!module.value || !canDeleteRecord.value) return
   if (deactivationOnly.value) {
     saving.value = true
     try {
       const status = module.value.collection === 'documentSequences' ? 'INACTIVE' : 'Inactive'
       model.value = await store.updateRemote(module.value.collection, String(model.value.id), { status }) as AppRecord
-      store.addAudit('Deactivated', module.value.title, String(model.value[module.value.titleField] || model.value.id))
       toast.add({ title: t('app.ui.recordDeactivated'), color: 'success' })
     }
     finally {
@@ -350,24 +411,25 @@ async function deleteRecord() {
   const ok = await confirm({ kind: 'delete', count: 1 })
   if (!ok) return
   await store.deleteRemote(module.value.collection, [String(model.value.id)])
-  store.addAudit('Deleted', module.value.title, String(model.value[module.value.titleField] || model.value.id))
   toast.add({ title: t('core.actions.deletedItems', { n: 1 }), color: 'success' })
   await navigateTo(module.value.path)
 }
 </script>
 
 <template>
-  <template v-if="module && !notFound">
+  <template v-if="module">
     <DocumentAppDocumentPage
       :tabs="tabs"
       :active-tab="activeTab"
       :field-value="fieldValue"
       :set-field-value="setFieldValue"
+      :pending="loadingRecord"
+      :not-found="notFound"
       :saving="saving"
       :read-only="readOnly"
-      :can-save="!readOnly"
-      :save-label="t('core.common.save')"
-      :confirm-save="false"
+      :can-save="!readOnly && !notFound && !loadingRecord"
+      :is-create="isCreate"
+      :confirm-save="true"
       :show-cancel="false"
       :show-tabs="tabs.length > 1"
       show-list-nav
@@ -375,7 +437,6 @@ async function deleteRecord() {
       :can-navigate-previous="canNavigatePrevious"
       :can-navigate-next="canNavigateNext"
       :list-to="listTo"
-      :is-create="isCreate"
       :attachments="attachments"
       :current-user="currentUser"
       :meta-title="title"
@@ -392,10 +453,10 @@ async function deleteRecord() {
       @update:active-tab="activeTab = $event"
       @update:attachments="setChromeField('attachments', $event)"
       @save="save()"
-      @refresh="load"
+      @refresh="() => { void load() }"
       @navigate-previous="navigatePrevious"
       @navigate-next="navigateNext"
     />
   </template>
-  <div v-else class="p-6 text-sm text-muted">{{ t('core.document.notFound') || 'Record not found.' }}</div>
+  <div v-else class="p-6 text-sm text-muted">{{ t('core.states.notFound') }}</div>
 </template>

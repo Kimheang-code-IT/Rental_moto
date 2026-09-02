@@ -53,13 +53,6 @@ export const NUMBER_FORMAT_OPTIONS: FieldOption[] = [
 export const CURRENCY_OPTIONS: FieldOption[] = [
   { label: 'USD — US Dollar', value: 'USD' },
   { label: 'KHR — Cambodian Riel', value: 'KHR' },
-  { label: 'THB — Thai Baht', value: 'THB' },
-  { label: 'VND — Vietnamese Dong', value: 'VND' },
-  { label: 'SGD — Singapore Dollar', value: 'SGD' },
-  { label: 'EUR — Euro', value: 'EUR' },
-  { label: 'GBP — British Pound', value: 'GBP' },
-  { label: 'JPY — Japanese Yen', value: 'JPY' },
-  { label: 'CNY — Chinese Yuan', value: 'CNY' },
 ]
 
 export const LOCALE_OPTIONS: FieldOption[] = [

@@ -5,22 +5,88 @@ motorcycle rental system. Implements the `/api/v2` contract expected by the
 Nuxt frontend under `frontend/` (see `docs/BACKEND_IMPLEMENTATION_PLAN.md` and
 `docs/GLM_SYSTEM_GUIDE.md`).
 
-## Quick start
+## Quick start (full stack in Docker)
+
+From the **repository root**:
 
 ```bash
-cd backend
-cp .env.example .env
+cp backend/.env.example .env
 docker compose up -d --build
 ```
+
+Or on Windows PowerShell:
+
+```powershell
+.\scripts\start-docker.ps1
+```
+
+| URL | Service |
+|-----|---------|
+| http://localhost (port 80) | Nuxt frontend behind **nginx** |
+| http://localhost:8000/docs | FastAPI API (Swagger) |
+| http://localhost:9001 | MinIO file-management console |
+| http://\<lan-ip\> | Frontend from phones on the same Wi‑Fi |
+
+Set `FRONTEND_PORT=3000` in the repository-root `.env` if port 80 is already in use.
 
 The API container runs `alembic upgrade head`, seeds development data, and
 starts uvicorn on http://localhost:8000 (Swagger at `/docs`).
 
-Then run the frontend from the repo root:
+The frontend image generates a static client application and serves it directly
+through nginx on port 80; no Node server runs in the final container. The browser uses `NUXT_PUBLIC_API_BASE=auto` so
+API calls follow the same host on port 8000. Development CORS allows private
+LAN origins when `CORS_ALLOW_PRIVATE_NETWORKS=true`.
+
+### Auto-start when you open the PC
+
+Every Compose service uses `restart: unless-stopped`. After the first
+`docker compose up -d --build`:
+
+1. Enable **Docker Desktop → Settings → General → Start Docker Desktop when you sign in**.
+2. Containers start automatically whenever Docker is running (including after reboot).
+
+To stop the stack: `docker compose down` from the repository root.
+
+For local frontend development without Docker:
 
 ```bash
-cp .env.example .env   # set NUXT_PUBLIC_USE_MOCK_DATA=false, NUXT_PUBLIC_API_BASE=http://localhost:8000
-pnpm dev
+cd ..
+cp frontend/.env.example frontend/.env   # NUXT_PUBLIC_API_BASE=auto
+pnpm --dir frontend dev
+```
+
+Run the API with `--host 0.0.0.0` so it listens on your LAN IP (Docker Compose
+already does this). Then open the dev server from another device using your PC's
+Wi‑Fi IP on port 3000.
+
+## Reset database (delete all data)
+
+To wipe all business data and keep only bootstrap (admin user, roles, sequences):
+
+```bash
+docker compose exec api python scripts/reset_db.py
+```
+
+To completely destroy the database volume and start fresh:
+
+```bash
+docker compose down -v
+docker compose up -d --build
+```
+
+After reset, log in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `.env`
+(defaults are development-only: `admin@gmail.com` / `123456`).
+
+## Production
+
+See [`docs/PRODUCTION_CHECKLIST.md`](../docs/PRODUCTION_CHECKLIST.md).
+
+```powershell
+# Clean business data + MinIO invoices + local caches
+.\scripts\prepare-production.ps1
+
+# Start with production overlay (no DB/Redis/RabbitMQ/MinIO host ports)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
 ## Development logins (development-only)
@@ -40,14 +106,33 @@ and demo customers are also development-only.
 | Service | Purpose |
 |---------|---------|
 | `api` | FastAPI on :8000, migrations + seed on boot |
+| `frontend` | Static Nuxt client served by nginx (host port from `FRONTEND_PORT`, default 80) |
 | `db` | PostgreSQL 16 on :5432 (authoritative store) |
 | `redis` | Redis 7 on :6379 — cache, denylist, rate limits, bot state |
 | `rabbitmq` | RabbitMQ 4 on :5672, management UI on :15672 (local only) |
+| `minio` | Private S3-compatible invoice/file storage on :9000, console on :9001 |
+| `minio-init` | Idempotently creates the private `rental-files` bucket |
 | `worker-default` | Celery worker for `reports` + `maintenance` queues |
 | `worker-telegram` | Celery worker for `critical` + `telegram` queues |
 | `worker-export` | Celery worker for `exports` queue |
 | `scheduler` | Celery Beat (overdue scans, outbox dispatch, summaries, cleanup) |
 | `telegram-bot` | Telegram bot (polling), talks to the API with service JWTs only |
+
+### MinIO invoice archive
+
+Open the management console at http://localhost:9001 and sign in with
+`MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from the repository-root `.env`.
+New-rental and final-return invoice PDFs are stored in the private bucket under:
+
+```text
+rental-files/invoices/YYYY/MM/RNT-.../Invoice-....pdf
+```
+
+The PDF is archived to MinIO, then Telegram receives one message: the invoice
+document with the auto-generated notification text as the caption.
+If MinIO is temporarily unavailable, Telegram delivery continues and the worker
+records a warning without logging credentials. If PDF generation fails, the
+text notification is still sent as a normal message.
 
 ## Architecture
 
@@ -166,12 +251,17 @@ pytest   # conftest defaults to the ports above
 
 Set `TELEGRAM_BOT_TOKEN` in `backend/.env` and `docker compose up telegram-bot`.
 The bot exchanges `TELEGRAM_BOT_CLIENT_ID`/`_SECRET` for a short-lived service
-JWT (`POST /api/v2/auth/service-token`) and never touches PostgreSQL. It
-supports the documented main keyboard (transactions, motorcycle status,
-income/expense, account help), period presets (today / 3 days / 7 days /
-1 month / custom range), Redis-backed conversation state and pagination, and
-`/link CODE` account linking. English and Khmer messages follow the
-localization settings from app-config.
+JWT (`POST /api/v2/auth/service-token`) and never touches PostgreSQL. It uses
+**Reply Keyboard only** navigation (finance, motorcycles, customers, rentals,
+account help in private chats), period presets (all / today / 3 days / 1 week /
+1 month / custom range), Redis-backed per-user navigation state, pagination,
+and `/link CODE` account linking. Report calls send `X-Telegram-User-Id`,
+`X-Telegram-Chat-Id`, and `X-Telegram-Chat-Type` headers so the API can apply
+linked-user RBAC in private chats or group module policy in one configured
+interactive group.
+
+**Deployment:** In BotFather, disable **Group Privacy Mode** for this bot so it
+can read group messages when operating in the configured interactive group.
 
 ## Assumptions and decisions
 

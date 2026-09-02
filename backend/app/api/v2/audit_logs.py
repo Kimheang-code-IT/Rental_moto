@@ -18,7 +18,7 @@ async def list_audit_logs(
     entity_type: str | None = None,
     action: str | None = None,
     user_id: int | None = None,
-    user=Depends(require_permission("audit_log.read")),
+    user=Depends(require_permission("admin.audit_logs.view")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     start, end = parse_date_range(params.start_date, params.end_date)

@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     telegram_reset_max_attempts: int = 5
 
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_allow_private_networks: bool = True
 
     cache_default_ttl_seconds: int = 60
     dashboard_cache_ttl_seconds: int = 60
@@ -56,6 +57,13 @@ class Settings(BaseSettings):
 
     export_dir: str = "./data/exports"
     export_url_expire_seconds: int = 3600
+
+    minio_enabled: bool = True
+    minio_endpoint: str = "minio:9000"
+    minio_access_key: str = "minioadmin"
+    minio_secret_key: str = "minioadmin123"
+    minio_bucket: str = "rental-files"
+    minio_secure: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

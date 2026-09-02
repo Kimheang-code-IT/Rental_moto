@@ -1,5 +1,5 @@
 <script setup lang="ts">
-definePageMeta({ titleKey: 'rental.pages.rentals', permission: 'rental.rentals.view' })
+definePageMeta({ titleKey: 'rental.pages.rentals', permission: 'rental.rentals.create' })
 
 function onCancel() {
   void navigateTo('/rentals')
@@ -7,5 +7,5 @@ function onCancel() {
 </script>
 
 <template>
-  <RentalCreatePanel @cancel="onCancel" @created="id => navigateTo(`/rentals/${id}`)" />
+  <RentalCreatePanel @cancel="onCancel" />
 </template>

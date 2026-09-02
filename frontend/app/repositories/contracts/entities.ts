@@ -76,8 +76,20 @@ export interface RentalCloseInput {
   motorcycleStatus?: 'Available' | 'Maintenance' | null
 }
 
+export interface RentalUpdateInput {
+  customerId?: string
+  motorcycleId?: string
+  startDate?: string
+  dueDate?: string
+  deposit?: number
+  discount?: number
+  taxPercent?: number
+  note?: string | null
+}
+
 export interface RentalCommandRepository {
   create(input: RentalCreateInput): Promise<AppRecord[]>
+  update(id: string, input: RentalUpdateInput): Promise<AppRecord>
   close(id: string, input: RentalCloseInput): Promise<AppRecord>
   cancel(id: string, reason?: string | null): Promise<AppRecord>
 }
@@ -92,6 +104,8 @@ export interface DashboardSummary {
   netIncome: number
   outstanding: number
   rentalsByDay: Array<{ date: string, count: number }>
+  incomeByDay: Array<{ date: string, amount: number }>
+  expenseByDay: Array<{ date: string, amount: number }>
   startDate?: string | null
   endDate?: string | null
 }
@@ -106,7 +120,7 @@ export interface FinanceSummary {
 }
 
 export interface FinanceRepository {
-  dashboard(startDate?: string, endDate?: string): Promise<DashboardSummary>
+  dashboard(startDate?: string, endDate?: string, requestKey?: string): Promise<DashboardSummary>
   financeSummary(startDate?: string, endDate?: string): Promise<FinanceSummary>
 }
 

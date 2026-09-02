@@ -6,7 +6,7 @@ from app.core.errors import NotFoundError
 from app.repositories.rental import PaymentRepository, RentalRepository
 from app.schemas.rental import PaymentRecordRequest, PaymentResponse, PaymentUpdateRequest
 from app.services.admin_service import DashboardService
-from app.services.rental_service import RentalService
+from app.services.rental_service import RentalService, normalize_charge_type, normalize_payment_method
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
@@ -73,7 +73,7 @@ async def record_payment(
 async def update_payment(
     payment_id: str,
     body: PaymentUpdateRequest,
-    user=Depends(require_permission("rental.finance.create")),
+    user=Depends(require_permission("rental.finance.edit")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
 
@@ -82,6 +82,8 @@ async def update_payment(
     if payment is None:
         raise NotFoundError("Payment not found")
     updates = body.model_dump(exclude_unset=True, by_alias=False)
+    if "payment_method" in updates and updates["payment_method"] is not None:
+        updates["payment_method"] = normalize_payment_method(updates["payment_method"])
     for field, value in updates.items():
         setattr(payment, field, value)
     await session.commit()
@@ -92,7 +94,7 @@ async def update_payment(
 @router.delete("/{payment_id}")
 async def delete_payment(
     payment_id: str,
-    user=Depends(require_permission("rental.finance.create")),
+    user=Depends(require_permission("rental.finance.delete")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     repo = PaymentRepository(session)

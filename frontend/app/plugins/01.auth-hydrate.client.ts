@@ -1,13 +1,7 @@
-export default defineNuxtPlugin(async () => {
+export default defineNuxtPlugin(() => {
+  // Restore the locally persisted display profile before route middleware runs.
+  // API revalidation is started from app.vue, where component-only composables
+  // such as useI18n() are valid.
   const auth = useAuthStore()
   auth.hydrateClient()
-
-  // HTTP mode: never trust the stored display profile as proof of
-  // authentication. When bearer tokens exist, re-validate via /auth/me.
-  const config = useRuntimeConfig()
-  if (config.public.useMockData === false && config.public.authMode === 'bearer') {
-    const { useAuth } = await import('~/composables/auth/useAuth')
-    const { hydrateSessionFromApi } = useAuth()
-    await hydrateSessionFromApi()
-  }
 })

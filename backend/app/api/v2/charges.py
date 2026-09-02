@@ -6,7 +6,7 @@ from app.core.errors import NotFoundError
 from app.repositories.rental import ChargeRepository, RentalRepository
 from app.schemas.rental import ChargeRecordRequest, ChargeResponse, ChargeUpdateRequest
 from app.services.admin_service import DashboardService
-from app.services.rental_service import RentalService
+from app.services.rental_service import RentalService, normalize_charge_type
 
 router = APIRouter(prefix="/charges", tags=["charges"])
 
@@ -69,7 +69,7 @@ async def record_charge(
 async def update_charge(
     charge_id: str,
     body: ChargeUpdateRequest,
-    user=Depends(require_permission("rental.finance.create")),
+    user=Depends(require_permission("rental.finance.edit")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     repo = ChargeRepository(session)
@@ -77,6 +77,8 @@ async def update_charge(
     if charge is None:
         raise NotFoundError("Charge not found")
     updates = body.model_dump(exclude_unset=True, by_alias=False)
+    if "charge_type" in updates and updates["charge_type"] is not None:
+        updates["charge_type"] = normalize_charge_type(updates["charge_type"])
     for field, value in updates.items():
         setattr(charge, field, value)
     await session.commit()
@@ -88,7 +90,7 @@ async def update_charge(
 @router.delete("/{charge_id}")
 async def delete_charge(
     charge_id: str,
-    user=Depends(require_permission("rental.finance.create")),
+    user=Depends(require_permission("rental.finance.delete")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     repo = ChargeRepository(session)

@@ -8,7 +8,7 @@ from app.schemas.common import CamelModel
 
 class MotorcycleCreate(CamelModel):
     id: str | None = None
-    code: str = Field(min_length=1)
+    code: str | None = None
     model: str = Field(min_length=1)
     brand: str | None = None
     year: int | None = Field(default=None, ge=1950, le=2100)
@@ -27,7 +27,6 @@ class MotorcycleCreate(CamelModel):
 
 
 class MotorcycleUpdate(CamelModel):
-    code: str | None = None
     model: str | None = None
     brand: str | None = None
     year: int | None = None

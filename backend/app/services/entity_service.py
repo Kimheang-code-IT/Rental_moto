@@ -21,14 +21,15 @@ class MotorcycleService:
     async def create(self, data) -> Motorcycle:
         if data.status not in VALID_MOTORCYCLE_STATUS:
             raise ValidationError(f"Invalid status: {data.status}")
-        if await self.repo.get_by_code(data.code):
-            raise ConflictError(f"Motorcycle code {data.code} already exists")
-        moto_id = data.id or f"mc-{data.code.lower().replace('mc-', '')}"
+        code = (data.code or "").strip() or await self.repo.next_code()
+        if await self.repo.get_by_code(code):
+            raise ConflictError(f"Motorcycle code {code} already exists")
+        moto_id = data.id or f"mc-{code.lower().replace('mc-', '')}"
         existing = await self.repo.get(moto_id)
         if existing is not None:
             raise ConflictError(f"Motorcycle id {moto_id} already exists")
         moto = Motorcycle(
-            **data.model_dump(exclude={"id"}, by_alias=False),
+            **{**data.model_dump(exclude={"id", "code"}, by_alias=False), "code": code},
             id=moto_id,
             created_by_user_id=self.actor.id if self.actor else None,
         )
@@ -52,6 +53,8 @@ class MotorcycleService:
         if moto is None:
             raise NotFoundError("Motorcycle not found")
         updates = data.model_dump(exclude_unset=True, by_alias=False)
+        if "code" in updates:
+            updates.pop("code", None)
         new_status = updates.get("status")
         if new_status and new_status not in VALID_MOTORCYCLE_STATUS:
             raise ValidationError(f"Invalid status: {new_status}")
@@ -61,10 +64,6 @@ class MotorcycleService:
             )
             if active.total > 0:
                 raise ConflictError("Motorcycle is currently rented and cannot be set Available")
-        if "code" in updates and updates["code"] and updates["code"].lower() != moto.code.lower():
-            other = await self.repo.get_by_code(updates["code"])
-            if other is not None and other.id != moto.id:
-                raise ConflictError(f"Motorcycle code {updates['code']} already exists")
         for field, value in updates.items():
             setattr(moto, field, value)
         await self.audit.add(
@@ -112,14 +111,15 @@ class CustomerService:
     async def create(self, data) -> RentalCustomer:
         if data.status not in VALID_CUSTOMER_STATUS:
             raise ValidationError(f"Invalid status: {data.status}")
-        if await self.repo.get_by_code(data.code):
-            raise ConflictError(f"Customer code {data.code} already exists")
-        customer_id = data.id or f"rc-{data.code.lower().replace('cus-', '')}"
+        code = (data.code or "").strip() or await self.repo.next_code()
+        if await self.repo.get_by_code(code):
+            raise ConflictError(f"Customer code {code} already exists")
+        customer_id = data.id or f"rc-{code.lower().replace('cus-', '')}"
         existing = await self.repo.get(customer_id)
         if existing is not None:
             raise ConflictError(f"Customer id {customer_id} already exists")
         customer = RentalCustomer(
-            **data.model_dump(exclude={"id"}, by_alias=False),
+            **{**data.model_dump(exclude={"id", "code"}, by_alias=False), "code": code},
             id=customer_id,
             created_by_user_id=self.actor.id if self.actor else None,
         )
@@ -143,12 +143,9 @@ class CustomerService:
         if customer is None:
             raise NotFoundError("Customer not found")
         updates = data.model_dump(exclude_unset=True, by_alias=False)
+        updates.pop("code", None)
         if updates.get("status") and updates["status"] not in VALID_CUSTOMER_STATUS:
             raise ValidationError(f"Invalid status: {updates['status']}")
-        if "code" in updates and updates["code"] and updates["code"].lower() != customer.code.lower():
-            other = await self.repo.get_by_code(updates["code"])
-            if other is not None and other.id != customer.id:
-                raise ConflictError(f"Customer code {updates['code']} already exists")
         for field, value in updates.items():
             setattr(customer, field, value)
         await self.audit.add(

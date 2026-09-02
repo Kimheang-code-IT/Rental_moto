@@ -1,125 +1,127 @@
+from __future__ import annotations
+
+from collections.abc import Iterable
+
 from argon2 import PasswordHasher
 
-ALL_SOURCE_PERMISSIONS = [
-    "settings.read",
-    "settings.update",
-    "user.read",
-    "user.manage",
-    "role.read",
-    "role.manage",
-    "attachment.read",
-    "attachment.upload",
-    "attachment.delete",
-    "audit_log.read",
-    "report.read",
-    "telegram.reports.read",
-]
+SUPER_ADMIN_ROLE = "SuperAdmin"
+SUPER_ADMIN_PERMISSION = "ALL_PAGES"
 
-PERMISSION_ACTIONS = ["view", "create", "edit", "delete", "return", "print"]
+# The single catalog for permissions assignable to interactive user roles.
+PERMISSION_CATALOG: dict[str, tuple[str, ...]] = {
+    "dashboard": ("view",),
+    "rental.motorcycles": ("view", "create", "edit", "delete", "export"),
+    "rental.customers": ("view", "create", "edit", "delete", "export"),
+    "rental.rentals": ("view", "create", "edit", "delete", "return", "print", "export"),
+    "rental.finance": ("view", "create", "edit", "delete", "export"),
+    "reports": ("view", "print", "export"),
+    "admin.users": ("view", "create", "edit", "delete"),
+    "admin.roles": ("view", "create", "edit", "delete"),
+    "configuration": ("view", "create", "edit", "delete"),
+    "settings.app_config": ("view", "edit", "configure"),
+    "admin.audit_logs": ("view", "export"),
+}
 
-PERMISSION_MODULES = [
-    "dashboard",
-    "rental.motorcycles",
-    "rental.customers",
-    "rental.rentals",
-    "rental.finance",
-    "reports",
-    "admin.users",
-    "admin.roles",
-    "admin.audit_logs",
-    "admin.document_sequences",
-    "settings.app_config",
-    "configuration",
-]
+SERVICE_PERMISSIONS = frozenset({"telegram.reports.read"})
+ASSIGNABLE_PERMISSIONS = frozenset(
+    f"{module}.{action}"
+    for module, actions in PERMISSION_CATALOG.items()
+    for action in actions
+)
 
-EXTRA_PERMISSIONS = [
-    "dashboard.view",
-    "reports.view",
-    "reports.print",
-    "configuration.view",
-    "configuration.edit",
-    "configuration.manage",
-    "settings.app_config.view",
-    "settings.app_config.edit",
-]
 
-SERVICE_PERMISSIONS = ["telegram.reports.read"]
+def permission_catalog() -> list[dict[str, object]]:
+    return [
+        {
+            "module": module,
+            "actions": list(actions),
+            "permissions": [f"{module}.{action}" for action in actions],
+        }
+        for module, actions in PERMISSION_CATALOG.items()
+    ]
 
 
 def build_all_permissions() -> list[str]:
-    keys: list[str] = []
-    for module in PERMISSION_MODULES:
-        for action in PERMISSION_ACTIONS:
-            keys.append(f"{module}.{action}")
-    keys.extend(EXTRA_PERMISSIONS)
-    keys.extend(ALL_SOURCE_PERMISSIONS)
-    keys.extend(SERVICE_PERMISSIONS)
-    seen: set[str] = set()
-    unique = []
-    for key in keys:
-        if key not in seen:
-            seen.add(key)
-            unique.append(key)
-    return unique
+    return [key for group in permission_catalog() for key in group["permissions"]] + sorted(SERVICE_PERMISSIONS)
+
+
+def normalize_role_permissions(values: Iterable[str] | None, *, allow_wildcard: bool = False) -> list[str]:
+    normalized = list(dict.fromkeys(str(value).strip() for value in (values or []) if str(value).strip()))
+    allowed = set(ASSIGNABLE_PERMISSIONS)
+    if allow_wildcard:
+        allowed.add(SUPER_ADMIN_PERMISSION)
+    unknown = sorted(set(normalized) - allowed)
+    if unknown:
+        raise ValueError(f"Unknown permissions: {', '.join(unknown)}")
+    granted = set(normalized)
+    for permission in normalized:
+        module, action = permission.rsplit(".", 1)
+        view_permission = f"{module}.view"
+        if action != "view" and view_permission in ASSIGNABLE_PERMISSIONS:
+            granted.add(view_permission)
+    ordered = [permission for permission in build_all_permissions() if permission in granted]
+    if SUPER_ADMIN_PERMISSION in granted:
+        ordered.append(SUPER_ADMIN_PERMISSION)
+    return ordered
 
 
 def rental_staff_permissions() -> list[str]:
-    staff_pages = [
+    return [
         "dashboard.view",
-        "rental.motorcycles.view",
-        "rental.motorcycles.create",
-        "rental.motorcycles.edit",
-        "rental.customers.view",
-        "rental.customers.create",
-        "rental.customers.edit",
-        "rental.rentals.view",
-        "rental.rentals.create",
-        "rental.rentals.edit",
-        "rental.rentals.print",
-        "rental.rentals.return",
-        "rental.finance.view",
-        "rental.finance.create",
-        "reports.view",
-        "reports.print",
+        "rental.motorcycles.view", "rental.motorcycles.create", "rental.motorcycles.edit",
+        "rental.customers.view", "rental.customers.create", "rental.customers.edit",
+        "rental.rentals.view", "rental.rentals.create", "rental.rentals.edit",
+        "rental.rentals.return", "rental.rentals.print",
+        "rental.finance.view", "rental.finance.create",
+        "reports.view", "reports.print",
     ]
-    source = ["settings.read", "attachment.read", "attachment.upload", "report.read"]
-    return sorted(set(staff_pages + source))
 
 
 def viewer_permissions() -> list[str]:
-    pages = [
+    return [
         "dashboard.view",
         "rental.motorcycles.view",
         "rental.customers.view",
-        "rental.rentals.view",
-        "rental.rentals.print",
+        "rental.rentals.view", "rental.rentals.print",
         "rental.finance.view",
-        "reports.view",
-        "reports.print",
+        "reports.view", "reports.print",
     ]
-    source = ["settings.read", "attachment.read", "audit_log.read", "report.read"]
-    return sorted(set(pages + source))
 
 
 def permissions_hasher() -> PasswordHasher:
     return PasswordHasher()
 
 
+def effective_permissions(user: object) -> list[str]:
+    """Resolve access exclusively from the authoritative related role."""
+    role = getattr(user, "role_ref", None)
+    if role is None:
+        return []
+    values = list(getattr(role, "permissions", None) or [])
+    if getattr(role, "name", None) == SUPER_ADMIN_ROLE and SUPER_ADMIN_PERMISSION in values:
+        return [SUPER_ADMIN_PERMISSION]
+    return [value for value in values if value in ASSIGNABLE_PERMISSIONS]
+
+
+def is_super_admin_user(user: object) -> bool:
+    role = getattr(user, "role_ref", None)
+    return bool(
+        role
+        and getattr(role, "name", None) == SUPER_ADMIN_ROLE
+        and SUPER_ADMIN_PERMISSION in (getattr(role, "permissions", None) or [])
+    )
+
+
+def user_has_permission(user: object, required: str) -> bool:
+    values = effective_permissions(user)
+    return SUPER_ADMIN_PERMISSION in values or required in values
+
+
+# Compatibility helpers for isolated code/tests. HTTP request authorization uses
+# user_has_permission and therefore cannot trust a denormalized user role name.
 def is_super_admin(role: str | None, permissions: list[str] | None) -> bool:
-    if role == "SuperAdmin":
-        return True
-    return bool(permissions and "ALL_PAGES" in permissions)
+    return role == SUPER_ADMIN_ROLE or bool(permissions and SUPER_ADMIN_PERMISSION in permissions)
 
 
 def has_permission(role: str | None, permissions: list[str] | None, required: str) -> bool:
-    if is_super_admin(role, permissions):
-        return True
-    if not permissions:
-        return False
-    if required in permissions:
-        return True
-    if required.endswith(".view") and required.replace(".view", ".manage") in permissions:
-        return True
-    if required.startswith("configuration.") and "configuration.manage" in permissions:
-        return True
-    return False
+    return is_super_admin(role, permissions) or bool(permissions and required in permissions)

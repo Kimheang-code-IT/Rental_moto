@@ -23,10 +23,11 @@ async def test_customer_crud_flow(client, admin_headers):
     updated = await client.put(
         f"/api/v2/customers/{customer['id']}",
         headers=admin_headers,
-        json={"fullName": "Renamed Customer", "company": "Acme"},
+        json={"fullName": "Renamed Customer", "company": "Acme Shop"},
     )
     assert updated.status_code == 200
     assert updated.json()["data"]["fullName"] == "Renamed Customer"
+    assert updated.json()["data"]["company"] == "Acme Shop"
 
     inactive = await client.put(
         f"/api/v2/customers/{customer['id']}",

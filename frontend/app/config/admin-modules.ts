@@ -1,4 +1,4 @@
-import { DOCUMENT_SEQUENCE_STATUSES, DOCUMENT_SEQUENCE_TYPES } from '~/utils/document-sequences'
+import { DEFAULT_DOCUMENT_SEQUENCE_TYPES, DOCUMENT_SEQUENCE_STATUSES } from '~/utils/document-sequences'
 import type { ModuleField, ModuleConfig } from './modules'
 import { ACTIVE_STATUS } from './shared-options'
 
@@ -57,24 +57,33 @@ export const adminModules: ModuleConfig[] = [
       col('lastLogin', 'Last Login', 'ចូលចុងក្រោយ'),
     ],
     fields: [
-      f('username', 'Username', 'ឈ្មោះអ្នកប្រើ', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
+      f('username', 'Username', 'ឈ្មោះអ្នកប្រើ', 'General', 'ទូទៅ', 'text', undefined, {
+        required: true,
+        helpKey: 'app.modules.users.fieldHelp.username',
+      }),
       f('displayName', 'Display Name', 'ឈ្មោះបង្ហាញ', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
       f('email', 'Email', 'អ៊ីមែល', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
       f('password', 'Password', 'ពាក្យសម្ងាត់', 'General', 'ទូទៅ', 'password', undefined, {
         required: true,
-        help: 'Login password for this user. Keep it confidential.',
+        createOnly: true,
+        helpKey: 'app.modules.users.fieldHelp.password',
       }),
-      f('role', 'Role', 'តួនាទី', 'General', 'ទូទៅ', 'select', undefined, {
+      f('roleId', 'Role', 'តួនាទី', 'General', 'ទូទៅ', 'select', undefined, {
         required: true,
         labelKey: 'core.fields.roleAssignments',
-        optionsCollection: 'roles',
+        optionsEndpoint: '/api/v2/roles/options',
+        helpKey: 'app.modules.users.fieldHelp.roleId',
       }),
-      f('telegramUsername', 'Telegram Username', 'ឈ្មោះអ្នកប្រើ Telegram', 'Telegram', 'Telegram', 'text'),
+      f('telegramUsername', 'Telegram Username', 'ឈ្មោះអ្នកប្រើ Telegram', 'Telegram', 'Telegram', 'text', undefined, {
+        computed: true,
+        hideOnCreate: true,
+        help: 'Linked automatically through the Telegram bot.',
+      }),
       f('telegramChatId', 'Telegram Chat ID', 'លេខ Chat ID Telegram', 'Telegram', 'Telegram', 'text', undefined, {
         computed: true,
+        hideOnCreate: true,
         help: 'Linked automatically through the Telegram bot. Password reset codes are sent only to this private chat.',
       }),
-      f('status', 'Status', 'ស្ថានភាព', 'General', 'ទូទៅ', 'select', ACTIVE_STATUS),
     ],
   }),
   createModule({
@@ -116,8 +125,8 @@ export const adminModules: ModuleConfig[] = [
     titleKm: 'លំដាប់លេខឯកសារ',
     singular: 'Document Sequence',
     singularKm: 'លំដាប់ឯកសារ',
-    description: 'Manage automatic document numbering by document type and year.',
-    descriptionKm: 'គ្រប់គ្រងលេខឯកសារស្វ័យប្រវត្តិតាមប្រភេទឯកសារ និងឆ្នាំ។',
+    description: 'Configure automatic numbering for each document type (Rental, Payment, Customer, etc.).',
+    descriptionKm: 'កំណត់លេខស្វ័យប្រវត្តិសម្រាប់ប្រភេទឯកសារនីមួយៗ (ជួល ទូទាត់ អតិថិជន ជាដើម)។',
     icon: 'i-lucide-list-ordered',
     group: 'admin',
     permission: 'configuration.view',
@@ -126,26 +135,26 @@ export const adminModules: ModuleConfig[] = [
     canCreate: true,
     columns: [
       col('documentType', 'Document Type', 'ប្រភេទឯកសារ'),
-      col('year', 'Year', 'ឆ្នាំ'),
       col('prefix', 'Prefix', 'បុព្វបទ'),
-      col('lastValue', 'Last Value', 'តម្លៃចុងក្រោយ'),
       col('paddingLength', 'Padding Length', 'ប្រវែងលេខ'),
       col('nextNumberPreview', 'Next Number Preview', 'លេខបន្ទាប់'),
       col('status', 'Status', 'ស្ថានភាព'),
     ],
     fields: [
-      f('documentType', 'Document Type', 'ប្រភេទឯកសារ', 'General', 'ទូទៅ', 'select', DOCUMENT_SEQUENCE_TYPES, { required: true }),
-      f('year', 'Year', 'ឆ្នាំ', 'General', 'ទូទៅ', 'number', undefined, { required: true }),
+      f('documentType', 'Document Type', 'ប្រភេទឯកសារ', 'General', 'ទូទៅ', 'select', DEFAULT_DOCUMENT_SEQUENCE_TYPES, {
+        required: true,
+        helpKey: 'core.fieldHelp.documentSequenceType',
+      }),
       f('prefix', 'Prefix', 'បុព្វបទ', 'General', 'ទូទៅ', 'text', undefined, { required: true }),
-      f('lastValue', 'Starting / Last Value', 'តម្លៃចាប់ផ្តើម / ចុងក្រោយ', 'General', 'ទូទៅ', 'number', undefined, { required: true }),
       f('paddingLength', 'Padding Length', 'ប្រវែងលេខ', 'General', 'ទូទៅ', 'number', undefined, { required: true }),
-      f('resetRule', 'Reset Rule', 'ការកំណត់ឡើងវិញ', 'General', 'ទូទៅ', 'select', ['Never', 'Yearly']),
+      f('year', 'Year in number (optional)', 'ឆ្នាំក្នុងលេខ (ស្រេចចិត្ត)', 'General', 'ទូទៅ', 'number', undefined, {
+        helpKey: 'core.fieldHelp.documentSequenceYear',
+      }),
       f('nextNumberPreview', 'Next Number Preview', 'លេខបន្ទាប់', 'General', 'ទូទៅ', 'text', undefined, { computed: true }),
       f('status', 'Status', 'ស្ថានភាព', 'Status', 'ស្ថានភាព', 'select', DOCUMENT_SEQUENCE_STATUSES, { required: true }),
     ],
     filters: [
-      f('documentType', 'Document Type', 'ប្រភេទឯកសារ', '', '', 'select', DOCUMENT_SEQUENCE_TYPES),
-      f('year', 'Year', 'ឆ្នាំ', '', '', 'select'),
+      f('documentType', 'Document Type', 'ប្រភេទឯកសារ', '', '', 'select'),
       f('status', 'Status', 'ស្ថានភាព', '', '', 'select', DOCUMENT_SEQUENCE_STATUSES),
     ],
   }),
@@ -172,8 +181,7 @@ export const adminModules: ModuleConfig[] = [
       col('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ'),
       col('entity', 'Entity', 'អង្គភាពទិន្នន័យ'),
       col('result', 'Result', 'លទ្ធផល'),
-      col('reason', 'Reason', 'មូលហេតុ'),
-      col('requestId', 'Request ID', 'លេខសំណើ'),
+      col('ipDevice', 'IP Device', 'ឧបករណ៍ IP'),
     ],
     fields: [
       f('occurredAt', 'Time', 'ពេលវេលា', 'Log', 'កំណត់ហេតុ', 'datetime'),
@@ -183,9 +191,7 @@ export const adminModules: ModuleConfig[] = [
       f('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ', 'Entity', 'អង្គភាពទិន្នន័យ'),
       f('entity', 'Entity', 'អង្គភាពទិន្នន័យ', 'Entity', 'អង្គភាពទិន្នន័យ'),
       f('result', 'Result', 'លទ្ធផល', 'Result', 'លទ្ធផល'),
-      f('reason', 'Reason', 'មូលហេតុ', 'Result', 'លទ្ធផល', 'textarea'),
-      f('requestId', 'Request ID', 'លេខសំណើ', 'Traceability', 'ការតាមដាន'),
-      f('correlationId', 'Correlation ID', 'លេខទំនាក់ទំនង', 'Traceability', 'ការតាមដាន'),
+      f('ipDevice', 'IP Device', 'ឧបករណ៍ IP', 'Traceability', 'ការតាមដាន'),
       f('beforeData', 'Before Data', 'ទិន្នន័យមុន', 'Data', 'ទិន្នន័យ', 'textarea'),
       f('afterData', 'After Data', 'ទិន្នន័យបន្ទាប់', 'Data', 'ទិន្នន័យ', 'textarea'),
       f('metadata', 'Metadata', 'មេតាទិន្នន័យ', 'Data', 'ទិន្នន័យ', 'textarea'),

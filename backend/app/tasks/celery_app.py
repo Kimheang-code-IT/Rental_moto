@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.signals import worker_process_init
 from kombu import Exchange, Queue
 
 from app.core.config import settings
@@ -25,13 +26,13 @@ task_default_routing_key = "maintenance.#"
 task_routes = {
     "app.tasks.telegram_notifications.deliver_password_reset": {"queue": "critical"},
     "app.tasks.telegram_notifications.deliver_event": {"queue": "telegram"},
-    "app.tasks.telegram_notifications.send_test_message": {"queue": "telegram"},
+    "app.tasks.telegram_notifications.send_rental_invoice_pdf": {"queue": "telegram"},
     "app.tasks.exports.export_resource": {"queue": "exports"},
     "app.tasks.overdue_rentals.scan_overdue": {"queue": "maintenance"},
     "app.tasks.outbox_dispatcher.dispatch_outbox": {"queue": "maintenance"},
     "app.tasks.reports.precompute_dashboard": {"queue": "reports"},
     "app.tasks.scheduled_summaries.daily_summary": {"queue": "reports"},
-    "app.tasks.maintenance.cleanup": {"queue": "maintenance"},
+    "app.tasks.deadline_alerts.scan_deadline_alerts": {"queue": "maintenance"},
 }
 
 celery_app = Celery(
@@ -45,6 +46,7 @@ celery_app = Celery(
         "app.tasks.reports",
         "app.tasks.outbox_dispatcher",
         "app.tasks.scheduled_summaries",
+        "app.tasks.deadline_alerts",
         "app.tasks.maintenance",
     ],
 )
@@ -85,6 +87,10 @@ celery_app.conf.update(
             "task": "app.tasks.scheduled_summaries.daily_summary",
             "schedule": 86400.0,
         },
+        "scan-deadline-alerts": {
+            "task": "app.tasks.deadline_alerts.scan_deadline_alerts",
+            "schedule": 60.0,
+        },
         "cleanup-expired-data": {
             "task": "app.tasks.maintenance.cleanup",
             "schedule": 21600.0,
@@ -97,3 +103,19 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
 )
+
+
+@worker_process_init.connect
+def _dispose_db_engine_after_fork(**kwargs) -> None:
+    """Drop asyncpg connections inherited from the Celery parent process."""
+    import asyncio
+
+    from app.core.database import engine
+
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(engine.dispose())
+    except Exception:
+        pass
+    finally:
+        loop.close()

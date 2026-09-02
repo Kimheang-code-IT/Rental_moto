@@ -30,7 +30,6 @@ const props = withDefaults(defineProps<{
 
 const { t } = useI18n()
 const preferences = usePreferencesStore()
-preferences.hydrate()
 
 const inputDate = useTemplateRef<{ inputsRef?: Array<{ $el?: HTMLElement }> } | null>('inputDate')
 const pickerAnchor = useTemplateRef<HTMLElement | null>('pickerAnchor')
@@ -41,7 +40,7 @@ const isDateTime = computed(() => isDateTimeGranularity(props.granularity))
 
 /** Toolbar: icon-only on small screens or when app font is large/extra large. */
 const iconOnly = computed(() => {
-  if (props.inline) return false
+  if (props.inline || !preferences.hydrated) return false
   if (isCompact.value) return true
   const size = preferences.fontSize
   return size === 'lg' || size === 'xl'

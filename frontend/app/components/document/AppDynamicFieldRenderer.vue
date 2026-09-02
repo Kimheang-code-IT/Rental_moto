@@ -4,17 +4,19 @@ import type {
   DocumentFieldSchema,
   FieldOption,
 } from '~/types/rental/common'
-import type { ConnectionStatus, NotificationRule, TelegramDestination } from '~/types/rental/settings'
+import type { ConnectionStatus, NotificationRule, TelegramDestination, TelegramUserAccess } from '~/types/rental/settings'
+import { TELEGRAM_NOTIFICATION_EVENTS, TELEGRAM_TEMPLATE_VARIABLES } from '~/types/rental/settings'
 import type { AppRolePermissionRow } from '~/types/rental/entities'
-import { TELEGRAM_TEMPLATE_VARIABLES } from '~/types/rental/settings'
 import { createClientId } from '~/utils/client-id'
 import { TELEGRAM_DESTINATION_TYPE_OPTIONS } from '~/utils/constants/select-options'
 import { resolveFieldHelp } from '~/utils/field-help'
+import { normalizeDocumentSequenceType } from '~/utils/document-sequences'
 import { useReferenceOptions } from '~/composables/common/useReferenceOptions'
 import type { ModuleRelated, ModuleTable } from '~/config/modules'
 import type { AppRecord } from '~/config/admin-seed'
 import { asNumber } from '~/composables/module/useModule'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
+import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 import {
   moduleDocumentLineActionKey,
   moduleDocumentRecordKey,
@@ -45,9 +47,19 @@ const stringValue = computed({
 const selectValue = computed({
   get: () => {
     if (props.modelValue == null || props.modelValue === '') return undefined
+    if (typeof props.modelValue === 'object' && 'value' in (props.modelValue as object)) {
+      const nested = (props.modelValue as { value?: unknown }).value
+      return nested == null || nested === '' ? undefined : String(nested)
+    }
     return String(props.modelValue)
   },
-  set: (v: string | undefined) => emit('update:modelValue', v ?? ''),
+  set: (v: string | { value?: string } | undefined) => {
+    if (v && typeof v === 'object' && 'value' in v) {
+      emit('update:modelValue', v.value ?? '')
+      return
+    }
+    emit('update:modelValue', v ?? '')
+  },
 })
 
 const numberValue = computed({
@@ -127,6 +139,141 @@ const destinationsValue = computed({
   set: (v: TelegramDestination[]) => emit('update:modelValue', v),
 })
 
+const userAccessValue = computed({
+  get: () => (Array.isArray(props.modelValue) ? props.modelValue as TelegramUserAccess[] : []),
+  set: (v: TelegramUserAccess[]) => emit('update:modelValue', v),
+})
+
+const { get: apiGet } = useApi()
+const userAccessSyncPending = ref(false)
+const systemUsers = ref<LinkedUserRow[]>([])
+const systemUsersPending = ref(false)
+
+type LinkedUserRow = {
+  id: number
+  displayName?: string
+  username?: string
+  telegramChatId?: string
+  telegramLinked?: boolean
+  status?: string
+}
+
+const userAccessSelectItems = computed(() =>
+  systemUsers.value.map(user => ({
+    label: `${user.displayName || user.username || user.id} (${user.username || user.id})`,
+    value: String(user.id),
+  })),
+)
+
+function userAccessItemsForRow(row: TelegramUserAccess) {
+  const usedIds = new Set(
+    userAccessValue.value
+      .filter(item => item.id !== row.id && item.userId)
+      .map(item => item.userId),
+  )
+  const items = userAccessSelectItems.value.filter(item => !usedIds.has(Number(item.value)))
+  if (row.userId) {
+    const current = userAccessSelectItems.value.find(item => Number(item.value) === row.userId)
+    if (current && !items.some(item => item.value === current.value)) items.unshift(current)
+  }
+  return items
+}
+
+async function loadSystemUsers() {
+  systemUsersPending.value = true
+  try {
+    const collected: LinkedUserRow[] = []
+    let page = 1
+    let total = Number.POSITIVE_INFINITY
+    while (collected.length < total) {
+      const response = await apiGet<{ data: LinkedUserRow[], meta?: { total?: number } }>(ApiEndpoints.USERS, {
+        query: { limit: 100, page },
+      })
+      const batch = response?.data || []
+      collected.push(...batch)
+      total = Number(response?.meta?.total ?? batch.length)
+      if (batch.length < 100) break
+      page += 1
+    }
+    systemUsers.value = collected.filter(user => String(user.status || 'Active') === 'Active')
+  }
+  catch {
+    systemUsers.value = []
+  }
+  finally {
+    systemUsersPending.value = false
+  }
+}
+
+function applyUserAccessSelection(row: TelegramUserAccess, userId: string | undefined) {
+  if (!userId) {
+    row.userId = undefined
+    row.userName = ''
+    return
+  }
+  const user = systemUsers.value.find(item => String(item.id) === String(userId))
+  if (!user) return
+  row.userId = user.id
+  row.userName = String(user.displayName || user.username || user.id)
+  if (user.telegramChatId) row.chatId = String(user.telegramChatId)
+}
+
+async function syncUserAccessFromUsers() {
+  userAccessSyncPending.value = true
+  try {
+    await loadSystemUsers()
+    const existingByUserId = new Map<number, TelegramUserAccess>()
+    for (const row of userAccessValue.value) {
+      if (row.userId) existingByUserId.set(row.userId, row)
+    }
+    userAccessValue.value = systemUsers.value.map((user) => {
+      const prior = existingByUserId.get(user.id)
+      const name = String(user.displayName || user.username || user.id)
+      return {
+        id: prior?.id || createClientId('tua'),
+        userId: user.id,
+        userName: prior?.userName || name,
+        chatId: String(user.telegramChatId || prior?.chatId || ''),
+        chatbotEnabled: prior?.chatbotEnabled ?? true,
+        groupEnabled: prior?.groupEnabled ?? true,
+      }
+    })
+  }
+  finally {
+    userAccessSyncPending.value = false
+  }
+}
+
+function addUserAccessRow() {
+  if (!systemUsers.value.length && !systemUsersPending.value) {
+    void loadSystemUsers().then(() => addUserAccessRow())
+    return
+  }
+  const usedIds = new Set(userAccessValue.value.map(row => row.userId).filter(Boolean))
+  const nextUser = systemUsers.value.find(user => !usedIds.has(user.id))
+  const next: TelegramUserAccess = {
+    id: createClientId('tua'),
+    userId: nextUser?.id,
+    userName: nextUser ? String(nextUser.displayName || nextUser.username || nextUser.id) : '',
+    chatId: nextUser?.telegramChatId ? String(nextUser.telegramChatId) : '',
+    chatbotEnabled: true,
+    groupEnabled: true,
+  }
+  userAccessValue.value = [...userAccessValue.value, next]
+}
+
+const canAddUserAccessRow = computed(() => {
+  if (systemUsersPending.value) return false
+  if (!systemUsers.value.length) return true
+  return userAccessSelectItems.value.some(item =>
+    !userAccessValue.value.some(row => row.userId === Number(item.value)),
+  )
+})
+
+function removeUserAccessRow(id: string) {
+  userAccessValue.value = userAccessValue.value.filter(row => row.id !== id)
+}
+
 const rulesValue = computed({
   get: () => (Array.isArray(props.modelValue) ? props.modelValue as NotificationRule[] : []),
   set: (v: NotificationRule[]) => emit('update:modelValue', v),
@@ -179,6 +326,14 @@ const selectItems = computed(() =>
     })),
 )
 
+const creatableSelectItems = computed(() => selectItems.value)
+
+function onCreateSelectItem(item: string) {
+  const trimmed = normalizeDocumentSequenceType(item)
+  if (!trimmed) return
+  emit('update:modelValue', trimmed)
+}
+
 const labelText = computed(() => {
   if (props.field.labelKey && te(props.field.labelKey)) return t(props.field.labelKey)
   if (props.field.label) return props.field.label
@@ -210,6 +365,12 @@ const isColor = computed(() => props.field.type === 'color')
 const isImage = computed(() => props.field.type === 'image')
 const isIcon = computed(() => props.field.type === 'icon')
 const isTelegramDestinations = computed(() => props.field.type === 'telegram-destinations')
+const isTelegramUserAccess = computed(() => props.field.type === 'telegram-user-access')
+
+watch(isTelegramUserAccess, (active) => {
+  if (active && !systemUsers.value.length) void loadSystemUsers()
+}, { immediate: true })
+
 const isNotificationRules = computed(() => props.field.type === 'notification-rules')
 const isConnectionStatus = computed(() => props.field.type === 'connection-status')
 const isAlert = computed(() => props.field.type === 'alert')
@@ -285,13 +446,17 @@ watch(() => props.field.key, () => {
   hintOpen.value = false
 })
 
+const telegramEventItems = computed(() =>
+  TELEGRAM_NOTIFICATION_EVENTS.map(event => ({ label: event, value: event })),
+)
+
 function addDestination() {
   const next: TelegramDestination = {
     id: createClientId('td'),
     name: 'New destination',
     type: 'chat',
     chatId: '',
-    enabledEvents: ['record_created'],
+    enabledEvents: ['rental_created'],
     status: 'not_tested',
     enabled: true,
   }
@@ -399,6 +564,126 @@ function removeDestination(id: string) {
   <!-- Configuration builders removed (numbering-preview, validation, options, visibility, workflow) -->
 
   <div
+    v-else-if="isTelegramUserAccess"
+    class="space-y-3 md:col-span-2"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h4 class="text-sm font-semibold">
+        {{ labelText }}
+      </h4>
+      <div class="flex flex-wrap gap-2">
+        <UButton
+          size="sm"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          :loading="userAccessSyncPending"
+          :disabled="disabled || field.readOnly"
+          @click="syncUserAccessFromUsers"
+        >
+          {{ t('rental.settings.syncLinkedUsers') }}
+        </UButton>
+        <UButton
+          size="sm"
+          icon="i-lucide-plus"
+          :loading="systemUsersPending"
+          :disabled="disabled || field.readOnly || !canAddUserAccessRow"
+          @click="addUserAccessRow"
+        >
+          {{ t('rental.settings.addUserAccess') }}
+        </UButton>
+      </div>
+    </div>
+
+    <p
+      v-if="helpText"
+      class="text-xs text-muted"
+    >
+      {{ helpText }}
+    </p>
+
+    <div
+      v-if="!userAccessValue.length"
+      class="rounded-lg border border-dashed border-default px-4 py-6 text-center text-sm text-muted"
+    >
+      {{ t('rental.settings.telegramUserAccessEmpty') }}
+    </div>
+
+    <div
+      v-else
+      class="overflow-x-auto rounded-lg border border-default"
+    >
+      <table class="min-w-full text-sm">
+        <thead class="border-b border-default bg-elevated/50 text-left">
+          <tr>
+            <th class="px-3 py-2 font-medium">
+              {{ t('rental.settings.telegramUserAccessUser') }}
+            </th>
+            <th class="px-3 py-2 font-medium">
+              {{ t('rental.settings.telegramUserAccessChatId') }}
+            </th>
+            <th class="px-3 py-2 font-medium">
+              {{ t('rental.settings.telegramUserAccessChatbot') }}
+            </th>
+            <th class="px-3 py-2 font-medium">
+              {{ t('rental.settings.telegramUserAccessGroup') }}
+            </th>
+            <th class="px-3 py-2 font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="row in userAccessValue"
+            :key="row.id"
+            class="border-b border-default last:border-b-0"
+          >
+            <td class="px-3 py-2 min-w-56">
+              <USelectMenu
+                :model-value="row.userId ? String(row.userId) : undefined"
+                :items="userAccessItemsForRow(row)"
+                value-key="value"
+                label-key="label"
+                :placeholder="t('rental.settings.telegramUserAccessUser')"
+                :disabled="disabled || field.readOnly"
+                :loading="systemUsersPending"
+                @update:model-value="applyUserAccessSelection(row, $event ? String($event) : undefined)"
+              />
+            </td>
+            <td class="px-3 py-2">
+              <UInput
+                v-model="row.chatId"
+                :placeholder="t('rental.settings.telegramUserAccessChatId')"
+                :disabled="disabled || field.readOnly"
+              />
+            </td>
+            <td class="px-3 py-2">
+              <USwitch
+                v-model="row.chatbotEnabled"
+                :disabled="disabled || field.readOnly"
+              />
+            </td>
+            <td class="px-3 py-2">
+              <USwitch
+                v-model="row.groupEnabled"
+                :disabled="disabled || field.readOnly"
+              />
+            </td>
+            <td class="px-3 py-2 text-right">
+              <UButton
+                size="xs"
+                color="error"
+                variant="ghost"
+                icon="i-lucide-trash-2"
+                :disabled="disabled || field.readOnly"
+                @click="removeUserAccessRow(row.id)"
+              />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div
     v-else-if="isTelegramDestinations"
     class="space-y-3 md:col-span-2"
   >
@@ -419,7 +704,7 @@ function removeDestination(id: string) {
     <div
       v-for="dest in destinationsValue"
       :key="dest.id"
-      class="grid gap-2 rounded-lg border border-default p-3 md:grid-cols-4"
+      class="grid gap-2 rounded-lg border border-default p-3 md:grid-cols-2"
     >
       <UInput
         v-model="dest.name"
@@ -438,13 +723,25 @@ function removeDestination(id: string) {
         label-key="label"
         :disabled="disabled || field.readOnly"
       />
-      <div class="flex items-center justify-between gap-2">
+      <USelectMenu
+        v-model="dest.enabledEvents"
+        :items="telegramEventItems"
+        value-key="value"
+        label-key="label"
+        multiple
+        :placeholder="t('rental.settings.enabledEvents')"
+        :disabled="disabled || field.readOnly"
+      />
+      <div class="flex items-center gap-3 md:col-span-2">
         <USwitch v-model="dest.enabled" :disabled="disabled || field.readOnly" />
+        <USwitch v-model="dest.isInteractiveGroup" :disabled="disabled || field.readOnly" />
+        <span class="text-xs text-muted">{{ t('rental.settings.interactiveGroup') }}</span>
         <UButton
           icon="i-lucide-trash-2"
           color="error"
           variant="ghost"
           size="xs"
+          class="ms-auto"
           :disabled="disabled || field.readOnly"
           @click="removeDestination(dest.id)"
         />
@@ -574,6 +871,18 @@ function removeDestination(id: string) {
           :required="field.required"
           size="md"
           class="w-full"
+        />
+        <UInputMenu
+          v-else-if="field.type === 'select' && field.meta?.creatable"
+          v-model="selectValue"
+          :items="creatableSelectItems"
+          value-key="value"
+          create-item
+          :placeholder="placeholderText"
+          :disabled="disabled || field.readOnly"
+          size="md"
+          class="w-full"
+          @create="onCreateSelectItem"
         />
         <UInputMenu
           v-else-if="field.type === 'select' && field.optionsEndpoint"

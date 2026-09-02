@@ -43,6 +43,8 @@ export const usePreferencesStore = defineStore('preferences', () => {
   const fontSize = useState<AppFontSize>('ui-font-size', () => DEFAULT_FONT_SIZE)
   const isCurrencyLoaded = useState('ui-currency-loaded', () => false)
   const currency = useState<string>('ui-currency', () => 'USD')
+  /** True after client-only localStorage hydration; keeps SSR and first client paint aligned. */
+  const hydrated = useState('ui-preferences-hydrated', () => false)
   const availableLocales = computed<AppLocale[]>(() => {
     const configured = appLocalization.localization.value.availableLanguages
       .filter((code): code is AppLocale => code === 'en' || code === 'km')
@@ -142,6 +144,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   }
 
   function loadCurrencyFromLocal() {
+    if (typeof window === 'undefined') return
     const saved = localStorage.getItem(CURRENCY_KEY)
     if (saved) currency.value = saved
   }
@@ -152,7 +155,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   }
 
   async function hydrate() {
-    if (!import.meta.client) return
+    if (!import.meta.client || hydrated.value) return
     if (!isThemeLoaded.value) {
       loadThemeFromLocal()
       isThemeLoaded.value = true
@@ -169,6 +172,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
       loadCurrencyFromLocal()
       isCurrencyLoaded.value = true
     }
+    hydrated.value = true
   }
 
   return {
@@ -177,6 +181,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
     currency,
     availableLocales,
     fontSizePx: FONT_SIZE_PX,
+    hydrated: computed(() => hydrated.value),
     hydrate,
     applyThemeColor,
     setLocale,

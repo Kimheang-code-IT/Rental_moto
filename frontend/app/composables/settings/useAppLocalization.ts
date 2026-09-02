@@ -14,15 +14,17 @@ import {
   formatTime,
   type RelativeTimeLabels,
 } from '~/utils/format/format-service'
+import { normalizeLocalization } from '~/utils/format/localization-config'
 
 export const DEFAULT_APP_LOCALIZATION: AppConfigLocalization = DEFAULT_FORMAT_CONFIG
 
 function syncFormatService(config: AppConfigLocalization) {
-  configureFormats(config)
+  configureFormats(normalizeLocalization(config))
 }
 
 /** Single source of truth for App Config localization on every page. */
 export function useAppLocalization() {
+  const { appConfig } = useSettingsRepositories()
   const localization = useState<AppConfigLocalization>('app-localization-config', () => ({
     ...DEFAULT_APP_LOCALIZATION,
     availableLanguages: [...DEFAULT_APP_LOCALIZATION.availableLanguages],
@@ -42,14 +44,11 @@ export function useAppLocalization() {
     }
     loading.value = true
     try {
-      const config = await useSettingsRepositories().appConfig.get()
-      localization.value = {
+      const config = await appConfig.get()
+      localization.value = normalizeLocalization({
         ...DEFAULT_APP_LOCALIZATION,
         ...(config.localization || {}),
-        availableLanguages: config.localization?.availableLanguages?.length
-          ? [...config.localization.availableLanguages]
-          : [...DEFAULT_APP_LOCALIZATION.availableLanguages],
-      }
+      })
       loaded.value = true
     }
     catch {
@@ -62,13 +61,10 @@ export function useAppLocalization() {
   }
 
   function apply(next: Partial<AppConfigLocalization>) {
-    localization.value = {
+    localization.value = normalizeLocalization({
       ...localization.value,
       ...next,
-      availableLanguages: next.availableLanguages?.length
-        ? [...next.availableLanguages]
-        : localization.value.availableLanguages,
-    }
+    })
     loaded.value = true
   }
 

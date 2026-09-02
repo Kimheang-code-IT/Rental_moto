@@ -1,5 +1,5 @@
 import type { AuthUser } from '~/types/auth-user'
-import { mockLatency, ok } from '~/mocks/query'
+import { ok } from '~/mocks/query'
 import { clearTokens, getAccessToken, hasTokens, setTokens } from '~/utils/auth/tokens'
 import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 
@@ -15,122 +15,11 @@ interface AuthTokenPairResponse {
 }
 
 /**
- * Mock-mode auth operations. The six-digit code is fixed for offline demos and
- * the mock backend keeps password/avatar edits in the mock account fixtures.
+ * HTTP auth operations against `/api/v2/auth/*`.
  */
-function useMockAuth() {
-  async function loginWithCredentials(email: string, password: string) {
-    const { authenticateMock } = await import('~/utils/auth/mock-login')
-    await mockLatency(null, 80)
-    const user = authenticateMock(email, password)
-    if (!user) throw createError({ statusCode: 401, statusMessage: 'Invalid credentials' })
-    return ok<LoginResult>({ user })
-  }
-
-  async function requestPasswordReset(_email: string) {
-    // Mock: reset code is delivered via Telegram bot (not email).
-    await mockLatency(null, 80)
-    return ok({ sent: true, channel: 'telegram' as const })
-  }
-
-  async function verifyPasswordResetCode(_email: string, code: string) {
-    const { MOCK_RESET_CODE } = await import('~/utils/auth/password-reset')
-    await mockLatency(null, 80)
-    if (code !== MOCK_RESET_CODE) throw createError({ statusCode: 400, statusMessage: 'Invalid code' })
-    return ok({ verified: true, resetToken: `mock-reset-${MOCK_RESET_CODE}` })
-  }
-
-  async function resendPasswordResetCode(_email: string) {
-    // Mock: resend via Telegram bot chatbot.
-    await mockLatency(null, 80)
-    return ok({ sent: true, channel: 'telegram' as const })
-  }
-
-  async function resetPasswordWithCode(input: {
-    email: string
-    resetToken?: string
-    code?: string
-    password: string
-    passwordConfirmation: string
-  }) {
-    const { MOCK_RESET_CODE } = await import('~/utils/auth/password-reset')
-    await mockLatency(null, 80)
-    const tokenValid = input.resetToken === `mock-reset-${MOCK_RESET_CODE}`
-    if (!tokenValid || input.password !== input.passwordConfirmation) {
-      throw createError({ statusCode: 400, statusMessage: 'Invalid reset request' })
-    }
-    return ok({ reset: true })
-  }
-
-  async function changePassword(input: {
-    currentPassword: string
-    password: string
-    passwordConfirmation: string
-  }) {
-    const auth = useAuthStore()
-    const email = auth.user?.email
-    if (!email) throw createError({ statusCode: 401, statusMessage: 'Not signed in' })
-    if (input.password !== input.passwordConfirmation) {
-      throw createError({ statusCode: 400, statusMessage: 'Passwords do not match' })
-    }
-    const { findMockLoginAccount } = await import('~/utils/auth/mock-login')
-    await mockLatency(null, 80)
-    const account = findMockLoginAccount(email)
-    if (!account || account.password !== input.currentPassword) {
-      throw createError({ statusCode: 401, statusMessage: 'Current password is incorrect' })
-    }
-    account.password = input.password
-    return ok({ changed: true })
-  }
-
-  async function updateProfileAvatar(avatar: string) {
-    const auth = useAuthStore()
-    const email = auth.user?.email
-    if (!email) throw createError({ statusCode: 401, statusMessage: 'Not signed in' })
-    const { findMockLoginAccount } = await import('~/utils/auth/mock-login')
-    await mockLatency(null, 80)
-    const account = findMockLoginAccount(email)
-    if (account) account.user.avatar = avatar
-    auth.updateUser({ avatar })
-    return ok({ avatar })
-  }
-
-  async function removeProfileAvatar() {
-    const auth = useAuthStore()
-    const email = auth.user?.email
-    if (!email) throw createError({ statusCode: 401, statusMessage: 'Not signed in' })
-    const { findMockLoginAccount } = await import('~/utils/auth/mock-login')
-    await mockLatency(null, 80)
-    const account = findMockLoginAccount(email)
-    if (account) delete account.user.avatar
-    auth.updateUser({ avatar: undefined })
-    return ok({ removed: true })
-  }
-
-  async function logoutServer() {
-    await mockLatency(null, 40)
-    return ok({ message: 'Logged out' })
-  }
-
-  return {
-    loginWithCredentials,
-    requestPasswordReset,
-    verifyPasswordResetCode,
-    resendPasswordResetCode,
-    resetPasswordWithCode,
-    changePassword,
-    updateProfileAvatar,
-    removeProfileAvatar,
-    logoutServer,
-  }
-}
-
-/**
- * HTTP-mode auth operations against `/api/v2/auth/*`.
- * `useApi()` handles bearer attachment, refresh rotation, and error shapes.
- */
-function useHttpAuth() {
+export function useAuth() {
   const api = useApi()
+  const authStore = useAuthStore()
 
   async function unwrap<T>(response: { data: T } | T): Promise<T> {
     if (response && typeof response === 'object' && 'data' in (response as object)) {
@@ -191,6 +80,23 @@ function useHttpAuth() {
     return ok({ reset: true })
   }
 
+  async function exchangePasswordResetHandoff(handoff: string) {
+    const result = await unwrap<{ email: string, resetToken: string }>(await api.post<{ email: string, resetToken: string } | { data: { email: string, resetToken: string } }>(
+      ApiEndpoints.AUTH_RESET_HANDOFF,
+      { handoff },
+      { isAuthRequest: true, suppressErrorToast: true },
+    ))
+    return ok(result)
+  }
+
+  async function createTelegramLinkCode() {
+    const result = await unwrap<{ code: string, expiresIn: number }>(await api.post<{ code: string, expiresIn: number } | { data: { code: string, expiresIn: number } }>(
+      ApiEndpoints.AUTH_TELEGRAM_LINK_CODE,
+      {},
+    ))
+    return ok(result)
+  }
+
   async function changePassword(input: {
     currentPassword: string
     password: string
@@ -235,30 +141,10 @@ function useHttpAuth() {
     return ok({ message: 'Logged out' })
   }
 
-  return {
-    loginWithCredentials,
-    requestPasswordReset,
-    verifyPasswordResetCode,
-    resendPasswordResetCode,
-    resetPasswordWithCode,
-    changePassword,
-    updateProfileAvatar,
-    removeProfileAvatar,
-    logoutServer,
-  }
-}
-
-export function useAuth() {
-  const config = useRuntimeConfig()
-  const useHttp = config.public.useMockData === false
-
-  const implementation = useHttp ? useHttpAuth() : useMockAuth()
-
-  /** Refresh the stored user profile from `GET /auth/me` (HTTP mode only). */
+  /** Refresh the stored user profile from `GET /auth/me`. */
   async function hydrateSessionFromApi(): Promise<AuthUser | null> {
-    if (!useHttp || !hasTokens()) return null
+    if (!hasTokens()) return null
     try {
-      const api = useApi()
       const me = await api.get<AuthUser | { data: AuthUser }>(ApiEndpoints.AUTH_ME, {
         suppressAccessAlert: true,
         suppressErrorToast: true,
@@ -267,29 +153,35 @@ export function useAuth() {
         ? (me as { data: AuthUser }).data
         : me as AuthUser
       if (user?.email) {
-        useAuthStore().login(user)
+        authStore.login(user)
         return user
       }
     }
     catch {
-      // Expired/invalid session: /auth/me returned 401 and useApi() already
-      // attempted one refresh. Clear stale display data when still unauthorized.
       if (!getAccessToken()) clearTokens()
     }
     return null
   }
 
-  /** Server logout with the refresh token, then always clear client state. */
   async function logout() {
     const { getRefreshToken } = await import('~/utils/auth/tokens')
-    await implementation.logoutServer(useHttp ? getRefreshToken() : null)
-    await useAuthStore().logout()
+    await logoutServer(getRefreshToken())
+    await authStore.logout()
   }
 
   return {
-    ...implementation,
+    loginWithCredentials,
+    requestPasswordReset,
+    verifyPasswordResetCode,
+    resendPasswordResetCode,
+    resetPasswordWithCode,
+    exchangePasswordResetHandoff,
+    createTelegramLinkCode,
+    changePassword,
+    updateProfileAvatar,
+    removeProfileAvatar,
     logout,
     hydrateSessionFromApi,
-    isHttpMode: useHttp,
+    isHttpMode: true,
   }
 }

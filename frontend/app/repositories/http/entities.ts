@@ -11,6 +11,7 @@ import type {
   RentalCloseInput,
   RentalCommandRepository,
   RentalCreateInput,
+  RentalUpdateInput,
   SearchRepository,
   SearchHitItem,
 } from '~/repositories/contracts/entities'
@@ -62,6 +63,15 @@ export function configureRoleMatrix(
 }
 
 function permissionRowsFromFlatKeys(keys: string[] | null | undefined): AppRolePermissionRow[] {
+  if (keys?.includes('ALL_PAGES')) {
+    return normalizePermissionRows(ROLE_DOCUMENT_TYPES_CACHE.map(definition => ({
+      id: `perm_${definition.value}`,
+      documentType: definition.value,
+      onlyIfCreator: false,
+      level: 0,
+      actions: [...definition.actions],
+    })), true)
+  }
   const rows: AppRolePermissionRow[] = []
   for (const key of keys || []) {
     const separator = key.lastIndexOf('.')
@@ -101,15 +111,57 @@ configureRoleMatrix(
   })),
 )
 
+function asRecordId(value: unknown): string {
+  return value == null ? '' : String(value)
+}
+
+function asRoleId(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
 /** Map backend user fields to the UI column keys (no fabricated data). */
 function adaptUserOut(user: Record<string, unknown>): Record<string, unknown> {
+  const effectivePermissions = Array.isArray(user.effectivePermissions)
+    ? user.effectivePermissions.map(String)
+    : []
+  const roleId = asRoleId(user.roleId)
   return {
     ...user,
+    id: asRecordId(user.id),
+    roleId: roleId != null ? String(roleId) : '',
+    effectivePermissions,
+    permissionRows: permissionRowsFromFlatKeys(effectivePermissions),
     lastLogin: user.lastLoginAt ?? user.lastLogin ?? null,
-    // Telegram linking is server-managed; the UI renders a Linked/Not linked
-    // state instead of editable username/chat fields.
-    telegramUsername: user.telegramLinked ? 'Linked' : '',
+    // Telegram linking is server-managed; show chat ID when linked.
+    telegramUsername: user.telegramLinked
+      ? String(user.telegramChatId || 'Linked')
+      : '',
   }
+}
+
+/** Only the fields UserCreate / UserUpdate accept (`extra="forbid"`). */
+function adaptUserIn(input: Record<string, unknown>): Record<string, unknown> {
+  const output: Record<string, unknown> = {}
+  const username = String(input.username ?? '').trim()
+  const displayName = String(input.displayName ?? '').trim()
+  const email = String(input.email ?? '').trim()
+  const status = String(input.status ?? '').trim()
+  const password = String(input.password ?? '')
+  const roleId = asRoleId(input.roleId)
+  const avatar = typeof input.avatar === 'string'
+    ? input.avatar.trim()
+    : typeof input.avatarUrl === 'string' ? input.avatarUrl.trim() : ''
+
+  if (username) output.username = username
+  if (displayName) output.displayName = displayName
+  if (email) output.email = email
+  if (status) output.status = status
+  if (roleId != null) output.roleId = roleId
+  if (password.trim()) output.password = password
+  if (avatar) output.avatar = avatar
+  return output
 }
 
 /** Map backend role fields onto the permission-matrix UI shape. */
@@ -117,9 +169,10 @@ function adaptRoleOut(role: Record<string, unknown>): Record<string, unknown> {
   const permissions = Array.isArray(role.permissions) ? role.permissions.map(String) : []
   return {
     ...role,
+    id: asRecordId(role.id),
     permissions,
     permissionRows: permissionRowsFromFlatKeys(permissions),
-    permissionCount: permissions.length,
+    permissionCount: Number(role.permissionCount ?? permissions.length),
     status: 'Active',
   }
 }
@@ -141,6 +194,7 @@ function adaptAuditLogOut(row: Record<string, unknown>): Record<string, unknown>
     ...row,
     user: row.userName ?? row.user ?? null,
     entity: row.entityLabel ?? row.entityId ?? '',
+    ipDevice: row.ipAddress ?? row.ipDevice ?? '',
   }
 }
 
@@ -159,6 +213,7 @@ function adaptEntityOut(collection: ApiCollection, row: Record<string, unknown>)
 
 function adaptEntityIn(collection: ApiCollection, input: Record<string, unknown>): Record<string, unknown> {
   if (collection === 'roles') return adaptRoleIn(input)
+  if (collection === 'users') return adaptUserIn(input)
   return stripUiOnlyFields(input)
 }
 
@@ -188,7 +243,11 @@ export function createHttpEntityRepository(): EntityRepository {
     const endpoint = CollectionEndpoints[collection as ApiCollection]
     if (!endpoint) return null
     try {
-      const response = await api.get<unknown>(`${endpoint}/${id}`, { suppressErrorToast: true })
+      const response = await api.get<unknown>(`${endpoint}/${id}`, {
+        suppressErrorToast: true,
+        cancelPrevious: false,
+        requestKey: `entity-get:${collection}:${id}`,
+      })
       return adaptEntityOut(collection as ApiCollection, unwrap<Record<string, unknown>>(response)) as AppRecord
     }
     catch {
@@ -231,6 +290,10 @@ export function createHttpRentalCommandRepository(): RentalCommandRepository {
     return (Array.isArray(items) ? items : []) as AppRecord[]
   }
 
+  async function update(id: string, input: RentalUpdateInput): Promise<AppRecord> {
+    return unwrap<Record<string, unknown>>(await api.put<unknown>(ApiEndpoints.RENTAL(id), input as unknown as Record<string, unknown>)) as AppRecord
+  }
+
   async function close(id: string, input: RentalCloseInput): Promise<AppRecord> {
     return unwrap<Record<string, unknown>>(await api.post<unknown>(ApiEndpoints.RENTAL_CLOSE(id), input as unknown as Record<string, unknown>)) as AppRecord
   }
@@ -239,17 +302,17 @@ export function createHttpRentalCommandRepository(): RentalCommandRepository {
     return unwrap<Record<string, unknown>>(await api.post<unknown>(ApiEndpoints.RENTAL_CANCEL(id), { reason: reason ?? null })) as AppRecord
   }
 
-  return { create, close, cancel }
+  return { create, update, close, cancel }
 }
 
 export function createHttpFinanceRepository(): FinanceRepository {
   const api = useApi()
 
   return {
-    async dashboard(startDate?: string, endDate?: string): Promise<DashboardSummary> {
+    async dashboard(startDate?: string, endDate?: string, requestKey = 'dashboard'): Promise<DashboardSummary> {
       const data = unwrap<DashboardSummary>(await api.get<unknown>(ApiEndpoints.DASHBOARD, {
         query: { startDate, endDate },
-        requestKey: 'dashboard',
+        requestKey,
         cancelPrevious: true,
       }))
       return {
@@ -262,6 +325,8 @@ export function createHttpFinanceRepository(): FinanceRepository {
         netIncome: Number(data.netIncome || 0),
         outstanding: Number(data.outstanding || 0),
         rentalsByDay: Array.isArray(data.rentalsByDay) ? data.rentalsByDay : [],
+        incomeByDay: Array.isArray(data.incomeByDay) ? data.incomeByDay : [],
+        expenseByDay: Array.isArray(data.expenseByDay) ? data.expenseByDay : [],
         startDate: data.startDate ?? null,
         endDate: data.endDate ?? null,
       }

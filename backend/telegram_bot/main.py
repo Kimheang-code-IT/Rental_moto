@@ -7,7 +7,6 @@ from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    CallbackQueryHandler,
     ContextTypes,
     MessageHandler,
     filters,
@@ -17,6 +16,10 @@ from telegram_bot.api_client import ApiClient
 from telegram_bot.state import BotState
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+# python-telegram-bot calls URLs containing the bot token. Keep HTTP request URLs
+# out of normal application logs so the credential is never written to stdout.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("hollywing.bot")
 
 
@@ -34,7 +37,7 @@ def build_application() -> Application:
     from telegram_bot import handlers as h
 
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await h.cmd_start(update, context)
+        await h.cmd_start(update, context, api, state)
 
     async def link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await h.cmd_link(update, context, api)
@@ -42,13 +45,9 @@ def build_application() -> Application:
     async def message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await h.handle_message(update, context, api, state)
 
-    async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await h.handle_callback(update, context, api, state)
-
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
     application.add_handler(CommandHandler("link", link))
-    application.add_handler(CallbackQueryHandler(callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message))
 
     application.bot_data["api"] = api
@@ -78,4 +77,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

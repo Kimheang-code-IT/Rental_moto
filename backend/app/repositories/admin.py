@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from app.models import (
     AppSetting,
@@ -24,31 +25,77 @@ class UserRepository:
         self.session = session
 
     async def get(self, user_id: int) -> User | None:
-        return await self.session.get(User, user_id)
+        return await self.session.get(User, user_id, options=(joinedload(User.role_ref),))
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.session.execute(select(User).where(func.lower(User.email) == email.lower()))
-        return result.scalar_one_or_none()
+        result = await self.session.execute(
+            select(User).options(joinedload(User.role_ref)).where(func.lower(User.email) == email.lower())
+        )
+        return result.unique().scalar_one_or_none()
 
     async def get_by_username(self, username: str) -> User | None:
-        result = await self.session.execute(select(User).where(func.lower(User.username) == username.lower()))
-        return result.scalar_one_or_none()
+        result = await self.session.execute(
+            select(User).options(joinedload(User.role_ref)).where(func.lower(User.username) == username.lower())
+        )
+        return result.unique().scalar_one_or_none()
 
     async def get_by_telegram_chat(self, chat_id: str) -> User | None:
-        result = await self.session.execute(select(User).where(User.telegram_chat_id == str(chat_id)))
+        result = await self.session.execute(
+            select(User)
+            .where(User.telegram_chat_id == str(chat_id))
+            .order_by(User.telegram_linked_at.desc().nullslast(), User.id.desc())
+            .limit(1)
+        )
         return result.scalar_one_or_none()
 
+    async def get_by_telegram_ids(self, telegram_user_id: str, telegram_chat_id: str) -> User | None:
+        result = await self.session.execute(
+            select(User).where(
+                User.telegram_user_id == str(telegram_user_id),
+                User.telegram_chat_id == str(telegram_chat_id),
+            ).order_by(User.telegram_linked_at.desc().nullslast(), User.id.desc()).limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_telegram_user_id(self, telegram_user_id: str) -> User | None:
+        result = await self.session.execute(
+            select(User)
+            .where(User.telegram_user_id == str(telegram_user_id))
+            .order_by(User.telegram_linked_at.desc().nullslast(), User.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def clear_conflicting_telegram_link(
+        self, user_id: int, telegram_user_id: str, telegram_chat_id: str
+    ) -> None:
+        """A Telegram account/private chat may belong to only one application user."""
+        await self.session.execute(
+            update(User)
+            .where(
+                User.id != user_id,
+                (User.telegram_user_id == str(telegram_user_id))
+                | (User.telegram_chat_id == str(telegram_chat_id)),
+            )
+            .values(telegram_user_id=None, telegram_chat_id=None, telegram_linked_at=None)
+        )
+
     async def list(self, q: str | None, page: int, limit: int) -> tuple[list[User], int]:
-        stmt = select(User).order_by(User.id)
+        filters = []
         if q:
             term = f"%{q.lower()}%"
-            stmt = stmt.where(
+            filters.append(
                 (func.lower(User.email).like(term))
                 | (func.lower(User.username).like(term))
                 | (func.lower(User.display_name).like(term))
             )
-        total = (await self.session.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
-        rows = (await self.session.execute(stmt.offset((page - 1) * limit).limit(limit))).scalars().all()
+        count_stmt = select(func.count()).select_from(User)
+        stmt = select(User).options(joinedload(User.role_ref)).order_by(User.id)
+        if filters:
+            count_stmt = count_stmt.where(*filters)
+            stmt = stmt.where(*filters)
+        total = (await self.session.execute(count_stmt)).scalar() or 0
+        rows = (await self.session.execute(stmt.offset((page - 1) * limit).limit(limit))).unique().scalars().all()
         return list(rows), int(total)
 
     async def create(self, user: User) -> User:
@@ -105,10 +152,14 @@ class RoleRepository:
     async def delete(self, role: Role) -> None:
         await self.session.delete(role)
 
-    async def users_with_role(self, name: str) -> int:
+    async def users_with_role(self, role_id: int) -> int:
         return int(
-            (await self.session.execute(select(func.count()).select_from(User).where(User.role == name))).scalar() or 0
+            (await self.session.execute(select(func.count()).select_from(User).where(User.role_id == role_id))).scalar() or 0
         )
+
+    async def counts_by_role(self) -> dict[int, int]:
+        rows = await self.session.execute(select(User.role_id, func.count()).group_by(User.role_id))
+        return {int(role_id): int(count) for role_id, count in rows if role_id is not None}
 
 
 class AuditRepository:

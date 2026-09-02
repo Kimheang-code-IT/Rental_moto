@@ -1,6 +1,7 @@
 import type { ExportRequest } from '~/types/rental/export'
 import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 import { getAccessToken } from '~/utils/auth/tokens'
+import { isAutoApiBase, isSameOriginApiBase, resolveApiBase } from '~/utils/api/base-url'
 import { useApi } from '~/composables/useApi'
 
 const POLL_INTERVAL_MS = 2000
@@ -30,12 +31,29 @@ function saveBlob(blob: Blob, filename: string) {
  */
 export function useServerExport() {
   const api = useApi()
+  const config = useRuntimeConfig()
   const running = ref(false)
   const error = ref<string | null>(null)
 
+  function getApiBase(): string {
+    const configuredBase = String(config.public.apiBase || '')
+    const requireSecureApi = import.meta.env.PROD
+      && config.public.useMockData === false
+      && !isAutoApiBase(configuredBase)
+      && !isSameOriginApiBase(configuredBase)
+    const resolved = resolveApiBase({
+      configured: configuredBase,
+      internalBase: String(config.apiInternalBase || ''),
+      requireHttps: requireSecureApi,
+    })
+    if (!resolved) {
+      throw new Error('Invalid API base URL. Production APIs must use HTTPS.')
+    }
+    return resolved
+  }
+
   async function download(jobId: string, filename: string) {
-    const config = useRuntimeConfig()
-    const response = await $fetch<Blob>(`${config.public.apiBase}${ApiEndpoints.EXPORT_DOWNLOAD(jobId)}`, {
+    const response = await $fetch<Blob>(`${getApiBase()}${ApiEndpoints.EXPORT_DOWNLOAD(jobId)}`, {
       responseType: 'blob',
       headers: { Authorization: `Bearer ${getAccessToken() || ''}` },
     })

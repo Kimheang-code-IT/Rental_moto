@@ -1,32 +1,41 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import Field
+from pydantic import ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
 
 from app.schemas.common import CamelModel
 
 
 class UserCreate(CamelModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True, extra="forbid")
+
     username: str = Field(min_length=2)
     display_name: str = Field(min_length=1)
     email: str
     password: str = Field(min_length=6)
-    role: str = "Rental Staff"
+    role_id: int | None = None
+    role: str | None = None
     status: str = "Active"
-    permissions: list[str] | None = None
-    page_access: list[str] | None = None
     avatar: str | None = None
+
+    @model_validator(mode="after")
+    def require_role(self):
+        if self.role_id is None and not self.role:
+            raise ValueError("roleId is required")
+        return self
 
 
 class UserUpdate(CamelModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, from_attributes=True, extra="forbid")
+
     username: str | None = None
     display_name: str | None = None
     email: str | None = None
     password: str | None = None
+    role_id: int | None = None
     role: str | None = None
     status: str | None = None
-    permissions: list[str] | None = None
-    page_access: list[str] | None = None
     avatar: str | None = None
 
 
@@ -36,10 +45,12 @@ class UserResponse(CamelModel):
     display_name: str
     email: str
     role: str
+    role_id: int
     status: str
     avatar: str | None = None
-    permissions: list[str] = []
-    page_access: list[str] = []
+    effective_permissions: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    page_access: list[str] = Field(default_factory=list)
     telegram_linked: bool = False
     last_login_at: datetime | None = None
     created_at: datetime
@@ -49,24 +60,23 @@ class UserResponse(CamelModel):
 class RoleCreate(CamelModel):
     name: str = Field(min_length=2)
     description: str = ""
-    permissions: list[str] = []
-    page_access: list[str] = []
+    permissions: list[str] = Field(default_factory=list)
 
 
 class RoleUpdate(CamelModel):
     name: str | None = None
     description: str | None = None
     permissions: list[str] | None = None
-    page_access: list[str] | None = None
 
 
 class RoleResponse(CamelModel):
     id: int
     name: str
     description: str
-    permissions: list[str] = []
-    page_access: list[str] = []
+    permissions: list[str] = Field(default_factory=list)
+    page_access: list[str] = Field(default_factory=list)
     is_system: bool = False
+    user_count: int = 0
     created_at: datetime
     updated_at: datetime
 
@@ -81,6 +91,7 @@ class AuditLogResponse(CamelModel):
     entity_id: str | None = None
     entity_label: str | None = None
     details: dict | None = None
+    ip_address: str | None = None
 
 
 class DocumentSequenceCreate(CamelModel):

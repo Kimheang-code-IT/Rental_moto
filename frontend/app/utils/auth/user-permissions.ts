@@ -28,12 +28,10 @@ export function getAllSystemPermissionKeys(): string[] {
 /** Resolve flat permission keys for the signed-in user. */
 export function resolveUserPermissionKeys(user: AuthUser | null | undefined): string[] {
   if (!user) return []
-  if (user.pageAccess?.includes('ALL_PAGES')) return getAllSystemPermissionKeys()
-  if (user.permissions?.length) return [...user.permissions].sort()
-  if (!user.pageAccess?.length || user.pageAccess.includes('ALL_PAGES')) {
-    return getAllSystemPermissionKeys()
-  }
-  return [...(user.pageAccess || [])].sort()
+  const access = user.effectivePermissions ?? user.permissions ?? user.pageAccess
+  if (!Array.isArray(access)) return []
+  if (access.includes('ALL_PAGES')) return getAllSystemPermissionKeys()
+  return [...access].sort()
 }
 
 /** Group granted keys by module for profile display. */

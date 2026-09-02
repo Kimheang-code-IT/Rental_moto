@@ -32,13 +32,22 @@ def create_app() -> FastAPI:
         openapi_url="/openapi.json",
     )
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origin_list,
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    cors_kwargs: dict = {
+        "allow_origins": settings.cors_origin_list,
+        "allow_credentials": False,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+    }
+    if settings.environment == "development" and settings.cors_allow_private_networks:
+        cors_kwargs["allow_origin_regex"] = (
+            r"https?://("
+            r"localhost|127\.0\.0\.1"
+            r"|192\.168\.\d{1,3}\.\d{1,3}"
+            r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+            r"|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"
+            r")(:\d+)?$"
+        )
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):

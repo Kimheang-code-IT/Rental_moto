@@ -12,6 +12,7 @@ from app.api.v2 import (
     health,
     motorcycles,
     payments,
+    permissions,
     rentals,
     roles,
     search,
@@ -26,6 +27,7 @@ api_router.include_router(health.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(roles.router)
+api_router.include_router(permissions.router)
 api_router.include_router(motorcycles.router)
 api_router.include_router(customers.router)
 api_router.include_router(rentals.router)

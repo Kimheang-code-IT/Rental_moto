@@ -28,6 +28,7 @@ RL_PREFIX = "auth:rl:"
 RESET_PREFIX = "auth:pwreset:"
 RESET_DELIVERY_PREFIX = "auth:pwdeliver:"
 LINK_PREFIX = "auth:link:"
+HANDOFF_PREFIX = "auth:handoff:"
 
 
 def _hash_code(code: str) -> str:
@@ -357,6 +358,62 @@ class AuthService:
         )
         await self.session.commit()
 
+    async def telegram_request_password_reset(self, user: User) -> bool:
+        await self.limiter.hit(f"pwreset:tg:{user.id}", settings.rate_limit_reset_per_hour, 3600)
+        if user.status != "Active" or not user.telegram_chat_id:
+            return False
+        if self.redis is None:
+            return False
+        code = generate_reset_code()
+        payload = {
+            "user_id": user.id,
+            "code_hash": _hash_code(code),
+            "attempts": 0,
+            "chat_id": user.telegram_chat_id,
+        }
+        ttl = settings.telegram_reset_code_expire_minutes * 60
+        await _safe_set(self.redis, _reset_key(user.email), payload, ttl)
+        await _safe_set(
+            self.redis,
+            f"{RESET_DELIVERY_PREFIX}{user.email.lower()}",
+            {"code": code, "chat_id": user.telegram_chat_id},
+            min(ttl, 300),
+        )
+        from app.models import OutboxEvent
+
+        self.session.add(
+            OutboxEvent(
+                event_type="password_reset_requested",
+                payload={"email": user.email, "user_id": user.id},
+                queue="critical",
+            )
+        )
+        await self.session.commit()
+        return True
+
+    async def telegram_verify_reset_code(self, user: User, code: str) -> dict:
+        reset_jwt = await self.verify_reset_code(user.email, code.strip())
+        if self.redis is None:
+            raise ConflictError("Handoff requires Redis")
+        handoff = secrets.token_urlsafe(32)
+        await _safe_set(
+            self.redis,
+            f"{HANDOFF_PREFIX}{handoff}",
+            {"user_id": user.id, "email": user.email, "reset_token": reset_jwt},
+            600,
+        )
+        return {"token": handoff, "expires_in": 600}
+
+    async def exchange_handoff_token(self, handoff: str) -> dict:
+        if self.redis is None:
+            raise ValidationError("Handoff token is invalid or expired")
+        key = f"{HANDOFF_PREFIX}{handoff.strip()}"
+        data = await _safe_get(self.redis, key)
+        if not data:
+            raise ValidationError("Handoff token is invalid or expired")
+        await _safe_delete(self.redis, key)
+        return {"email": data["email"], "resetToken": data["reset_token"]}
+
     async def create_link_code(self, user: User) -> str:
         code = secrets.token_hex(4).upper()
         if self.redis is None:
@@ -374,6 +431,7 @@ class AuthService:
         user = await self.users.get(int(data["user_id"]))
         if user is None:
             raise NotFoundError("User not found")
+        await self.users.clear_conflicting_telegram_link(user.id, telegram_user_id, telegram_chat_id)
         user.telegram_user_id = str(telegram_user_id)
         user.telegram_chat_id = str(telegram_chat_id)
         user.telegram_linked_at = utcnow()

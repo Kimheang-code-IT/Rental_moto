@@ -10,6 +10,7 @@ from app.api.deps import (
 )
 from app.core.config import settings
 from app.core.errors import AccessDeniedError
+from app.core.permissions import effective_permissions
 from app.core.security import create_service_token
 from app.schemas.auth import (
     AvatarUpdateRequest,
@@ -29,17 +30,19 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _auth_user_payload(user) -> dict:
-    page_access = list(user.page_access) if user.page_access else None
-    is_all = user.role == "SuperAdmin" or (page_access and "ALL_PAGES" in page_access)
+    permissions = effective_permissions(user)
     return {
         "id": user.id,
         "name": user.display_name,
         "email": user.email,
-        "role": user.role,
+        "roleId": user.role_id,
+        "role": user.role_ref.name,
         "avatar": user.avatar_url,
-        "permissions": ["ALL_PAGES"] if is_all else (list(user.permissions) if user.permissions else (page_access or [])),
-        "pageAccess": ["ALL_PAGES"] if is_all else (page_access or []),
-        "sourcePermissions": list(user.permissions) if user.permissions else [],
+        "telegramLinked": bool(user.telegram_linked_at and user.telegram_chat_id),
+        "effectivePermissions": permissions,
+        "permissions": permissions,
+        "pageAccess": permissions,
+        "sourcePermissions": permissions,
     }
 
 
@@ -169,6 +172,20 @@ async def reset_password(
     service = AuthService(session, redis)
     await service.reset_password(body.email, body.reset_token, body.new_password)
     return envelope({"message": "Password has been reset"})
+
+
+@router.post("/forgot-password/handoff")
+async def forgot_password_handoff(
+    body: dict,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis_dep),
+) -> dict:
+    handoff = str(body.get("handoff") or body.get("handoffToken") or "")
+    if not handoff:
+        raise ValidationError("handoff token is required")
+    service = AuthService(session, redis)
+    data = await service.exchange_handoff_token(handoff)
+    return envelope({"email": data["email"], "resetToken": data["resetToken"], "message": "Handoff accepted"})
 
 
 @router.post("/telegram/link-code")

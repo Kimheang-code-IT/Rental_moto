@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { useConfirm } from '~/composables/common/useConfirm'
 import { formatMoney } from '~/composables/module/useModule'
 import { PAYMENT_METHODS, RENTAL_CHARGE_TYPES } from '~/config/rental-options'
+import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
 import { toIsoZonedOrNow } from '~/utils/api/datetime'
 import { useRentalCommands } from '~/repositories/index'
 
@@ -20,6 +22,8 @@ const auth = useAuthStore()
 const store = useAppDataStore()
 const toast = useToast()
 const preferences = usePreferencesStore()
+const rentalCommands = useRentalCommands()
+const { confirm } = useConfirm()
 
 function staffName() {
   return auth.user?.name || 'Staff'
@@ -47,14 +51,16 @@ const returnAt = ref(new Date().toISOString().slice(0, 16))
 
 interface ReturnChargeLine {
   key: string
-  chargeType: (typeof RENTAL_CHARGE_TYPES)[number]
+  chargeType: string
   description: string
   amount: number
 }
 let chargeSeq = 1
 const returnCharges = ref<ReturnChargeLine[]>([])
 
-const returnPaymentMethod = ref<(typeof PAYMENT_METHODS)[number]>(PAYMENT_METHODS[0])
+const paymentMethodOptions = useCreatableOptionList(PAYMENT_METHODS)
+const chargeTypeOptions = useCreatableOptionList(RENTAL_CHARGE_TYPES)
+const returnPaymentMethod = ref<string>(PAYMENT_METHODS[0])
 const returnPaidAmount = ref(0)
 const saving = ref(false)
 
@@ -83,6 +89,16 @@ const projectedTotalDue = computed(() => {
 watch(balanceDueBeforePay, (due) => {
   returnPaidAmount.value = Number(due.toFixed(2))
 }, { immediate: true })
+
+function onCreateReturnPaymentMethod(item: string) {
+  const value = paymentMethodOptions.onCreate(item)
+  if (value) returnPaymentMethod.value = value
+}
+
+function onCreateReturnChargeType(item: string, row: ReturnChargeLine) {
+  const value = chargeTypeOptions.onCreate(item)
+  if (value) row.chargeType = value
+}
 
 function resetForm() {
   returnAt.value = new Date().toISOString().slice(0, 16)
@@ -128,13 +144,23 @@ async function saveClose() {
   if (invalidCharge) return
   if (returnPaidAmount.value > balanceDueBeforePay.value + 0.001) return
 
+  const rentalNo = String(props.rental.rentalNo || props.rental.id || '')
+  const ok = await confirm({
+    kind: 'generic',
+    titleKey: 'rental.ui.confirmCloseTitle',
+    descriptionKey: 'rental.ui.confirmCloseDescription',
+    descriptionParams: {
+      rentalNo,
+      outstanding: money(projectedOutstanding.value),
+    },
+    confirmLabelKey: 'rental.ui.confirmClose',
+    confirmColor: 'warning',
+  })
+  if (!ok) return
+
   saving.value = true
   try {
-    if (store.isHttpMode) {
-      // One atomic server transaction: return charges, final payment, balance
-      // recalculation, rental completion, and motorcycle status all happen in
-      // the backend. The response is the authoritative rental record.
-      const closed = await useRentalCommands().close(String(props.rental.id), {
+    const closed = await rentalCommands.close(String(props.rental.id), {
         returnDate: toIsoZonedOrNow(returnAt.value),
         condition: null,
         returnNote: null,
@@ -164,59 +190,6 @@ async function saveClose() {
       await store.fetchList('rentalCharges', { rentalId: String(closed.id) })
       toast.add({ title: tx('rental.ui.rentalClosed', 'Rental closed'), color: 'success' })
       emit('saved', tx('rental.ui.rentalClosed', 'Rental closed'))
-      return
-    }
-
-    let chargeDelta = 0
-    for (const row of returnCharges.value) {
-      const amt = Math.max(0, Number(row.amount) || 0)
-      if (amt <= 0) continue
-      const seq = store.list('rentalCharges').length + 1
-      store.create('rentalCharges', {
-        chargeNo: `RNC-${String(seq).padStart(6, '0')}`,
-        rentalId: props.rental.id,
-        rentalNo: props.rental.rentalNo,
-        customer: props.rental.customer,
-        chargeType: row.chargeType,
-        description: row.description,
-        amount: amt,
-        currency: props.rental.currency || preferences.currency,
-        chargeToCustomer: 'Yes',
-        createdBy: staffName(),
-      }, 'rgc')
-      chargeDelta += amt
-    }
-
-    let paidDelta = 0
-    if (returnPaidAmount.value > 0) {
-      paidDelta = returnPaidAmount.value
-      const seq = store.list('rentalPayments').length + 1
-      store.create('rentalPayments', {
-        paymentNo: `RNP-${String(seq).padStart(6, '0')}`,
-        rentalId: props.rental.id,
-        rentalNo: props.rental.rentalNo,
-        customer: props.rental.customer,
-        amount: paidDelta,
-        currency: props.rental.currency || preferences.currency,
-        paymentMethod: returnPaymentMethod.value,
-        paidAt: returnAt.value,
-        reference: '',
-        note: tx('rental.ui.paymentOnReturn', 'Payment on return'),
-      }, 'rnp')
-    }
-
-    const updated = {
-      ...recomputeRental(props.rental, paidDelta, chargeDelta),
-      ...(paidDelta > 0 ? { paymentMethod: returnPaymentMethod.value } : {}),
-      status: 'Completed',
-      returnDate: returnAt.value,
-    }
-    store.save('rentals', updated)
-    const motorcycle = store.get('motorcycles', String(props.rental.motorcycleId || ''))
-    if (motorcycle) store.save('motorcycles', { ...motorcycle, status: 'Available' })
-    store.addAudit('Rental closed', 'Rentals', String(props.rental.rentalNo))
-    toast.add({ title: tx('rental.ui.rentalClosed', 'Rental closed'), color: 'success' })
-    emit('saved', tx('rental.ui.rentalClosed', 'Rental closed'))
   }
   catch (error: unknown) {
     toast.add({
@@ -294,11 +267,14 @@ class="w-full max-w-sm" />
               <tbody>
                 <tr v-for="row in returnCharges" :key="row.key" class="border-b border-default/70">
                   <td class="px-2 py-1.5">
-                    <USelect
-v-model="row.chargeType"
-:items="[...RENTAL_CHARGE_TYPES]"
-size="md"
-class="w-36" />
+                    <UInputMenu
+                      v-model="row.chargeType"
+                      create-item
+                      :items="chargeTypeOptions.items.value"
+                      size="md"
+                      class="w-36"
+                      @create="(item: string) => onCreateReturnChargeType(item, row)"
+                    />
                   </td>
                   <td class="px-2 py-1.5">
                     <UInput v-model="row.description" size="md" class="w-full min-w-40" />
@@ -331,12 +307,15 @@ icon="i-lucide-trash-2"
 
         <div class="grid grid-cols-2 gap-3 rounded-md border border-default p-3">
           <p class="col-span-2 text-sm font-semibold">{{ tx('rental.ui.paymentOnReturn', 'Payment on return') }}</p>
-          <UFormField :label="tx('rental.ui.paymentMethod', 'Payment Method')" :help="help('paymentMethod', 'How the customer pays the remaining balance or fines.')">
-            <USelect
-v-model="returnPaymentMethod"
-:items="[...PAYMENT_METHODS]"
-size="md"
-class="w-full" />
+          <UFormField :label="tx('rental.ui.paymentMethod', 'Payment Method')" :help="help('paymentMethod', 'Choose a preset method or type a custom payment method.')">
+            <UInputMenu
+              v-model="returnPaymentMethod"
+              create-item
+              :items="paymentMethodOptions.items.value"
+              size="md"
+              class="w-full"
+              @create="onCreateReturnPaymentMethod"
+            />
           </UFormField>
           <UFormField
             :label="tx('rental.ui.amount', 'Amount')"

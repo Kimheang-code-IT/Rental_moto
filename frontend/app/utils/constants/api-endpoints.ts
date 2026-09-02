@@ -7,6 +7,7 @@ export const ApiEndpoints = {
   AUTH_RESET_VERIFY: '/api/v2/auth/forgot-password/verify',
   AUTH_RESET_RESEND: '/api/v2/auth/forgot-password/resend',
   AUTH_RESET_PASSWORD: '/api/v2/auth/forgot-password/reset',
+  AUTH_RESET_HANDOFF: '/api/v2/auth/forgot-password/handoff',
   AUTH_CHANGE_PASSWORD: '/api/v2/auth/change-password',
   AUTH_PROFILE_AVATAR: '/api/v2/auth/profile/avatar',
   AUTH_TELEGRAM_LINK_CODE: '/api/v2/auth/telegram/link-code',
@@ -42,6 +43,8 @@ export const ApiEndpoints = {
 
   ROLES: '/api/v2/roles',
   ROLE: (id: string) => `/api/v2/roles/${id}`,
+  ROLE_OPTIONS: '/api/v2/roles/options',
+  PERMISSIONS: '/api/v2/permissions',
 
   AUDIT_LOGS: '/api/v2/audit-logs',
 
@@ -55,6 +58,7 @@ export const ApiEndpoints = {
 
   APP_INFO: '/api/v2/settings/app-info',
   APP_INFO_RESET: '/api/v2/settings/app-info/reset',
+  RESET_ALL_DATA: '/api/v2/settings/reset-data',
   APP_CONFIG: '/api/v2/settings/app-config',
   APP_CONFIG_TEST_EMAIL: '/api/v2/settings/app-config/email/test-connection',
   APP_CONFIG_SEND_TEST_EMAIL: '/api/v2/settings/app-config/email/send-test',

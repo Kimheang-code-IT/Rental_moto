@@ -59,13 +59,22 @@ defineExpose({ toPng })
 </script>
 
 <template>
-  <VChart
-    ref="chartRef"
-    class="h-full w-full min-h-0 min-w-0"
-    :style="{ height: props.height }"
-    :option="themedOption"
-    autoresize
-    :aria-label="props.ariaLabel"
-    role="img"
-  />
+  <ClientOnly>
+    <VChart
+      ref="chartRef"
+      class="h-full w-full min-h-0 min-w-0"
+      :style="{ height: props.height }"
+      :option="themedOption"
+      autoresize
+      :aria-label="props.ariaLabel"
+      role="img"
+    />
+    <template #fallback>
+      <div
+        class="h-full w-full min-h-0 min-w-0 animate-pulse rounded-md bg-muted/40"
+        :style="{ height: props.height }"
+        role="presentation"
+      />
+    </template>
+  </ClientOnly>
 </template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { formatMoney } from '~/composables/module/useModule'
+import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 
 const props = defineProps<{
   rental: Record<string, unknown> | null
@@ -7,6 +8,7 @@ const props = defineProps<{
 
 const preferences = usePreferencesStore()
 const store = useAppDataStore()
+const { formatDateTime } = useAppLocalization()
 
 const DEFAULT_ADDRESS = 'St. 271, Toul Tum Poung, Phnom Penh, Cambodia'
 const DEFAULT_PHONE = '+855 23 555 123'
@@ -55,16 +57,7 @@ const currencyCode = computed(() => String(props.rental?.currency || preferences
 const money = (value: unknown) => formatMoney(value, currencyCode.value)
 
 function dateTime(value: unknown) {
-  if (!value) return '—'
-  const parsed = new Date(String(value))
-  if (Number.isNaN(parsed.getTime())) return String(value)
-  return parsed.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return formatDateTime(value)
 }
 
 const invoiceNo = computed(() =>

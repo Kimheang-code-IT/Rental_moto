@@ -65,6 +65,14 @@ async def test_record_payment_updates_balances(client, admin_headers):
     assert listing.status_code == 200
     assert listing.json()["meta"]["total"] == 2
 
+    custom_payment = await client.post(
+        "/api/v2/payments",
+        headers=admin_headers,
+        json={"rentalId": rental["id"], "amount": 1, "paymentMethod": "Wing Transfer"},
+    )
+    assert custom_payment.status_code == 201, custom_payment.text
+    assert custom_payment.json()["data"]["paymentMethod"] == "Wing Transfer"
+
 
 async def test_payment_on_completed_rental_rejected(client, admin_headers):
     rental = await _setup_with_rental(client, admin_headers, paid=0)
@@ -92,6 +100,14 @@ async def test_record_charge_updates_totals(client, admin_headers):
     assert updated.json()["data"]["totalDue"] == "55.00"
     assert updated.json()["data"]["outstanding"] == "55.00"
 
+    custom_charge = await client.post(
+        "/api/v2/charges",
+        headers=admin_headers,
+        json={"rentalId": rental["id"], "chargeType": "Helmet replacement", "amount": 10, "description": "Lost helmet"},
+    )
+    assert custom_charge.status_code == 201, custom_charge.text
+    assert custom_charge.json()["data"]["chargeType"] == "Helmet replacement"
+
 
 async def test_expense_crud_and_listing(client, admin_headers):
     expense = await client.post(
@@ -107,9 +123,17 @@ async def test_expense_crud_and_listing(client, admin_headers):
     bad_type = await client.post(
         "/api/v2/expenses",
         headers=admin_headers,
-        json={"date": datetime.now(timezone.utc).isoformat(), "expenseType": "Party", "amount": 5},
+        json={"date": datetime.now(timezone.utc).isoformat(), "expenseType": "Party", "amount": 5, "description": "Team event"},
     )
-    assert bad_type.status_code == 422
+    assert bad_type.status_code == 201, bad_type.text
+    assert bad_type.json()["data"]["expenseType"] == "Party"
+
+    empty_type = await client.post(
+        "/api/v2/expenses",
+        headers=admin_headers,
+        json={"date": datetime.now(timezone.utc).isoformat(), "expenseType": "   ", "amount": 5},
+    )
+    assert empty_type.status_code == 422
 
     listing = await client.get("/api/v2/expenses", headers=admin_headers, params={"expenseType": "Fuel", "limit": 5})
     assert listing.status_code == 200
@@ -125,6 +149,17 @@ async def test_dashboard_and_finance_summary(client, admin_headers):
     assert data["income"] >= 7
     assert "motorcycleStatus" in data
     assert data["netIncome"] == data["income"] - data["expense"]
+
+    ranged = await client.get(
+        "/api/v2/dashboard",
+        headers=admin_headers,
+        params={"startDate": "2026-01-01", "endDate": "2030-01-01"},
+    )
+    assert ranged.status_code == 200
+    ranged_data = ranged.json()["data"]
+    assert ranged_data["income"] >= 7
+    assert len(ranged_data["incomeByDay"]) > 0
+    assert len(ranged_data["expenseByDay"]) == len(ranged_data["incomeByDay"])
 
     finance = await client.get(
         "/api/v2/finance/summary",

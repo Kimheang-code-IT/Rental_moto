@@ -65,6 +65,7 @@ export type FieldType =
   | 'image'
   | 'csv-list'
   | 'telegram-destinations'
+  | 'telegram-user-access'
   | 'notification-rules'
   | 'connection-status'
   | 'alert'

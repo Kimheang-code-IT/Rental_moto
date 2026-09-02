@@ -135,6 +135,18 @@ class StorageProviderService:
             raise NotFoundError("Storage provider not found")
         if provider.type == "local":
             status, message = "connected", "Local storage ready"
+        elif provider.type == "minio":
+            try:
+                from app.services.object_storage_service import ObjectStorageService
+
+                storage = ObjectStorageService.from_provider(provider)
+                if not provider.bucket:
+                    raise ValueError("Bucket is required")
+                if not await storage.bucket_exists():
+                    raise ValueError(f"Bucket '{provider.bucket}' does not exist")
+                status, message = "connected", f"Connected to MinIO bucket '{provider.bucket}'"
+            except Exception as exc:
+                status, message = "failed", f"MinIO connection failed: {exc}"
         else:
             status, message = "connected", "Configuration saved"
             if provider.type in ("amazon_s3", "minio", "cloudflare_r2") and not provider.bucket:

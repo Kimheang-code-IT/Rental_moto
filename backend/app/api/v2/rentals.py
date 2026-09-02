@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import ListParams, envelope, get_db_session, parse_date_range, require_permission
 from app.core.errors import NotFoundError
 from app.repositories.rental import RentalRepository
-from app.schemas.rental import RentalCancelRequest, RentalCloseRequest, RentalCreateRequest, RentalResponse
+from app.schemas.rental import RentalCancelRequest, RentalCloseRequest, RentalCreateRequest, RentalResponse, RentalUpdateRequest
 from app.services.admin_service import DashboardService
 from app.services.rental_service import RentalService
 
@@ -84,6 +84,19 @@ async def create_rental(
     return envelope([_to_dict(r) for r in rentals], {"page": 1, "limit": len(rentals), "total": len(rentals)})
 
 
+@router.put("/{rental_id}")
+async def update_rental(
+    rental_id: str,
+    body: RentalUpdateRequest,
+    user=Depends(require_permission("rental.rentals.edit")),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    service = RentalService(session, user)
+    rental = await service.update_rental(rental_id, body)
+    await DashboardService(session).invalidate()
+    return envelope(_to_dict(rental))
+
+
 @router.post("/{rental_id}/close")
 async def close_rental(
     rental_id: str,
@@ -113,7 +126,7 @@ async def cancel_rental(
 @router.delete("/{rental_id}")
 async def delete_rental(
     rental_id: str,
-    user=Depends(require_permission("rental.rentals.edit")),
+    user=Depends(require_permission("rental.rentals.delete")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     repo = RentalRepository(session)

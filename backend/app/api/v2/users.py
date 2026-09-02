@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ListParams, envelope, get_db_session, require_permission
+from app.core.permissions import effective_permissions
 from app.schemas.admin import UserCreate, UserUpdate
 from app.services.admin_service import UserService
 
@@ -9,17 +10,21 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 def _to_dict(user) -> dict:
+    permissions = effective_permissions(user)
     return {
         "id": user.id,
         "username": user.username,
         "displayName": user.display_name,
         "email": user.email,
-        "role": user.role,
+        "roleId": user.role_id,
+        "role": user.role_ref.name,
         "status": user.status,
         "avatar": user.avatar_url,
-        "permissions": list(user.permissions) if user.permissions else [],
-        "pageAccess": list(user.page_access) if user.page_access else [],
+        "effectivePermissions": permissions,
+        "permissions": permissions,
+        "pageAccess": permissions,
         "telegramLinked": bool(user.telegram_chat_id),
+        "telegramChatId": user.telegram_chat_id or "",
         "lastLoginAt": user.last_login_at.isoformat() if user.last_login_at else None,
         "createdAt": user.created_at.isoformat(),
         "updatedAt": user.updated_at.isoformat(),
@@ -30,7 +35,7 @@ def _to_dict(user) -> dict:
 async def list_users(
     params: ListParams = Depends(),
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("user.read")),
+    user=Depends(require_permission("admin.users.view")),
 ) -> dict:
     service = UserService(session, user)
     items, total = await service.list(params.q, params.page, params.limit)
@@ -41,7 +46,7 @@ async def list_users(
 async def get_user(
     user_id: int,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("user.read")),
+    user=Depends(require_permission("admin.users.view")),
 ) -> dict:
     service = UserService(session, user)
     found = await service.get(user_id)
@@ -52,7 +57,7 @@ async def get_user(
 async def create_user(
     body: UserCreate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("user.manage")),
+    user=Depends(require_permission("admin.users.create")),
 ) -> dict:
     service = UserService(session, user)
     created = await service.create(body)
@@ -64,7 +69,7 @@ async def update_user(
     user_id: int,
     body: UserUpdate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("user.manage")),
+    user=Depends(require_permission("admin.users.edit")),
 ) -> dict:
     service = UserService(session, user)
     updated = await service.update(user_id, body)
@@ -75,7 +80,7 @@ async def update_user(
 async def delete_user(
     user_id: int,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("user.manage")),
+    user=Depends(require_permission("admin.users.delete")),
 ) -> dict:
     service = UserService(session, user)
     await service.delete(user_id)
@@ -86,7 +91,7 @@ async def delete_user(
 async def unlink_telegram(
     user_id: int,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("user.manage")),
+    user=Depends(require_permission("admin.users.edit")),
 ) -> dict:
     from app.services.auth_service import AuthService
 

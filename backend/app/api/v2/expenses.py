@@ -6,7 +6,7 @@ from app.core.errors import NotFoundError
 from app.repositories.rental import ExpenseRepository
 from app.schemas.rental import ExpenseRecordRequest, ExpenseResponse, ExpenseUpdateRequest
 from app.services.admin_service import DashboardService
-from app.services.rental_service import RentalService
+from app.services.rental_service import RentalService, normalize_charge_type, normalize_expense_type, normalize_payment_method
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -55,7 +55,7 @@ async def record_expense(
 async def update_expense(
     expense_id: str,
     body: ExpenseUpdateRequest,
-    user=Depends(require_permission("rental.finance.create")),
+    user=Depends(require_permission("rental.finance.edit")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     repo = ExpenseRepository(session)
@@ -63,6 +63,8 @@ async def update_expense(
     if expense is None:
         raise NotFoundError("Expense not found")
     updates = body.model_dump(exclude_unset=True, by_alias=False)
+    if "expense_type" in updates and updates["expense_type"] is not None:
+        updates["expense_type"] = normalize_expense_type(updates["expense_type"])
     for field, value in updates.items():
         setattr(expense, field, value)
     await session.commit()
@@ -73,7 +75,7 @@ async def update_expense(
 @router.delete("/{expense_id}")
 async def delete_expense(
     expense_id: str,
-    user=Depends(require_permission("rental.finance.create")),
+    user=Depends(require_permission("rental.finance.delete")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     repo = ExpenseRepository(session)

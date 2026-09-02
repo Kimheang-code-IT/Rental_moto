@@ -38,7 +38,7 @@ async def list_sequences(
 @router.post("/seed-defaults", status_code=201)
 async def seed_defaults(
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("configuration.edit")),
+    user=Depends(require_permission("configuration.create")),
 ) -> dict:
     repo = DocumentSequenceRepository(session)
     created = 0
@@ -66,7 +66,7 @@ async def seed_defaults(
 async def create_sequence(
     body: DocumentSequenceCreate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("configuration.edit")),
+    user=Depends(require_permission("configuration.create")),
 ) -> dict:
     repo = DocumentSequenceRepository(session)
     existing = await repo.get_by_type(body.document_type)
@@ -132,7 +132,7 @@ async def update_sequence(
 async def delete_sequence(
     seq_id: str,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("configuration.edit")),
+    user=Depends(require_permission("configuration.delete")),
 ) -> dict:
     from app.core.errors import NotFoundError
 

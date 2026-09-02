@@ -4,6 +4,7 @@ import { UBadge, ULink } from '#components'
 import type { ExportFieldOption, ExportRequest } from '~/types/rental/export'
 import { useAppHeader } from '~/composables/layout/useAppHeader'
 import { formatMoney } from '~/composables/module/useModule'
+import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { listTableRowMetaColumn } from '~/utils/table/list-columns'
 import { useServerExport } from '~/composables/common/useServerExport'
 import { downloadCsv } from '~/utils/export/csv'
@@ -16,9 +17,14 @@ const auth = useAuthStore()
 const store = useAppDataStore()
 const preferences = usePreferencesStore()
 const { setTitle, setBreadcrumbs, clear } = useAppHeader()
+const { request: requestServerExport } = useServerExport()
+const { formatDateTime, localization } = useAppLocalization()
+const canExport = computed(() => auth.canAccessPage('reports.export'))
 const invoiceRow = ref<Record<string, unknown> | null>(null)
+const chargesReviewRental = ref<Record<string, unknown> | null>(null)
+const chargesReviewOpen = ref(false)
 const canPrintInvoice = computed(() =>
-  auth.canAccessPage('reports.print') || auth.canAccessPage('rental.rentals.print'),
+  auth.canAccessPage('reports.print'),
 )
 
 onBeforeUnmount(clear)
@@ -63,9 +69,9 @@ const completed = computed<Array<Record<string, unknown>>>(() => {
     }) as Record<string, unknown>)
 })
 
-// HTTP mode fetches completed rentals from /rentals/reports.
-watch([q, dateFrom, dateTo], () => {
-  if (!store.isHttpMode) return
+// Client-only: reports data loads in the browser after mount.
+function reloadReports() {
+  if (!import.meta.client || !store.isHttpMode) return
   void store.fetchList('rentalReports', {
     q: q.value || undefined,
     status: 'Completed',
@@ -73,7 +79,15 @@ watch([q, dateFrom, dateTo], () => {
     endDate: dateTo.value || undefined,
   })
   void store.fetchList('rentalPayments')
-}, { immediate: true })
+}
+
+onMounted(() => {
+  reloadReports()
+})
+
+watch([q, dateFrom, dateTo], () => {
+  reloadReports()
+})
 
 const selectItems = (values: string[]) => [...new Set(values.filter(Boolean))].map(value => ({ label: value, value }))
 const motorcycleItems = computed(() => selectItems(completed.value.map(row => String(row.motorcycle || ''))))
@@ -94,27 +108,112 @@ const rows = computed(() => completed.value
     return true
   }))
 
+function openChargesReview(row: Record<string, unknown>) {
+  chargesReviewRental.value = row
+  chargesReviewOpen.value = true
+}
+
 function moneyCell(row: Record<string, unknown>, key: string) {
   return h('span', { class: 'block text-end tabular-nums' }, money(row[key], String(row.currency || preferences.currency)))
 }
 
-const columns = computed<TableColumn<Record<string, unknown>>[]>(() => [
-  {
+function dateTimeCell(value: unknown) {
+  return h('span', { class: 'whitespace-nowrap' }, formatDateTime(value))
+}
+
+function additionalChargesCell(row: Record<string, unknown>) {
+  const amount = Number(row.additionalCharges || 0)
+  const text = money(row.additionalCharges, String(row.currency || preferences.currency))
+  if (amount <= 0) {
+    return h('span', { class: 'block text-end tabular-nums text-muted' }, text)
+  }
+  return h('button', {
+    type: 'button',
+    class: 'block w-full text-end tabular-nums font-medium text-primary hover:underline',
+    title: tx('rental.ui.viewAdditionalCharges', 'View charge details'),
+    onClick: (event: Event) => {
+      event.stopPropagation()
+      openChargesReview(row)
+    },
+  }, text)
+}
+
+function entityLinkCell(
+  row: Record<string, unknown>,
+  options: {
+    idKey: 'customerId' | 'motorcycleId'
+    labelKey: 'customer' | 'motorcycle'
+    path: '/customers' | '/motorcycles'
+    permission: string
+  },
+) {
+  const id = String(row[options.idKey] || '')
+  const label = String(row[options.labelKey] || '—')
+  const className = 'block max-w-48 truncate'
+  if (!id || !auth.canAccessPage(options.permission)) {
+    return h('span', { class: `${className} text-default`, title: label }, label)
+  }
+  return h(ULink, {
+    to: `${options.path}/${id}`,
+    class: `font-medium text-highlighted hover:text-primary hover:underline ${className}`,
+    title: label,
+    onClick: (event: Event) => event.stopPropagation(),
+  }, () => label)
+}
+
+const columns = computed<TableColumn<Record<string, unknown>>[]>(() => {
+  void localization.value.dateFormat
+  void localization.value.timeFormat
+  void localization.value.timezone
+  return [
+    {
     accessorKey: 'rentalNo',
     header: tx('rental.ui.rentalNo', 'Rental Number'),
     cell: ({ row }) => h(ULink, {
       to: `/rentals/${String(row.original.id)}`,
       class: 'font-medium text-highlighted hover:text-primary hover:underline',
+      onClick: (event: Event) => event.stopPropagation(),
     }, () => String(row.original.rentalNo || '—')),
   },
-  { accessorKey: 'customer', header: tx('rental.ui.customer', 'Customer') },
-  { accessorKey: 'motorcycle', header: tx('rental.ui.motorcycle', 'Motorcycle') },
-  { accessorKey: 'startDate', header: tx('rental.ui.startDate', 'Start') },
-  { accessorKey: 'dueDate', header: tx('rental.ui.dueDate', 'Due') },
-  { accessorKey: 'returnDate', header: tx('rental.ui.returnDate', 'Returned') },
+  {
+    accessorKey: 'customer',
+    header: tx('rental.ui.customer', 'Customer'),
+    cell: ({ row }) => entityLinkCell(row.original, {
+      idKey: 'customerId',
+      labelKey: 'customer',
+      path: '/customers',
+      permission: 'rental.customers.view',
+    }),
+  },
+  {
+    accessorKey: 'motorcycle',
+    header: tx('rental.ui.motorcycle', 'Motorcycle'),
+    cell: ({ row }) => entityLinkCell(row.original, {
+      idKey: 'motorcycleId',
+      labelKey: 'motorcycle',
+      path: '/motorcycles',
+      permission: 'rental.motorcycles.view',
+    }),
+  },
+  { accessorKey: 'plate', header: tx('rental.ui.plate', 'Plate') },
+  {
+    accessorKey: 'startDate',
+    header: tx('rental.ui.startDate', 'Start'),
+    cell: ({ row }) => dateTimeCell(row.original.startDate),
+  },
+  {
+    accessorKey: 'dueDate',
+    header: tx('rental.ui.dueDate', 'Due'),
+    cell: ({ row }) => dateTimeCell(row.original.dueDate),
+  },
+  {
+    accessorKey: 'returnDate',
+    header: tx('rental.ui.returnDate', 'Returned'),
+    cell: ({ row }) => dateTimeCell(row.original.returnDate),
+  },
   { accessorKey: 'rentalCharge', header: tx('rental.ui.rentalCharge', 'Rental Charge'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'rentalCharge') },
   { accessorKey: 'lateFee', header: tx('rental.ui.lateFee', 'Late Fee'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'lateFee') },
-  { accessorKey: 'additionalCharges', header: tx('rental.ui.additionalCharges', 'Additional Charges'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'additionalCharges') },
+  { accessorKey: 'additionalCharges', header: tx('rental.ui.additionalCharges', 'Additional Charges'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => additionalChargesCell(row.original) },
   { accessorKey: 'totalDue', header: tx('rental.ui.totalDue', 'Total'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'totalDue') },
   { accessorKey: 'paid', header: tx('rental.ui.paid', 'Paid'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'paid') },
   { accessorKey: 'outstanding', header: tx('rental.ui.outstanding', 'Outstanding'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'outstanding') },
@@ -132,7 +231,8 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => [
     items: rowMenuItems,
     loadingId: '',
   }),
-])
+  ]
+})
 
 function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
   const items: DropdownMenuItem[] = [
@@ -147,6 +247,13 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
       label: tx('rental.ui.printInvoice', 'Print Invoice'),
       icon: 'i-lucide-printer',
       onSelect: () => { invoiceRow.value = row },
+    })
+  }
+  if (Number(row.additionalCharges || 0) > 0) {
+    items.push({
+      label: tx('rental.ui.viewAdditionalCharges', 'View charge details'),
+      icon: 'i-lucide-list',
+      onSelect: () => openChargesReview(row),
     })
   }
   return [items]
@@ -184,8 +291,7 @@ async function refresh() {
 async function exportCsv(request: ExportRequest) {
   if (store.isHttpMode) {
     // Server export job through the exports queue.
-    const { request: requestExport } = useServerExport()
-    await requestExport('rentals', request, `rental-reports-${new Date().toISOString().slice(0, 10)}.csv`)
+    await requestServerExport('rental_reports', request, `rental-reports-${new Date().toISOString().slice(0, 10)}.csv`)
     return
   }
   let exportRows = [...rows.value]
@@ -211,6 +317,7 @@ async function exportCsv(request: ExportRequest) {
 <template>
   <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/20">
     <LayoutAppHeaderPageActions
+      :can-export="canExport"
       :export-fields="exportFields"
       @refresh="refresh"
       @export="exportCsv"
@@ -249,5 +356,9 @@ async function exportCsv(request: ExportRequest) {
     </TableAppListTable>
 
     <RentalInvoicePreview :rental="invoiceRow" mode="direct-print" @close="invoiceRow = null" />
+    <RentalChargesReviewModal
+      v-model:open="chargesReviewOpen"
+      :rental="chargesReviewRental"
+    />
   </div>
 </template>

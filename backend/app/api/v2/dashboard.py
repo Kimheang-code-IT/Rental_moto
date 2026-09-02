@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import envelope, get_db_session, parse_date_range, require_permission
@@ -9,8 +9,8 @@ router = APIRouter(tags=["dashboard"])
 
 @router.get("/dashboard")
 async def dashboard(
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date: str | None = Query(default=None, alias="startDate"),
+    end_date: str | None = Query(default=None, alias="endDate"),
     user=Depends(require_permission("dashboard.view")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
@@ -22,8 +22,8 @@ async def dashboard(
 
 @router.get("/finance/summary")
 async def finance_summary(
-    start_date: str | None = None,
-    end_date: str | None = None,
+    start_date: str | None = Query(default=None, alias="startDate"),
+    end_date: str | None = Query(default=None, alias="endDate"),
     user=Depends(require_permission("rental.finance.view")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:

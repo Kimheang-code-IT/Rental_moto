@@ -206,11 +206,12 @@ export function useFileAttachments() {
   const auth = useAuthStore()
   const toast = useToast()
   const { t } = useI18n()
+  const { appConfig } = useSettingsRepositories()
   const maxMb = useState('max-upload-size-mb', () => 50)
 
   onMounted(async () => {
     try {
-      const config = await useSettingsRepositories().appConfig.get()
+      const config = await appConfig.get()
       const next = Number(config.general?.maxUploadSizeMb)
       if (Number.isFinite(next) && next > 0) maxMb.value = next
     }

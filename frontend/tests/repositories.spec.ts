@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CollectionEndpoints, isApiCollection } from '../app/utils/constants/api-endpoints'
 import { createHttpEntityRepository, createHttpRentalCommandRepository } from '../app/repositories/http/entities'
-import { createMockEntityRepository } from '../app/repositories/mock/entities'
 
 interface CapturedRequest {
   method: string
@@ -101,16 +100,82 @@ describe('http entity repository', () => {
     expect(created.id).toBe('rc-099')
   })
 
-  it('adapts backend user fields for the UI without fabricating data', async () => {
+    it('adapts backend user fields for the UI without fabricating data', async () => {
     withFakeApi(() => ({
-      data: [{ id: 1, email: 'a@b.com', lastLoginAt: '2026-09-01T09:00:00Z', telegramLinked: true }],
+      data: [{ id: 1, email: 'a@b.com', roleId: 1, lastLoginAt: '2026-09-01T09:00:00Z', telegramLinked: true, telegramChatId: '900001' }],
       meta: { page: 1, limit: 100, total: 1 },
     }))
     const repository = createHttpEntityRepository()
     const result = await repository.list('users')
     const user = result.items[0] as Record<string, unknown>
+    expect(user.id).toBe('1')
+    expect(user.roleId).toBe('1')
     expect(user.lastLogin).toBe('2026-09-01T09:00:00Z')
-    expect(user.telegramUsername).toBe('Linked')
+    expect(user.telegramUsername).toBe('900001')
+  })
+
+  it('sends only backend-accepted user fields and a numeric roleId', async () => {
+    const captured = withFakeApi(() => ({
+      data: { id: 9, username: 'tester', displayName: 'API Tester', roleId: 2 },
+    }))
+    const repository = createHttpEntityRepository()
+    await repository.create('users', {
+      id: '',
+      username: 'tester',
+      displayName: 'API Tester',
+      email: 'tester@example.com',
+      password: 'secret123',
+      roleId: '2',
+      role: 'Rental Staff',
+      status: 'Active',
+      createdAt: '2026-09-02T00:00:00Z',
+      createdBy: 'Admin',
+      currency: 'USD',
+      permissionRows: [],
+      effectivePermissions: ['ALL_PAGES'],
+      telegramUsername: '',
+      telegramChatId: '',
+    })
+
+    const body = captured[0]?.body as Record<string, unknown>
+    expect(body).toEqual({
+      username: 'tester',
+      displayName: 'API Tester',
+      email: 'tester@example.com',
+      password: 'secret123',
+      roleId: 2,
+      status: 'Active',
+    })
+  })
+
+  it('omits an empty password and extra user fields on update', async () => {
+    const captured = withFakeApi(() => ({
+      data: { id: 9, username: 'tester', displayName: 'API Tester', roleId: 3 },
+    }))
+    const repository = createHttpEntityRepository()
+    await repository.update('users', '9', {
+      id: 9,
+      username: 'tester',
+      displayName: 'API Tester',
+      email: 'tester@example.com',
+      password: '',
+      roleId: 3,
+      lastLoginAt: '2026-09-01T09:00:00Z',
+      createdAt: '2026-09-01T08:00:00Z',
+      updatedAt: '2026-09-01T09:00:00Z',
+      permissions: ['ALL_PAGES'],
+      status: 'Inactive',
+    })
+
+    const body = captured[0]?.body as Record<string, unknown>
+    expect(body).toEqual({
+      username: 'tester',
+      displayName: 'API Tester',
+      email: 'tester@example.com',
+      roleId: 3,
+      status: 'Inactive',
+    })
+    expect(body.password).toBeUndefined()
   })
 
   it('adapts UI permission-matrix rows to flat backend permission keys on write', async () => {
@@ -236,48 +301,5 @@ describe('http rental command payloads', () => {
     await repository.cancel('rt-001', 'Customer changed mind')
     expect(captured[0]?.url).toBe('/api/v2/rentals/rt-001/cancel')
     expect(captured[0]?.body).toEqual({ reason: 'Customer changed mind' })
-  })
-})
-
-describe('mock entity repository (mock mode preserved)', () => {
-  it('performs CRUD against the in-memory mock database with meta', async () => {
-    const repository = createMockEntityRepository()
-    const created = await repository.create('motorcycles', {
-      code: 'MC-TST',
-      model: 'Test Bike',
-      dailyRate: 9,
-      status: 'Available',
-    })
-    expect(created.id).toBeTruthy()
-
-    const listed = await repository.list('motorcycles', { q: 'Test Bike', page: 1, limit: 10 })
-    expect(listed.items.some(row => row.id === created.id)).toBe(true)
-    expect(listed.meta?.total).toBeGreaterThan(0)
-
-    const updated = await repository.update('motorcycles', String(created.id), { dailyRate: 11 })
-    expect(Number(updated.dailyRate)).toBe(11)
-
-    await repository.remove('motorcycles', String(created.id))
-    const after = await repository.get('motorcycles', String(created.id))
-    expect(after).toBeNull()
-  })
-
-  it('does not submit UI-only fields to stored records', async () => {
-    const repository = createMockEntityRepository()
-    const created = await repository.create('documentSequences', {
-      documentType: 'TEST_DOC',
-      prefix: 'TST',
-      year: 2026,
-      lastValue: 0,
-      paddingLength: 6,
-      status: 'ACTIVE',
-      nextNumberPreview: 'TST-2026-000001',
-      resetRule: 'Yearly',
-    })
-    expect('resetRule' in created).toBe(false)
-
-    const listed = await repository.list('documentSequences')
-    const stored = listed.items.find(row => row.id === created.id) as Record<string, unknown> | undefined
-    expect(String(stored?.nextNumberPreview || '')).toContain('TST-2026-000001')
   })
 })

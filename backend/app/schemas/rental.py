@@ -21,13 +21,13 @@ class RentalCreateRequest(CamelModel):
     discount: Decimal = Decimal("0")
     tax_percent: Decimal = Decimal("0")
     paid_amount: Decimal = Decimal("0")
-    payment_method: str | None = None
+    payment_method: str | None = Field(default=None, max_length=40)
     currency: str = "USD"
     note: str | None = None
 
 
 class CloseChargeInput(CamelModel):
-    charge_type: str = "Other"
+    charge_type: str = Field(default="Other", min_length=1, max_length=40)
     description: str | None = None
     amount: Decimal = Field(ge=0)
     charge_to_customer: str = "Yes"
@@ -35,7 +35,7 @@ class CloseChargeInput(CamelModel):
 
 class FinalPaymentInput(CamelModel):
     amount: Decimal = Field(ge=0)
-    payment_method: str = "Cash"
+    payment_method: str = Field(default="Cash", min_length=1, max_length=40)
     reference: str | None = None
     note: str | None = None
     paid_at: datetime | None = None
@@ -55,10 +55,21 @@ class RentalCancelRequest(CamelModel):
     reason: str | None = None
 
 
+class RentalUpdateRequest(CamelModel):
+    customer_id: str | None = None
+    motorcycle_id: str | None = None
+    start_date: datetime | None = None
+    due_date: datetime | None = None
+    deposit: Decimal | None = None
+    discount: Decimal | None = None
+    tax_percent: Decimal | None = None
+    note: str | None = None
+
+
 class PaymentRecordRequest(CamelModel):
     rental_id: str
     amount: Decimal = Field(gt=0)
-    payment_method: str = "Cash"
+    payment_method: str = Field(default="Cash", min_length=1, max_length=40)
     paid_at: datetime | None = None
     reference: str | None = None
     note: str | None = None
@@ -66,7 +77,7 @@ class PaymentRecordRequest(CamelModel):
 
 class PaymentUpdateRequest(CamelModel):
     amount: Decimal | None = None
-    payment_method: str | None = None
+    payment_method: str | None = Field(default=None, min_length=1, max_length=40)
     paid_at: datetime | None = None
     reference: str | None = None
     note: str | None = None
@@ -74,14 +85,14 @@ class PaymentUpdateRequest(CamelModel):
 
 class ChargeRecordRequest(CamelModel):
     rental_id: str
-    charge_type: str = "Other"
+    charge_type: str = Field(default="Other", min_length=1, max_length=40)
     description: str | None = None
     amount: Decimal = Field(gt=0)
     charge_to_customer: str = "Yes"
 
 
 class ChargeUpdateRequest(CamelModel):
-    charge_type: str | None = None
+    charge_type: str | None = Field(default=None, min_length=1, max_length=40)
     description: str | None = None
     amount: Decimal | None = None
     charge_to_customer: str | None = None
@@ -89,7 +100,7 @@ class ChargeUpdateRequest(CamelModel):
 
 class ExpenseRecordRequest(CamelModel):
     date: datetime
-    expense_type: str = "Other"
+    expense_type: str = Field(default="Other", min_length=1, max_length=40)
     description: str | None = None
     amount: Decimal = Field(gt=0)
     currency: str = "USD"
@@ -97,7 +108,7 @@ class ExpenseRecordRequest(CamelModel):
 
 class ExpenseUpdateRequest(CamelModel):
     date: datetime | None = None
-    expense_type: str | None = None
+    expense_type: str | None = Field(default=None, min_length=1, max_length=40)
     description: str | None = None
     amount: Decimal | None = None
     currency: str | None = None

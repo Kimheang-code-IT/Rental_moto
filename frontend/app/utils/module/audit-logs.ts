@@ -37,7 +37,7 @@ export function normalizeAuditLog(row: AppRecord): AppRecord {
     entityType: row.entityType || row.module || 'Record',
     entity: row.entity || row.recordNo || '',
     result: row.result || 'SUCCESS',
-    reason: row.reason || row.remark || '',
+    ipDevice: row.ipDevice || row.ipAddress || '',
   }
 }
 

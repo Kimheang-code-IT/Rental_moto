@@ -7,7 +7,7 @@ from app.schemas.common import CamelModel
 
 class CustomerCreate(CamelModel):
     id: str | None = None
-    code: str = Field(min_length=1)
+    code: str | None = None
     full_name: str = Field(min_length=1)
     identity_type: str | None = None
     identity_number: str | None = None
@@ -20,7 +20,6 @@ class CustomerCreate(CamelModel):
 
 
 class CustomerUpdate(CamelModel):
-    code: str | None = None
     full_name: str | None = None
     identity_type: str | None = None
     identity_number: str | None = None

@@ -11,8 +11,8 @@ const moduleStub = (partial: Partial<ModuleConfig>): ModuleConfig => ({
 
 describe('audit log table logic', () => {
   it('normalizes legacy audit rows for the table', () => {
-    expect(normalizeAuditLog({ id: 'log-1', action: 'Updated service order', module: 'Service Orders', recordNo: 'JOB-1', remark: 'Changed route' })).toMatchObject({
-      eventType: 'UPDATED_SERVICE_ORDER', entityType: 'Service Orders', entity: 'JOB-1', result: 'SUCCESS', reason: 'Changed route',
+    expect(normalizeAuditLog({ id: 'log-1', action: 'Updated service order', module: 'Service Orders', recordNo: 'JOB-1', ipAddress: '192.168.1.1' })).toMatchObject({
+      eventType: 'UPDATED_SERVICE_ORDER', entityType: 'Service Orders', entity: 'JOB-1', result: 'SUCCESS', ipDevice: '192.168.1.1',
     })
   })
 

@@ -8,14 +8,18 @@ import { resolveUserAvatar } from '~/utils/auth/user-avatar'
 const open = defineModel<boolean>('open', { default: false })
 
 const auth = useAuthStore()
-const { changePassword, removeProfileAvatar, updateProfileAvatar } = useAuth()
+const { changePassword, createTelegramLinkCode, removeProfileAvatar, updateProfileAvatar } = useAuth()
 const { t } = useI18n()
 const toast = useToast()
 
 const submitting = ref(false)
 const avatarSubmitting = ref(false)
+const linkCodeLoading = ref(false)
+const linkCode = ref<string | null>(null)
 const avatarInputRef = ref<HTMLInputElement | null>(null)
 const photoPreviewOpen = ref(false)
+
+const telegramLinked = computed(() => Boolean(auth.user?.telegramLinked))
 
 const profile = computed(() => {
   const user = auth.user
@@ -169,6 +173,29 @@ async function onPasswordSubmit(event: FormSubmitEvent<PasswordSchema>) {
     submitting.value = false
   }
 }
+
+async function generateTelegramLinkCode() {
+  if (linkCodeLoading.value || telegramLinked.value) return
+  linkCodeLoading.value = true
+  try {
+    const result = await createTelegramLinkCode()
+    linkCode.value = result.data.code
+    toast.add({
+      title: t('core.userProfile.telegramLinkCodeCreated'),
+      description: t('core.userProfile.telegramLinkCodeCreatedDesc'),
+      color: 'success',
+    })
+  }
+  catch {
+    toast.add({
+      title: t('core.userProfile.telegramLinkCodeFailed'),
+      color: 'error',
+    })
+  }
+  finally {
+    linkCodeLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -234,6 +261,34 @@ async function onPasswordSubmit(event: FormSubmitEvent<PasswordSchema>) {
             <p class="truncate text-sm text-muted">
               {{ profile.email }}
             </p>
+          </div>
+        </div>
+
+        <div class="space-y-3 border-t border-default pt-4">
+          <h4 class="text-sm font-semibold text-highlighted">
+            {{ t('core.userProfile.telegramTitle') }}
+          </h4>
+          <p class="text-sm text-muted">
+            {{ t('core.userProfile.telegramHelp') }}
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <UBadge :color="telegramLinked ? 'success' : 'neutral'" variant="subtle">
+              {{ telegramLinked ? t('core.userProfile.telegramLinked') : t('core.userProfile.telegramNotLinked') }}
+            </UBadge>
+            <UButton
+              v-if="!telegramLinked"
+              size="sm"
+              :loading="linkCodeLoading"
+              @click="generateTelegramLinkCode"
+            >
+              {{ t('core.userProfile.generateLinkCode') }}
+            </UButton>
+          </div>
+          <div
+            v-if="linkCode"
+            class="rounded-md border border-default bg-elevated/40 px-3 py-2 font-mono text-sm"
+          >
+            /link {{ linkCode }}
           </div>
         </div>
 

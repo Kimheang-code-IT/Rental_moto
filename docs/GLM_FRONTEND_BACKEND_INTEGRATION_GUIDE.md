@@ -45,7 +45,7 @@ The backend is implemented and its normal development stack is running. The fron
 
 ### Evidence verified during this audit
 
-- `docker compose -f backend/docker-compose.yml config --quiet` passed.
+- `docker compose config --quiet` passed from the repository root.
 - `/health/ready` returned `postgres: ok`, `redis: ok`, and `rabbitmq: ok`.
 - Live authenticated GET smoke checks passed for `/auth/me`, `/motorcycles`, `/customers`, `/rentals`, `/dashboard`, `/settings/app-info`, and `/search`.
 - Backend dependency-free tests passed: 22/22.
@@ -570,8 +570,8 @@ Acceptance:
 ### Infrastructure and backend smoke checks
 
 ```powershell
-docker compose -f backend/docker-compose.yml config --quiet
-docker compose -f backend/docker-compose.yml ps
+docker compose config --quiet
+docker compose ps
 Invoke-RestMethod http://localhost:8000/health/ready
 ```
 
@@ -669,7 +669,7 @@ GLM must update this list as work is verified. Do not mark an item complete base
 ### Verification notes (2026-09-01)
 
 - Frontend: `pnpm install`, `typecheck`, `lint`, `test` (67/67), and `build` all passed.
-- Backend: `docker compose -f backend/docker-compose.yml config --quiet` and `ps` passed; all nine services healthy.
+- Backend: repository-root `docker compose config --quiet` and `ps` passed; all nine services healthy.
 - Live smoke: 11-step lifecycle above passed. Note on step 11: logout revokes the **refresh token** (subsequent `/auth/refresh` returns 401). The already-issued short-lived access token remains valid until its 15-minute expiry by design — bearer logout cannot retroactively invalidate stateless access tokens; the backend plan documents exactly this revocation model.
 - One pre-existing workspace issue fixed to unblock the build: `frontend/app/assets/images/logo.png` was missing from the moved frontend tree and is restored from `public/logo.png`.
 

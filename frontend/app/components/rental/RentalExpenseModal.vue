@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useConfirm } from '~/composables/common/useConfirm'
 import { RENTAL_CURRENCY_OPTIONS, RENTAL_EXPENSE_TYPES } from '~/config/rental-options'
 import { todayDateTimeLocal } from '~/utils/rental/pricing'
 
@@ -13,13 +14,14 @@ const store = useAppDataStore()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const saving = ref(false)
 const date = ref('')
-type ExpenseType = (typeof RENTAL_EXPENSE_TYPES)[number]
 type RentalCurrency = (typeof RENTAL_CURRENCY_OPTIONS)[number]['value']
 
-const expenseType = ref<ExpenseType>('Fuel')
+const expenseTypeItems = ref<string[]>([...RENTAL_EXPENSE_TYPES])
+const expenseType = ref('Fuel')
 const description = ref('')
 const amount = ref<number | undefined>()
 const currency = ref<RentalCurrency>('USD')
@@ -30,6 +32,7 @@ function tx(key: string, fallback: string) {
 
 function resetForm() {
   date.value = todayDateTimeLocal().slice(0, 10)
+  expenseTypeItems.value = [...RENTAL_EXPENSE_TYPES]
   expenseType.value = 'Fuel'
   description.value = ''
   amount.value = undefined
@@ -37,6 +40,15 @@ function resetForm() {
   currency.value = RENTAL_CURRENCY_OPTIONS.some(option => option.value === preferred)
     ? preferred as RentalCurrency
     : 'USD'
+}
+
+function onCreateExpenseType(item: string) {
+  const trimmed = item.trim()
+  if (!trimmed) return
+  if (!expenseTypeItems.value.includes(trimmed)) {
+    expenseTypeItems.value.push(trimmed)
+  }
+  expenseType.value = trimmed
 }
 
 function nextExpenseNumber() {
@@ -49,40 +61,40 @@ function nextExpenseNumber() {
 }
 
 async function saveExpense() {
-  if (!date.value || !expenseType.value || !description.value.trim() || Number(amount.value || 0) <= 0) return
+  const type = expenseType.value.trim()
+  if (!date.value || !type || !description.value.trim() || Number(amount.value || 0) <= 0) return
+
+  const ok = await confirm({
+    kind: 'submit',
+    titleKey: 'rental.ui.confirmAddExpense',
+    descriptionKey: 'rental.ui.confirmAddExpenseDescription',
+    descriptionParams: {
+      type,
+      amount: Number(amount.value).toFixed(2),
+      currency: currency.value,
+    },
+    confirmLabelKey: 'rental.ui.addExpense',
+  })
+  if (!ok) return
 
   saving.value = true
   try {
     const payload = {
       date: `${date.value}T00:00:00`,
-      expenseType: expenseType.value,
+      expenseType: type,
       description: description.value.trim(),
       amount: Number(amount.value),
       currency: currency.value,
     }
-    if (store.isHttpMode) {
-      await store.createRemote('rentalExpenses', payload)
-      await store.fetchList('rentalExpenses')
-    }
-    else {
-      const expenseNo = nextExpenseNumber()
-      store.create('rentalExpenses', {
-        ...payload,
-        expenseNo,
-        createdBy: auth.user?.name || 'System',
-      }, 'rx')
-      store.addAudit('Create expense', 'Income & Expense', expenseNo, description.value.trim())
-    }
+    await store.createRemote('rentalExpenses', payload)
+    await store.fetchList('rentalExpenses')
     toast.add({ title: tx('rental.ui.expenseSaved', 'Expense recorded'), color: 'success' })
     open.value = false
     emit('saved')
   }
   catch (error: unknown) {
-    toast.add({
-      title: tx('rental.ui.expenseSaveFailed', 'Could not record expense'),
-      description: error instanceof Error ? error.message : String(error),
-      color: 'error',
-    })
+    // useApi already shows the API validation toast; avoid a third duplicate here.
+    if (import.meta.dev) console.error(error)
   }
   finally {
     saving.value = false
@@ -95,14 +107,28 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="tx('rental.ui.addExpense', 'Add Expense')">
+  <UModal
+    v-model:open="open"
+    :title="tx('rental.ui.addExpense', 'Add Expense')"
+    :ui="{ content: 'w-[calc(100%-2rem)] max-w-3xl sm:max-w-3xl' }"
+  >
     <template #body>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="flex flex-col gap-4">
         <UFormField :label="tx('rental.ui.date', 'Date')" required>
           <UInput v-model="date" type="date" class="w-full" />
         </UFormField>
-        <UFormField :label="tx('rental.ui.expenseType', 'Expense Type')" required>
-          <USelect v-model="expenseType" :items="[...RENTAL_EXPENSE_TYPES]" class="w-full" />
+        <UFormField
+          :label="tx('rental.ui.expenseName', 'Expense name')"
+          :help="tx('rental.fieldHelp.expenseName', 'Choose a preset type or type a custom expense name.')"
+          required
+        >
+          <UInputMenu
+            v-model="expenseType"
+            create-item
+            :items="expenseTypeItems"
+            class="w-full"
+            @create="onCreateExpenseType"
+          />
         </UFormField>
         <UFormField :label="tx('rental.ui.amount', 'Amount')" required>
           <UInput
@@ -119,7 +145,7 @@ value-key="value"
 :items="[...RENTAL_CURRENCY_OPTIONS]"
 class="w-full" />
         </UFormField>
-        <UFormField class="sm:col-span-2" :label="tx('rental.ui.description', 'Description')" required>
+        <UFormField :label="tx('rental.ui.description', 'Description')" required>
           <UTextarea v-model="description" :rows="3" class="w-full" />
         </UFormField>
       </div>
@@ -136,7 +162,7 @@ class="w-full" />
         <UButton
           icon="i-lucide-plus"
           :loading="saving"
-          :disabled="!date || !expenseType || !description.trim() || Number(amount || 0) <= 0"
+          :disabled="!date || !expenseType.trim() || !description.trim() || Number(amount || 0) <= 0"
           :label="tx('rental.ui.addExpense', 'Add Expense')"
           @click="saveExpense"
         />

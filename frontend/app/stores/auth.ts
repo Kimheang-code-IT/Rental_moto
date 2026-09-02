@@ -14,7 +14,12 @@ export const useAuthStore = defineStore('auth', () => {
   })
   const storedUser = ref<AuthUser | null>(null)
   const user = computed(() => storedUser.value || cookieUser.value)
-  const isLoggedIn = computed(() => Boolean(user.value))
+  const isLoggedIn = computed(() => {
+    if (!user.value) return false
+    // Bearer tokens live in sessionStorage; a stale profile cookie alone is not a session.
+    if (import.meta.client) return hasTokens()
+    return true
+  })
 
   function persist(userData: AuthUser | null) {
     storedUser.value = userData
@@ -30,6 +35,12 @@ export const useAuthStore = defineStore('auth', () => {
       const raw = localStorage.getItem(AUTH_STORAGE_KEY)
       const local = raw ? JSON.parse(raw) as AuthUser : null
       if (local?.email) {
+        if (!hasTokens()) {
+          localStorage.removeItem(AUTH_STORAGE_KEY)
+          cookieUser.value = null
+          storedUser.value = null
+          return
+        }
         persist(local)
         return
       }
@@ -37,7 +48,14 @@ export const useAuthStore = defineStore('auth', () => {
     catch {
       localStorage.removeItem(AUTH_STORAGE_KEY)
     }
-    if (cookieUser.value?.email) persist(cookieUser.value)
+    if (cookieUser.value?.email) {
+      if (!hasTokens()) {
+        cookieUser.value = null
+        storedUser.value = null
+        return
+      }
+      persist(cookieUser.value)
+    }
   }
 
   function login(userData: AuthUser) {
@@ -67,23 +85,9 @@ export const useAuthStore = defineStore('auth', () => {
   function canAccessPage(pageId: string): boolean {
     const currentUser = user.value
     if (!currentUser) return false
-    if (currentUser.role === 'SuperAdmin') return true
-    if (currentUser.pageAccess?.includes('ALL_PAGES')) return true
-
-    if (Array.isArray(currentUser.permissions)) {
-      if (currentUser.permissions.includes('ALL_PAGES')) return true
-      if (currentUser.permissions.includes(pageId)) return true
-      // Document sequences historically used configuration.manage.
-      if (pageId === 'configuration.manage' && (
-        currentUser.permissions.includes('configuration.view')
-        || currentUser.permissions.includes('configuration.edit')
-      )) return true
-      return false
-    }
-
-    const access = currentUser.pageAccess
-    if (!access?.length) return true
-    return access.includes(pageId)
+    const access = currentUser.effectivePermissions ?? currentUser.permissions ?? currentUser.pageAccess
+    if (!Array.isArray(access)) return false
+    return access.includes('ALL_PAGES') || access.includes(pageId)
   }
 
   function updateUser(partial: Partial<AuthUser>) {

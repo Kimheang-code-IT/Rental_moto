@@ -111,7 +111,7 @@ class CustomerRepository:
         stmt = select(RentalCustomer)
         q_filter = build_q_filter(
             q,
-            [RentalCustomer.code, RentalCustomer.full_name, RentalCustomer.phone, RentalCustomer.email, RentalCustomer.identity_number, RentalCustomer.company],
+            [RentalCustomer.code, RentalCustomer.full_name, RentalCustomer.company, RentalCustomer.phone, RentalCustomer.email, RentalCustomer.identity_number],
         )
         if q_filter is not None:
             stmt = stmt.where(q_filter)
@@ -176,7 +176,11 @@ class RentalRepository:
         return result.scalar_one_or_none()
 
     async def get_by_no(self, rental_no: str) -> Rental | None:
-        result = await self.session.execute(select(Rental).where(Rental.rental_no == rental_no))
+        result = await self.session.execute(
+            select(Rental)
+            .options(selectinload(Rental.payments), selectinload(Rental.charges))
+            .where(Rental.rental_no == rental_no)
+        )
         return result.scalar_one_or_none()
 
     def _base_stmt(self) -> Select:
@@ -406,6 +410,16 @@ class ExpenseRepository:
         if end:
             stmt = stmt.where(RentalExpense.date <= end)
         return Decimal(str((await self.session.execute(stmt)).scalar() or 0))
+
+    async def daily_series(self, start: datetime, end: datetime) -> list[tuple[str, Decimal]]:
+        day = func.date_trunc("day", RentalExpense.date).label("day")
+        result = await self.session.execute(
+            select(day, func.coalesce(func.sum(RentalExpense.amount), 0))
+            .where(RentalExpense.date >= start, RentalExpense.date <= end)
+            .group_by(day)
+            .order_by(day)
+        )
+        return [(row[0].strftime("%Y-%m-%d"), Decimal(str(row[1]))) for row in result.all()]
 
     async def next_id_number(self) -> int:
         count = (await self.session.execute(select(func.count()).select_from(RentalExpense))).scalar() or 0

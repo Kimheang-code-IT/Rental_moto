@@ -1,5 +1,8 @@
 """Localization and formatting driven by backend localization settings."""
 
+from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 MONTHS_EN = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ]
@@ -13,6 +16,7 @@ class Formatter:
         self.number_format = self.localization.get("numberFormat", "1,234.56")
         self.date_format = self.localization.get("dateFormat", "DD/MM/YYYY")
         self.time_format = self.localization.get("timeFormat", "HH:mm")
+        self.timezone = self.localization.get("timezone", "Asia/Phnom_Penh")
 
     def tr(self, en: str, km: str) -> str:
         return km if self.language == "km" else en
@@ -30,11 +34,8 @@ class Formatter:
     def format_date(self, iso: str | None) -> str:
         if not iso:
             return ""
-        from datetime import datetime
-
-        try:
-            value = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        except ValueError:
+        value = self._datetime(iso)
+        if value is None:
             return iso
         if self.date_format == "YYYY-MM-DD":
             return value.strftime("%Y-%m-%d")
@@ -49,11 +50,8 @@ class Formatter:
     def format_datetime(self, iso: str | None) -> str:
         if not iso:
             return ""
-        from datetime import datetime
-
-        try:
-            value = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        except ValueError:
+        value = self._datetime(iso)
+        if value is None:
             return iso
         date_part = self.format_date(iso)
         if self.time_format == "h:mm A":
@@ -65,3 +63,16 @@ class Formatter:
         else:
             time_part = value.strftime("%H:%M")
         return f"{date_part} {time_part}"
+
+    def _datetime(self, iso: str) -> datetime | None:
+        try:
+            value = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        try:
+            zone = ZoneInfo(self.timezone)
+        except ZoneInfoNotFoundError:
+            return value
+        if value.tzinfo is None:
+            return value.replace(tzinfo=zone)
+        return value.astimezone(zone)

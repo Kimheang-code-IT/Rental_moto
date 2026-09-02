@@ -9,11 +9,12 @@ import type { DashboardSummary } from '~/repositories/contracts/entities'
 import { downloadCsv } from '~/utils/export/csv'
 
 /**
- * HollyWing Motor dashboard: four fleet KPIs, a rentals-by-day chart,
+ * HollyWing Motor dashboard: fleet KPIs, income/expense chart (date-filtered),
  * and a compact rental/finance summary list.
  */
 const store = useAppDataStore()
 const preferences = usePreferencesStore()
+const financeRepository = useFinanceRepository()
 const { t, te } = useI18n()
 const { setTitle, clear } = useAppHeader()
 
@@ -28,9 +29,11 @@ function tx(key: string, fallback: string) {
 
 const money = (value: unknown) => formatMoney(value, preferences.currency)
 
-// HTTP mode: the dashboard is a server aggregate, not a localStorage loop.
+// HTTP mode: fleet KPIs use current month; chart has its own date range.
 const serverSummary = ref<DashboardSummary | null>(null)
+const chartSummary = ref<DashboardSummary | null>(null)
 const summaryLoading = ref(false)
+const chartLoading = ref(false)
 const summaryError = ref<string | null>(null)
 
 async function loadServerSummary() {
@@ -38,14 +41,26 @@ async function loadServerSummary() {
   summaryLoading.value = true
   summaryError.value = null
   try {
-    const { start, end } = chartRange.value
-    serverSummary.value = await useFinanceRepository().dashboard(start, end)
+    const { start, end } = monthBounds(now)
+    serverSummary.value = await financeRepository.dashboard(start, end)
   }
   catch (error: unknown) {
     summaryError.value = error instanceof Error ? error.message : String(error)
   }
   finally {
     summaryLoading.value = false
+  }
+}
+
+async function loadChartSummary() {
+  if (!store.isHttpMode) return
+  chartLoading.value = true
+  try {
+    const { start, end } = chartRange.value
+    chartSummary.value = await financeRepository.dashboard(start, end, 'dashboard-chart')
+  }
+  finally {
+    chartLoading.value = false
   }
 }
 
@@ -77,11 +92,12 @@ onMounted(() => {
     void store.fetchList('rentals', { status: 'Active,Overdue' })
     void store.fetchList('rentalCustomers')
     void loadServerSummary()
+    void loadChartSummary()
   }
 })
 
 watch([chartDateStart, chartDateEnd], () => {
-  void loadServerSummary()
+  void loadChartSummary()
 })
 
 const activeRentals = computed(() => rentals.value.filter(row => String(row.status) === 'Active'))
@@ -142,7 +158,7 @@ const rentalSummary = computed<KpiCard[]>(() => [
   { key: 'outstanding', title: tx('rental.dashboard.outstanding', 'Outstanding'), value: money(totalOutstanding.value), to: '/income-expense' },
 ])
 
-// ---- Rentals-by-day chart (date-range filter) ----
+// ---- Income & expense chart (date-range filter) ----
 const chartRange = computed(() => {
   const fallback = monthBounds(now)
   let start = (chartDateStart.value || fallback.start).slice(0, 10)
@@ -163,62 +179,109 @@ function eachDay(start: string, end: string) {
   return days
 }
 
-const rentalByDay = computed(() => {
-  if (serverSummary.value?.rentalsByDay?.length) {
-    return serverSummary.value.rentalsByDay.map(row => ({ day: String(row.date), count: Number(row.count || 0) }))
+const financeByDay = computed(() => {
+  const { start, end } = chartRange.value
+  const days = eachDay(start, end)
+
+  if (store.isHttpMode) {
+    const incomeMap = Object.fromEntries(
+      (chartSummary.value?.incomeByDay || []).map(row => [String(row.date), Number(row.amount || 0)]),
+    )
+    const expenseMap = Object.fromEntries(
+      (chartSummary.value?.expenseByDay || []).map(row => [String(row.date), Number(row.amount || 0)]),
+    )
+    return days.map(day => ({
+      day,
+      income: incomeMap[day] ?? 0,
+      expense: expenseMap[day] ?? 0,
+    }))
   }
-  const days = eachDay(chartRange.value.start, chartRange.value.end)
-  const counts = Object.fromEntries(days.map(day => [day, 0])) as Record<string, number>
-  for (const row of rentals.value) {
-    const day = String(row.startDate || '').slice(0, 10)
-    if (day in counts) counts[day] = (counts[day] ?? 0) + 1
+
+  const incomeCounts = Object.fromEntries(days.map(day => [day, 0])) as Record<string, number>
+  const expenseCounts = Object.fromEntries(days.map(day => [day, 0])) as Record<string, number>
+  for (const row of payments.value) {
+    const day = String(row.paidAt || '').slice(0, 10)
+    if (day in incomeCounts) incomeCounts[day] = (incomeCounts[day] ?? 0) + Number(row.amount || 0)
   }
-  return days.map(day => ({ day, count: counts[day] ?? 0 }))
+  for (const row of expenses.value) {
+    const day = String(row.date || '').slice(0, 10)
+    if (day in expenseCounts) expenseCounts[day] = (expenseCounts[day] ?? 0) + Number(row.amount || 0)
+  }
+  return days.map(day => ({
+    day,
+    income: incomeCounts[day] ?? 0,
+    expense: expenseCounts[day] ?? 0,
+  }))
 })
 
 const dark = computed(() => useColorMode().value === 'dark')
 const axisColor = computed(() => (dark.value ? '#3f3f46' : '#e4e4e7'))
 const labelColor = computed(() => (dark.value ? '#a1a1aa' : '#71717a'))
 const splitColor = computed(() => (dark.value ? 'rgba(255,255,255,0.08)' : 'rgba(24,24,27,0.07)'))
-const BRAND = '#e8472a'
+const INCOME_COLOR = '#16a34a'
+const EXPENSE_COLOR = '#dc2626'
 
-const rentalsByDayOption = computed<EChartsCoreOption>(() => {
-  const rows = rentalByDay.value
+const incomeExpenseOption = computed<EChartsCoreOption>(() => {
+  const rows = financeByDay.value
   return {
-    grid: { left: 8, right: 12, top: 28, bottom: 4, containLabel: true },
-    tooltip: { trigger: 'axis' },
+    grid: { left: 8, right: 12, top: 36, bottom: 4, containLabel: true },
+    legend: {
+      top: 0,
+      right: 0,
+      textStyle: { color: labelColor.value, fontSize: 11 },
+      data: [
+        tx('rental.ui.income', 'Income'),
+        tx('rental.ui.expense', 'Expense'),
+      ],
+    },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (value: unknown) => money(value),
+    },
     xAxis: {
       type: 'category',
-      data: rows.map(row => row.day.slice(8, 10)),
+      data: rows.map(row => row.day.slice(5)),
       axisLine: { lineStyle: { color: axisColor.value } },
       axisTick: { show: false },
       axisLabel: { color: labelColor.value, fontSize: 11 },
     },
     yAxis: {
       type: 'value',
-      minInterval: 1,
       splitLine: { lineStyle: { color: splitColor.value, type: 'solid' as const } },
-      axisLabel: { color: labelColor.value, fontSize: 11 },
+      axisLabel: { color: labelColor.value, fontSize: 11, formatter: (value: number) => money(value) },
     },
-    series: [{
-      name: tx('rental.dashboard.rentalsByDay', 'Rentals'),
-      type: 'bar',
-      data: rows.map(row => row.count),
-      itemStyle: { color: BRAND, borderRadius: [3, 3, 0, 0] },
-      barMaxWidth: 18,
-    }],
+    series: [
+      {
+        name: tx('rental.ui.income', 'Income'),
+        type: 'bar',
+        data: rows.map(row => row.income),
+        itemStyle: { color: INCOME_COLOR, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 14,
+      },
+      {
+        name: tx('rental.ui.expense', 'Expense'),
+        type: 'bar',
+        data: rows.map(row => row.expense),
+        itemStyle: { color: EXPENSE_COLOR, borderRadius: [3, 3, 0, 0] },
+        barMaxWidth: 14,
+      },
+    ],
   }
 })
 
-const rentalsEmpty = computed(() => !rentalByDay.value.some(row => row.count > 0))
+const chartEmpty = computed(() => !financeByDay.value.some(row => row.income > 0 || row.expense > 0))
 
-function exportRentalsByDay() {
-  if (rentalsEmpty.value) return
+function exportIncomeExpense() {
+  if (chartEmpty.value) return
   const { start, end } = chartRange.value
   downloadCsv({
-    filename: `rentals-by-day-${start}_${end}.csv`,
-    fields: [{ label: 'Day', value: 'day' }, { label: 'Rentals', value: 'count' }],
-    rows: rentalByDay.value,
+    filename: `income-expense-${start}_${end}.csv`,
+    fields: [
+      { label: 'Day', value: 'day' },
+      { label: tx('rental.ui.income', 'Income'), value: 'income' },
+      { label: tx('rental.ui.expense', 'Expense'), value: 'expense' },
+    ],
+    rows: financeByDay.value,
   })
 }
 
@@ -226,8 +289,8 @@ const chartMoreItems = computed<DropdownMenuItem[][]>(() => [[
   {
     label: tx('rental.ui.export', 'Export'),
     icon: 'i-lucide-download',
-    disabled: rentalsEmpty.value,
-    onSelect: exportRentalsByDay,
+    disabled: chartEmpty.value,
+    onSelect: exportIncomeExpense,
   },
 ]])
 </script>
@@ -239,10 +302,10 @@ const chartMoreItems = computed<DropdownMenuItem[][]>(() => [[
 
       <!-- Fills remaining viewport height; stacks on small screens, side-by-side on xl+ -->
       <div class="grid min-h-72 flex-1 grid-cols-1 grid-rows-2 gap-2 xl:min-h-0 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)] xl:grid-rows-1">
-        <!-- Rentals by day -->
+        <!-- Income & expense -->
         <div class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-default bg-default">
           <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-default px-4 py-2.5">
-            <p class="text-sm font-semibold">{{ tx('rental.dashboard.rentalsByDay', 'Rentals by Day') }}</p>
+            <p class="text-sm font-semibold">{{ tx('rental.dashboard.incomeExpenseChart', 'Income & Expense') }}</p>
             <div class="flex items-center gap-1.5">
               <CommonAppDateRangeFilter
                 v-model:start="chartDateStart"
@@ -264,10 +327,13 @@ const chartMoreItems = computed<DropdownMenuItem[][]>(() => [[
             </div>
           </div>
           <div class="min-h-0 flex-1 p-2">
-            <div v-if="rentalsEmpty" class="grid h-full place-items-center text-sm text-muted">
-              {{ tx('rental.dashboard.noRentalsInRange', 'No rentals in this period') }}
+            <div v-if="chartLoading" class="grid h-full place-items-center text-sm text-muted">
+              {{ tx('app.ui.loading', 'Loading...') }}
             </div>
-            <DashboardAppEChart v-else :option="rentalsByDayOption" aria-label="Rentals by day" />
+            <div v-else-if="chartEmpty" class="grid h-full place-items-center text-sm text-muted">
+              {{ tx('rental.dashboard.noFinanceInRange', 'No income or expense in this period') }}
+            </div>
+            <DashboardAppEChart v-else :option="incomeExpenseOption" aria-label="Income and expense by day" />
           </div>
         </div>
 

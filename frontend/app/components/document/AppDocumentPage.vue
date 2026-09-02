@@ -85,7 +85,7 @@ const emit = defineEmits<{
   export: [request: ExportRequest]
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const exportFields = computed(() => {
   if (!props.canExport) return []
@@ -113,6 +113,10 @@ const showForm = computed(() =>
 )
 
 const { confirm } = useConfirm()
+
+const resolvedSaveLabel = computed(() =>
+  props.saveLabel || (props.isCreate ? t('core.confirm.submit') : t('core.common.save')),
+)
 
 const scrollEl = ref<HTMLElement | null>(null)
 const showScrollTop = ref(false)
@@ -164,7 +168,7 @@ async function onSaveClick() {
       :list-navigation-direction="listNavigationDirection"
       :is-create="isCreate"
       :show-save="showSave && canSave && !readOnly"
-      :save-label="saveLabel"
+      :save-label="resolvedSaveLabel"
       :saving="saving"
       :show-cancel="showCancel && Boolean(listTo)"
       :cancel-to="listTo"

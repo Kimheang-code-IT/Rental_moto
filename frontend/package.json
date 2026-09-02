@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nuxt build",
+    "build": "nuxt generate",
+    "generate": "nuxt generate",
     "dev": "nuxt dev",
     "dev:clean": "nuxt cleanup && nuxt prepare && nuxt dev",
     "preview": "nuxt preview",

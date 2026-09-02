@@ -34,9 +34,6 @@ from app.repositories.rental import (
 
 VALID_MOTORCYCLE_STATUSES = ["Available", "Progressing", "Maintenance"]
 VALID_RENTAL_STATUSES = ["Active", "Overdue", "Completed", "Cancelled"]
-VALID_PAYMENT_METHODS = ["Cash", "Bank Transfer", "Card", "QR Payment", "Other"]
-VALID_CHARGE_TYPES = ["Damage", "Lost item", "Cleaning", "Other"]
-VALID_EXPENSE_TYPES = ["Fuel", "Maintenance", "Salary", "Rent", "Marketing", "Other"]
 VALID_CONDITIONS = ["Good", "Minor issues", "Damaged"]
 
 OUTBOX_QUEUE = "telegram"
@@ -44,6 +41,27 @@ OUTBOX_QUEUE = "telegram"
 
 def _actor_label(user: User | None) -> str | None:
     return user.display_name if user else None
+
+
+def normalize_option_label(value: str, label: str) -> str:
+    text = value.strip()
+    if not text:
+        raise ValidationError(f"{label} is required")
+    if len(text) > 40:
+        raise ValidationError(f"{label} must be 40 characters or fewer")
+    return text
+
+
+def normalize_expense_type(value: str) -> str:
+    return normalize_option_label(value, "Expense type")
+
+
+def normalize_charge_type(value: str) -> str:
+    return normalize_option_label(value, "Charge type")
+
+
+def normalize_payment_method(value: str) -> str:
+    return normalize_option_label(value, "Payment method")
 
 
 def _outbox(event_type: str, payload: dict) -> OutboxEvent:
@@ -107,6 +125,11 @@ class RentalService:
         doc_discount = max(money(request.discount), Decimal("0"))
         discount_shares = distribute_document_discount(line_charges, doc_discount)
         paid_shares = allocate_payment(line_charges, request.paid_amount)
+        initial_payment_method = (
+            normalize_payment_method(request.payment_method or "Cash")
+            if money(request.paid_amount) > 0
+            else None
+        )
 
         rentals: list[Rental] = []
         year = now.year
@@ -149,7 +172,7 @@ class RentalService:
                 total_due=total_due,
                 paid=paid,
                 outstanding=outstanding,
-                payment_method=request.payment_method if paid > 0 else None,
+                payment_method=initial_payment_method,
                 payment_status=None,
                 note=line.note or request.note,
                 created_by=_actor_label(self.actor),
@@ -169,7 +192,7 @@ class RentalService:
                         rental_id=rental.id,
                         amount=paid,
                         currency=request.currency,
-                        payment_method=request.payment_method or "Cash",
+                        payment_method=initial_payment_method or "Cash",
                         paid_at=now,
                         note="Initial payment",
                         created_by=_actor_label(self.actor),
@@ -216,6 +239,103 @@ class RentalService:
             await self.session.refresh(rental)
         return rentals
 
+    async def update_rental(self, rental_id: str, request) -> Rental:
+        rental = await self.rentals.for_update(rental_id)
+        if rental is None:
+            raise NotFoundError("Rental not found")
+        if rental.status not in ("Active", "Overdue"):
+            raise ConflictError(f"Rental in status {rental.status} cannot be edited")
+
+        customer_id = request.customer_id or rental.customer_id
+        customer = await self.customers.get(customer_id)
+        if customer is None:
+            raise NotFoundError("Customer not found")
+        if customer.status != "Active":
+            raise ValidationError("Customer must be Active to update a rental")
+
+        motorcycle_id = request.motorcycle_id or rental.motorcycle_id
+        start_date = request.start_date or rental.start_date
+        due_date = request.due_date or rental.due_date
+        if due_date <= start_date:
+            raise ValidationError("Due date must be after start date")
+
+        old_moto = None
+        if motorcycle_id != rental.motorcycle_id:
+            motorcycles = await _get_motorcycles_locked(self.session, [rental.motorcycle_id, motorcycle_id])
+            moto_map = {m.id: m for m in motorcycles}
+            old_moto = moto_map.get(rental.motorcycle_id)
+            new_moto = moto_map.get(motorcycle_id)
+            if new_moto is None:
+                raise NotFoundError("Motorcycle not found")
+            if new_moto.status != "Available":
+                raise ConflictError(f"Motorcycle {new_moto.code} is not Available")
+            if old_moto is not None:
+                old_moto.status = "Available"
+            new_moto.status = "Progressing"
+            moto = new_moto
+        else:
+            result = await self.session.execute(
+                select(Motorcycle).where(Motorcycle.id == motorcycle_id).with_for_update()
+            )
+            moto = result.scalar_one_or_none()
+            if moto is None:
+                raise NotFoundError("Motorcycle not found")
+
+        days = duration_days(start_date, due_date)
+        rates = resolve_motorcycle_rates(moto.daily_rate, moto.three_day_rate, moto.weekly_rate, moto.monthly_rate)
+        charge = line_charge(rates, days)
+        if charge <= 0:
+            raise ValidationError(f"Cannot compute charge for motorcycle {moto.code}")
+
+        discount = max(money(request.discount if request.discount is not None else rental.discount), Decimal("0"))
+        rental_charge = money(charge - discount)
+        tax_percent = money(request.tax_percent if request.tax_percent is not None else rental.tax_percent)
+        tax = money(rental_charge * tax_percent / Decimal("100"))
+        total_due = money(rental_charge + tax + rental.late_fee + rental.additional_charges)
+        paid = money(rental.paid)
+        outstanding = money(total_due - paid)
+
+        rental.customer_id = customer.id
+        rental.motorcycle_id = moto.id
+        rental.customer = customer.full_name
+        rental.phone = customer.phone
+        rental.motorcycle = moto.model
+        rental.plate = moto.plate
+        due_date_changed = due_date != rental.due_date
+        rental.start_date = start_date
+        rental.due_date = due_date
+        if due_date_changed:
+            rental.deadline_alerted_at = None
+        rental.duration_days = days
+        rental.rate_type = "Monthly" if 28 <= days <= 31 else "Daily"
+        rental.rate_amount = money(charge)
+        rental.deposit = money(request.deposit if request.deposit is not None else rental.deposit)
+        rental.discount = discount
+        rental.tax_percent = tax_percent
+        rental.tax = tax
+        rental.rental_charge = rental_charge
+        rental.total_due = total_due
+        rental.outstanding = outstanding
+        if request.note is not None:
+            rental.note = request.note
+        if rental.status == "Overdue" and due_date > datetime.now(timezone.utc):
+            rental.status = "Active"
+
+        await self.audit.add(
+            AuditLog(
+                user_id=self.actor.id if self.actor else None,
+                user_name=_actor_label(self.actor),
+                action="rental_updated",
+                entity_type="rental",
+                entity_id=rental.id,
+                entity_label=rental.rental_no,
+                details={"customer": rental.customer, "motorcycle": rental.motorcycle, "totalDue": float(rental.total_due)},
+            )
+        )
+        await self.session.commit()
+        await self.session.refresh(rental)
+        return rental
+
     async def close_rental(self, rental_id: str, request) -> Rental:
         rental = await self.rentals.for_update(rental_id)
         if rental is None:
@@ -232,8 +352,7 @@ class RentalService:
         return_date = request.return_date or now
         new_charges_total = Decimal("0.00")
         for charge_input in request.charges or []:
-            if charge_input.charge_type not in VALID_CHARGE_TYPES:
-                raise ValidationError(f"Invalid charge type: {charge_input.charge_type}")
+            charge_type = normalize_charge_type(charge_input.charge_type)
             amount = money(charge_input.amount)
             charge_no = await self.sequences.next_value("CHARGE", "RNC-", 6, None)
             charge_id = await self._next_entity_id("rg", RentalCharge)
@@ -242,7 +361,7 @@ class RentalService:
                     id=charge_id,
                     charge_no=charge_no,
                     rental_id=rental.id,
-                    charge_type=charge_input.charge_type,
+                    charge_type=charge_type,
                     description=charge_input.description,
                     amount=amount,
                     currency=rental.currency,
@@ -260,6 +379,7 @@ class RentalService:
             payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
             payment_id = await self._next_entity_id("rp", RentalPayment)
             paid_at = request.final_payment.paid_at or now
+            final_payment_method = normalize_payment_method(request.final_payment.payment_method)
             self.session.add(
                 RentalPayment(
                     id=payment_id,
@@ -267,7 +387,7 @@ class RentalService:
                     rental_id=rental.id,
                     amount=final_payment_amount,
                     currency=rental.currency,
-                    payment_method=request.final_payment.payment_method,
+                    payment_method=final_payment_method,
                     paid_at=paid_at,
                     reference=request.final_payment.reference,
                     note=request.final_payment.note,
@@ -322,6 +442,8 @@ class RentalService:
                     "outstanding": float(rental.outstanding),
                     "currency": rental.currency,
                     "status": "Completed",
+                    "start_date": rental.start_date.isoformat(),
+                    "due_date": rental.due_date.isoformat(),
                     "return_date": return_date.isoformat(),
                     "condition": rental.condition,
                     "actor": _actor_label(self.actor),
@@ -370,6 +492,8 @@ class RentalService:
                     "motorcycle": rental.motorcycle,
                     "currency": rental.currency,
                     "status": "Cancelled",
+                    "start_date": rental.start_date.isoformat(),
+                    "due_date": rental.due_date.isoformat(),
                     "reason": reason,
                     "actor": _actor_label(self.actor),
                     "occurred_at": now.isoformat(),
@@ -412,6 +536,7 @@ class RentalService:
                             "outstanding": float(rental.outstanding),
                             "due_date": rental.due_date.isoformat(),
                             "status": "Overdue",
+                            "start_date": rental.start_date.isoformat(),
                             "occurred_at": now.isoformat(),
                         },
                     )
@@ -435,13 +560,14 @@ class RentalService:
         now = datetime.now(timezone.utc)
         payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
         payment_id = await self._next_entity_id("rp", RentalPayment)
+        payment_method = normalize_payment_method(request.payment_method)
         payment = RentalPayment(
             id=payment_id,
             payment_no=payment_no,
             rental_id=rental.id,
             amount=money(request.amount),
             currency=rental.currency,
-            payment_method=request.payment_method,
+            payment_method=payment_method,
             paid_at=request.paid_at or now,
             reference=request.reference,
             note=request.note,
@@ -451,7 +577,7 @@ class RentalService:
         self.session.add(payment)
         rental.paid = money(sum((p.amount for p in rental.payments), Decimal("0")) + payment.amount)
         rental.outstanding = money(max(rental.total_due - rental.paid, Decimal("0")))
-        rental.payment_method = request.payment_method
+        rental.payment_method = payment_method
         if rental.status == "Completed":
             rental.payment_status = "Paid" if rental.outstanding <= 0 else "Partial"
         await self.audit.add(
@@ -475,6 +601,12 @@ class RentalService:
                     "amount": float(payment.amount),
                     "currency": payment.currency,
                     "payment_method": payment.payment_method,
+                    "motorcycle": rental.motorcycle,
+                    "plate": rental.plate,
+                    "paid": float(rental.paid),
+                    "outstanding": float(rental.outstanding),
+                    "start_date": rental.start_date.isoformat(),
+                    "due_date": rental.due_date.isoformat(),
                     "status": rental.status,
                     "actor": _actor_label(self.actor),
                     "occurred_at": payment.paid_at.isoformat(),
@@ -490,8 +622,7 @@ class RentalService:
         rental = await self.rentals.for_update(request.rental_id)
         if rental is None:
             raise NotFoundError("Rental not found")
-        if request.charge_type not in VALID_CHARGE_TYPES:
-            raise ValidationError(f"Invalid charge type: {request.charge_type}")
+        charge_type = normalize_charge_type(request.charge_type)
         now = datetime.now(timezone.utc)
         charge_no = await self.sequences.next_value("CHARGE", "RNC-", 6, None)
         charge_id = await self._next_entity_id("rg", RentalCharge)
@@ -499,7 +630,7 @@ class RentalService:
             id=charge_id,
             charge_no=charge_no,
             rental_id=rental.id,
-            charge_type=request.charge_type,
+            charge_type=charge_type,
             description=request.description,
             amount=money(request.amount),
             currency=rental.currency,
@@ -531,8 +662,14 @@ class RentalService:
                     "customer": rental.customer,
                     "charge_no": charge.charge_no,
                     "charge_type": charge.charge_type,
+                    "description": charge.description,
                     "amount": float(charge.amount),
                     "currency": charge.currency,
+                    "motorcycle": rental.motorcycle,
+                    "plate": rental.plate,
+                    "outstanding": float(rental.outstanding),
+                    "start_date": rental.start_date.isoformat(),
+                    "due_date": rental.due_date.isoformat(),
                     "status": rental.status,
                     "actor": _actor_label(self.actor),
                     "occurred_at": now.isoformat(),
@@ -545,15 +682,14 @@ class RentalService:
         return charge, rental
 
     async def record_expense(self, request) -> RentalExpense:
-        if request.expense_type not in VALID_EXPENSE_TYPES:
-            raise ValidationError(f"Invalid expense type: {request.expense_type}")
+        expense_type = normalize_expense_type(request.expense_type)
         expense_no = await self.sequences.next_value("EXPENSE", "RNX-", 6, None)
         expense_id = await self._next_entity_id("rx", RentalExpense)
         expense = RentalExpense(
             id=expense_id,
             expense_no=expense_no,
             date=request.date,
-            expense_type=request.expense_type,
+            expense_type=expense_type,
             description=request.description,
             amount=money(request.amount),
             currency=request.currency,

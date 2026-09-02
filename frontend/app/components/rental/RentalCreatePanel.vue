@@ -6,6 +6,7 @@ import { useAppHeader } from '~/composables/layout/useAppHeader'
 import { usePageSeo } from '~/composables/usePageSeo'
 import { formatMoney, statusColor } from '~/composables/module/useModule'
 import { PAYMENT_METHODS, RENTAL_IDENTITY_TYPES } from '~/config/rental-options'
+import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
 import { downloadCsv } from '~/utils/export/csv'
 import {
   addDaysToDateTime,
@@ -25,17 +26,27 @@ const props = withDefaults(defineProps<{
   mode: 'create',
 })
 
-const emit = defineEmits<{ cancel: [], created: [id: string] }>()
+const emit = defineEmits<{ cancel: [] }>()
 
 const { t, te } = useI18n()
 const auth = useAuthStore()
 const store = useAppDataStore()
 const preferences = usePreferencesStore()
 const { confirm } = useConfirm()
+const rentalCommands = useRentalCommands()
 const toast = useToast()
 const { setBreadcrumbs, setBadges, clear: clearHeader } = useAppHeader()
 
 const isDetail = computed(() => props.mode === 'detail')
+const detailRental = computed(() =>
+  props.rentalId ? store.get('rentals', props.rentalId) : null,
+)
+const isEditable = computed(() =>
+  isDetail.value
+  && ['Active', 'Overdue'].includes(rentalStatus.value)
+  && auth.canAccessPage('rental.rentals.edit'),
+)
+const isFormReadOnly = computed(() => isDetail.value && !isEditable.value)
 
 function staffName() {
   return auth.user?.name || 'Staff'
@@ -74,7 +85,8 @@ const depositDate = ref(todayDateTimeLocal().slice(0, 10))
 const deposit = ref(0)
 const headerDiscount = ref(0)
 const taxPercent = ref(0)
-const paymentMethod = ref<(typeof PAYMENT_METHODS)[number]>(PAYMENT_METHODS[0])
+const paymentMethodOptions = useCreatableOptionList(PAYMENT_METHODS)
+const paymentMethod = ref<string>(PAYMENT_METHODS[0])
 const paidAmount = ref(0)
 const existingPaid = ref(0)
 const outstandingBalance = ref(0)
@@ -87,6 +99,7 @@ const saving = ref(false)
 const syncingDates = ref(false)
 const notFound = ref(false)
 const invoiceRental = ref<Record<string, unknown> | null>(null)
+const chargesReviewOpen = ref(false)
 const listNavigationDirection = ref<'previous' | 'next' | null>(null)
 
 let lineSeq = 1
@@ -153,7 +166,7 @@ function plateItemsFor(line: RentalLine) {
 }
 
 function onSelectModel(line: RentalLine, model: string | number) {
-  if (isDetail.value) return
+  if (isFormReadOnly.value) return
   line.model = String(model || '')
   line.motorcycleId = ''
   line.unitPrice = 0
@@ -165,7 +178,7 @@ function onSelectModel(line: RentalLine, model: string | number) {
 }
 
 function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
-  if (isDetail.value) return
+  if (isFormReadOnly.value) return
   line.motorcycleId = String(motorcycleId || '')
   const moto = motoById(line.motorcycleId)
   if (!moto) return
@@ -192,7 +205,7 @@ const totals = computed(() => {
     discount: headerDiscount.value,
     taxPercent: taxPercent.value,
   })
-  if (!isDetail.value) return base
+  if (!isDetail.value || isEditable.value) return base
   const extras = Math.max(0, Number(lateFee.value) || 0) + Math.max(0, Number(additionalCharges.value) || 0)
   return {
     ...base,
@@ -216,7 +229,8 @@ const paidError = computed(() => {
 })
 
 const outstandingPreview = computed(() => {
-  if (isDetail.value) return Math.max(0, Number(outstandingBalance.value) || 0)
+  if (isFormReadOnly.value) return Math.max(0, Number(outstandingBalance.value) || 0)
+  if (isEditable.value) return Math.max(totals.value.total - existingPaid.value, 0)
   return Math.max(totals.value.total - paidAmount.value, 0)
 })
 
@@ -252,17 +266,17 @@ const createCustomerButtons = computed(() => {
 })
 
 watch(() => totals.value.subtotal, (subtotal) => {
-  if (isDetail.value) return
+  if (isFormReadOnly.value) return
   if (deposit.value > subtotal) deposit.value = subtotal
 })
 
 watch(() => totals.value.total, (total) => {
-  if (isDetail.value) return
-  if (paidAmount.value > total) paidAmount.value = total
+  if (isFormReadOnly.value) return
+  if (!isDetail.value && paidAmount.value > total) paidAmount.value = total
 })
 
 watch(startDate, () => {
-  if (isDetail.value || syncingDates.value) return
+  if (isFormReadOnly.value || syncingDates.value) return
   const days = lines.value[0]?.days || daysBetween(startDate.value, dueDate.value) || 1
   if (days > 0 && startDate.value) {
     syncingDates.value = true
@@ -272,7 +286,7 @@ watch(startDate, () => {
 })
 
 watch(dueDate, () => {
-  if (isDetail.value || syncingDates.value || !startDate.value || !dueDate.value) return
+  if (isFormReadOnly.value || syncingDates.value || !startDate.value || !dueDate.value) return
   const days = daysBetween(startDate.value, dueDate.value)
   if (days > 0) {
     syncingDates.value = true
@@ -282,7 +296,7 @@ watch(dueDate, () => {
 })
 
 function onLineDaysChange(line: RentalLine) {
-  if (isDetail.value || syncingDates.value || !startDate.value) return
+  if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
   const days = Math.max(1, Math.floor(Number(line.days) || 1))
   line.days = days
   syncingDates.value = true
@@ -294,7 +308,7 @@ function onLineDaysChange(line: RentalLine) {
 }
 
 function addLine() {
-  if (isDetail.value) return
+  if (isFormReadOnly.value) return
   const days = lines.value[0]?.days || daysBetween(startDate.value, dueDate.value) || 1
   const row = newLine()
   row.days = days
@@ -302,9 +316,19 @@ function addLine() {
 }
 
 function removeLine(key: string) {
-  if (isDetail.value || lines.value.length <= 1) return
+  if (isFormReadOnly.value || lines.value.length <= 1) return
   lines.value = lines.value.filter(row => row.key !== key)
 }
+
+const canEditRental = computed(() => Boolean(
+  isEditable.value
+  && customerId.value
+  && startDate.value
+  && dueDate.value
+  && lines.value.every(line => line.motorcycleId && line.days > 0 && line.unitPrice > 0)
+  && totals.value.total >= 0
+  && deposit.value <= totals.value.subtotal + 0.001,
+))
 
 const canCreate = computed(() => Boolean(
   !isDetail.value
@@ -317,23 +341,15 @@ const canCreate = computed(() => Boolean(
   && paidAmount.value <= totals.value.total + 0.001,
 ))
 
-function nextCustomerCode() {
-  const numbers = store.list('rentalCustomers')
-    .map(row => String(row.code || ''))
-    .map(code => Number(code.split('-').pop()))
-    .filter(no => Number.isFinite(no))
-  const next = (numbers.length ? Math.max(...numbers) : 0) + 1
-  return `CUS-${String(next).padStart(3, '0')}`
-}
-
 const customerModalOpen = ref(false)
 const savingCustomer = ref(false)
 const newCustomer = reactive({
   fullName: '',
   phone: '',
+  company: '',
   identityType: RENTAL_IDENTITY_TYPES[0] as (typeof RENTAL_IDENTITY_TYPES)[number],
   identityNumber: '',
-  company: '',
+  address: '',
 })
 
 const canSaveCustomer = computed(() => Boolean(
@@ -345,25 +361,32 @@ const canSaveCustomer = computed(() => Boolean(
 function openCustomerModal() {
   newCustomer.fullName = ''
   newCustomer.phone = ''
+  newCustomer.company = ''
   newCustomer.identityType = RENTAL_IDENTITY_TYPES[0]
   newCustomer.identityNumber = ''
-  newCustomer.company = ''
+  newCustomer.address = ''
   customerModalOpen.value = true
 }
 
 async function saveNewCustomer() {
   if (!canSaveCustomer.value) return
+  const ok = await confirm({
+    kind: 'submit',
+    titleKey: 'rental.ui.confirmAddCustomer',
+    description: newCustomer.fullName.trim(),
+    confirmLabelKey: 'rental.ui.saveCustomer',
+  })
+  if (!ok) return
   savingCustomer.value = true
   try {
     const created = await store.createRemote('rentalCustomers', {
-      code: nextCustomerCode(),
       fullName: newCustomer.fullName.trim(),
       phone: newCustomer.phone.trim(),
+      company: newCustomer.company.trim(),
       identityType: newCustomer.identityType,
       identityNumber: newCustomer.identityNumber.trim(),
-      company: newCustomer.company.trim(),
       email: '',
-      address: '',
+      address: newCustomer.address.trim(),
       status: 'Active',
     })
     customerId.value = String(created.id)
@@ -398,10 +421,12 @@ function loadDetail() {
     notFound.value = false
     hydrateFromServer()
     void store.fetchList('rentalPayments', { rentalId: props.rentalId })
+    void store.fetchList('rentalCharges', { rentalId: props.rentalId })
     return
   }
   hydrateDetail()
   void store.fetchList('rentalPayments', { rentalId: props.rentalId })
+  void store.fetchList('rentalCharges', { rentalId: props.rentalId })
 }
 
 function hydrateDetail() {
@@ -430,8 +455,11 @@ function hydrateDetail() {
     .filter(row => String(row.rentalId) === String(found.id))
     .sort((a, b) => String(b.paidAt || '').localeCompare(String(a.paidAt || '')))
   const lastMethod = String(payments[0]?.paymentMethod || '')
-  if (PAYMENT_METHODS.includes(lastMethod as typeof PAYMENT_METHODS[number])) {
-    paymentMethod.value = lastMethod as typeof PAYMENT_METHODS[number]
+  if (lastMethod) {
+    paymentMethod.value = lastMethod
+    if (!paymentMethodOptions.items.value.includes(lastMethod)) {
+      paymentMethodOptions.items.value.push(lastMethod)
+    }
   }
 
   lines.value = [{
@@ -566,13 +594,18 @@ function exportRental(request: ExportRequest) {
   })
 }
 
+function onCreatePaymentMethod(item: string) {
+  const value = paymentMethodOptions.onCreate(item)
+  if (value) paymentMethod.value = value
+}
+
 async function createRental() {
   if (!canCreate.value || !selectedCustomer.value) return
   const validLines = lineComputed.value.filter(row => row.moto)
   if (!validLines.length) return
 
   const ok = await confirm({
-    kind: 'generic',
+    kind: 'submit',
     title: tx('rental.ui.confirmCreate', 'Create this rental?'),
     description: `${selectedCustomer.value.fullName} · ${validLines.length} ${tx('rental.ui.motorcycles', 'motorcycles')} · ${tx('rental.ui.total', 'Total')}: ${formatMoney(totals.value.total, preferences.currency)}`,
     confirmLabel: tx('rental.ui.createRental', 'Create Rental'),
@@ -581,10 +614,7 @@ async function createRental() {
 
   saving.value = true
   try {
-    if (store.isHttpMode) {
-      // One atomic server transaction: numbering, pricing, balances, payment,
-      // motorcycle status, audit, and outbox all happen in the backend.
-      const created = await useRentalCommands().create({
+    const created = await rentalCommands.create({
         customerId: String(selectedCustomer.value.id),
         lines: validLines.map(row => ({
           motorcycleId: String(row.line.motorcycleId),
@@ -604,88 +634,7 @@ async function createRental() {
       await store.fetchList('motorcycles')
       await store.fetchList('rentals', { status: 'Active,Overdue' })
       toast.add({ title: tx('rental.ui.rentalCreated', 'Rental created'), color: 'success' })
-      emit('created', String(created[0]?.id || ''))
-      return
-    }
-
-    const lineTotals = validLines.map(row => row.amount)
-    const paymentShares = allocateRentalPayment(lineTotals, paidAmount.value)
-    const headerShare = totals.value.subtotal > 0
-      ? validLines.map(row => row.amount / totals.value.subtotal)
-      : validLines.map(() => 1 / validLines.length)
-
-    let firstId = ''
-    const rentalSeq = store.list('rentals')
-      .map(row => Number(String(row.rentalNo || '').split('-').pop()))
-      .filter(no => Number.isFinite(no))
-    let nextNum = (rentalSeq.length ? Math.max(...rentalSeq) : 0) + 1
-
-    validLines.forEach((row, index) => {
-      const moto = row.moto!
-      const lineHeaderDiscount = Number((totals.value.discount * headerShare[index]!).toFixed(2))
-      const lineTax = Number((totals.value.tax * headerShare[index]!).toFixed(2))
-      const lineDeposit = Number((deposit.value * headerShare[index]!).toFixed(2))
-      const rentalCharge = row.amount
-      const discount = lineHeaderDiscount
-      const totalDue = Number((Math.max(rentalCharge - discount, 0) + lineTax).toFixed(2))
-      const paid = paymentShares[index] || 0
-      const nextRentalNo = `RNT-${new Date().getFullYear()}-${String(nextNum++).padStart(6, '0')}`
-
-      const created = store.create('rentals', {
-        rentalNo: nextRentalNo,
-        customerId: selectedCustomer.value!.id,
-        customer: selectedCustomer.value!.fullName,
-        phone: selectedCustomer.value!.phone,
-        motorcycleId: moto.id,
-        motorcycle: moto.model,
-        plate: moto.plate,
-        startDate: startDate.value,
-        dueDate: dueDate.value,
-        durationDays: row.line.days,
-        rateType: 'Daily',
-        rateAmount: row.line.unitPrice,
-        deposit: lineDeposit,
-        depositDate: depositDate.value,
-        discount,
-        taxPercent: taxPercent.value,
-        tax: lineTax,
-        currency: moto.currency || preferences.currency,
-        rentalCharge,
-        lateFee: 0,
-        additionalCharges: 0,
-        totalDue,
-        paid,
-        outstanding: Math.max(totalDue - paid, 0),
-        paymentMethod: paymentMethod.value,
-        note: '',
-        createdBy: staffName(),
-        status: 'Active',
-      }, 'rt')
-
-      store.save('motorcycles', { ...moto, status: 'Progressing' })
-
-      if (paid > 0) {
-        const seq = store.list('rentalPayments').length + 1
-        store.create('rentalPayments', {
-          paymentNo: `RNP-${String(seq).padStart(6, '0')}`,
-          rentalId: created.id,
-          rentalNo: created.rentalNo,
-          customer: created.customer,
-          amount: paid,
-          currency: created.currency,
-          paymentMethod: paymentMethod.value,
-          paidAt: startDate.value,
-          reference: '',
-          note: tx('rental.ui.paymentOnRegister', 'Payment on register'),
-        }, 'rnp')
-      }
-
-      store.addAudit(`Created rental ${created.rentalNo}`, 'Rentals', String(created.rentalNo))
-      if (!firstId) firstId = String(created.id)
-    })
-
-    toast.add({ title: tx('rental.ui.rentalCreated', 'Rental created'), color: 'success' })
-    emit('created', firstId)
+      await navigateTo('/rentals')
   }
   catch (error: unknown) {
     toast.add({
@@ -697,6 +646,53 @@ async function createRental() {
   finally {
     saving.value = false
   }
+}
+
+async function updateRental() {
+  if (!canEditRental.value || !props.rentalId) return
+  const line = lineComputed.value.find(row => row.moto)
+  if (!line) return
+
+  const ok = await confirm({
+    kind: 'update',
+    title: tx('rental.ui.confirmUpdate', 'Update this rental?'),
+    description: String(rentalNo.value || props.rentalId),
+    confirmLabel: tx('core.confirm.update', 'Update'),
+  })
+  if (!ok) return
+
+  saving.value = true
+  try {
+    await rentalCommands.update(String(props.rentalId), {
+      customerId: customerId.value,
+      motorcycleId: String(line.line.motorcycleId),
+      startDate: toIsoZoned(startDate.value)!,
+      dueDate: toIsoZoned(dueDate.value)!,
+      deposit: deposit.value,
+      discount: headerDiscount.value,
+      taxPercent: taxPercent.value,
+      note: null,
+    })
+    await store.fetchOne('rentals', String(props.rentalId))
+    await store.fetchList('motorcycles')
+    toast.add({ title: tx('rental.ui.rentalUpdated', 'Rental updated'), color: 'success' })
+    await navigateTo('/rentals')
+  }
+  catch (error: unknown) {
+    toast.add({
+      title: tx('rental.ui.rentalUpdateFailed', 'Could not update rental'),
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  }
+  finally {
+    saving.value = false
+  }
+}
+
+async function saveRental() {
+  if (isEditable.value) await updateRental()
+  else await createRental()
 }
 
 const money = (value: unknown) => formatMoney(value, currency.value || preferences.currency)
@@ -713,13 +709,13 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
       :can-navigate-previous="canNavigatePrevious"
       :can-navigate-next="canNavigateNext"
       :list-navigation-direction="listNavigationDirection"
-      :show-save="!isDetail && canCreate"
-      :save-label="tx('rental.ui.createRental', 'Create Rental')"
+      :show-save="(!isDetail && canCreate) || (isEditable && canEditRental)"
+      :is-create="!isDetail"
       :saving="saving"
       :show-cancel="true"
       cancel-to="/rentals"
       :create-buttons="createCustomerButtons"
-      @save="createRental"
+      @save="saveRental"
       @cancel="emit('cancel')"
       @create-button="openCustomerModal"
       @export="exportRental"
@@ -751,12 +747,12 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 placeholder="—"
                 size="md"
                 class="w-full"
-                :disabled="isDetail"
+                :disabled="isFormReadOnly"
               />
             </UFormField>
             <UFormField
-              :label="tx('rental.ui.passport', 'Passport')"
-              :help="help('customerPassport', 'Select customer by passport / ID number.')"
+              :label="tx('app.modules.rentalCustomers.fields.identityNumber', 'Identity Number')"
+              :help="help('customerPassport', 'Select customer by identity number.')"
               required
             >
               <USelect
@@ -765,7 +761,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 placeholder="—"
                 size="md"
                 class="w-full"
-                :disabled="isDetail"
+                :disabled="isFormReadOnly"
               />
             </UFormField>
             <UFormField
@@ -779,7 +775,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 required
                 size="md"
                 class="w-full"
-                :disabled="isDetail"
+                :disabled="isFormReadOnly"
               />
             </UFormField>
             <UFormField
@@ -791,7 +787,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 granularity="day"
                 size="md"
                 class="w-full"
-                :disabled="isDetail"
+                :disabled="isFormReadOnly"
               />
             </UFormField>
           </div>
@@ -800,7 +796,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
             <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p class="text-sm font-semibold text-highlighted">{{ tx('rental.ui.motorcycle', 'Motorcycle') }}</p>
               <UButton
-                v-if="!isDetail"
+                v-if="!isFormReadOnly"
                 size="sm"
                 variant="soft"
                 icon="i-lucide-plus"
@@ -834,7 +830,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                         placeholder="—"
                         size="md"
                         class="w-48"
-                        :disabled="isDetail"
+                        :disabled="isFormReadOnly"
                         @update:model-value="(v: string) => onSelectModel(row.line, v)"
                       />
                     </td>
@@ -845,7 +841,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                         placeholder="—"
                         size="md"
                         class="w-40"
-                        :disabled="isDetail || !row.line.model"
+                        :disabled="isFormReadOnly || !row.line.model"
                         @update:model-value="(v: string) => onSelectPlate(row.line, v)"
                       />
                     </td>
@@ -857,7 +853,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                         :decrement="false"
                         size="md"
                         class="ml-auto w-24"
-                        :disabled="isDetail"
+                        :disabled="isFormReadOnly"
                         @update:model-value="onLineDaysChange(row.line)"
                       />
                     </td>
@@ -870,7 +866,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                         :decrement="false"
                         size="md"
                         class="ml-auto w-32"
-                        :disabled="isDetail"
+                        :disabled="isFormReadOnly"
                       />
                     </td>
                     <td class="px-2 py-2 text-right font-semibold tabular-nums">
@@ -878,7 +874,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                     </td>
                     <td class="px-1 py-2">
                       <UButton
-                        v-if="!isDetail && lines.length > 1"
+                        v-if="!isFormReadOnly && lines.length > 1"
                         size="xs"
                         color="neutral"
                         variant="ghost"
@@ -906,7 +902,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                   :decrement="false"
                   size="md"
                   class="w-full"
-                  :disabled="isDetail"
+                  :disabled="isFormReadOnly"
                 />
               </UFormField>
 
@@ -927,7 +923,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                   :decrement="false"
                   size="md"
                   class="w-full"
-                  :disabled="isDetail"
+                  :disabled="isFormReadOnly"
                 />
               </UFormField>
 
@@ -942,20 +938,22 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                   :decrement="false"
                   size="md"
                   class="w-full"
-                  :disabled="isDetail"
+                  :disabled="isFormReadOnly"
                 />
               </UFormField>
 
               <UFormField
                 :label="tx('rental.ui.paymentMethod', 'Payment Method')"
-                :help="help('paymentMethod', 'How the customer pays.')"
+                :help="help('paymentMethod', 'Choose a preset method or type a custom payment method.')"
               >
-                <USelect
+                <UInputMenu
                   v-model="paymentMethod"
-                  :items="[...PAYMENT_METHODS]"
+                  create-item
+                  :items="paymentMethodOptions.items.value"
                   size="md"
                   class="w-full"
-                  :disabled="isDetail"
+                  :disabled="isFormReadOnly"
+                  @create="onCreatePaymentMethod"
                 />
               </UFormField>
 
@@ -989,29 +987,74 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                   : tx('rental.ui.outstandingAfterPay', 'Outstanding after payment') }}:
                 <span class="font-semibold text-highlighted">{{ money(outstandingPreview) }}</span>
               </p>
+
+              <template v-if="isDetail">
+                <div class="rounded-md border border-default bg-elevated/30 p-3 sm:col-span-2">
+                  <p class="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
+                    {{ tx('rental.ui.balanceSummary', 'Balance summary') }}
+                  </p>
+                  <div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="text-muted">{{ tx('rental.ui.rentalCharge', 'Rental Charge') }}</span>
+                      <span class="tabular-nums font-medium">{{ money(Number(detailRental?.rentalCharge || 0)) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="text-muted">{{ tx('rental.ui.lateFee', 'Late Fee') }}</span>
+                      <span class="tabular-nums font-medium">{{ money(lateFee) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="text-muted">{{ tx('rental.ui.additionalCharges', 'Additional Charges') }}</span>
+                      <UButton
+                        v-if="additionalCharges > 0"
+                        variant="link"
+                        color="primary"
+                        class="p-0 font-medium tabular-nums"
+                        :label="money(additionalCharges)"
+                        @click="chargesReviewOpen = true"
+                      />
+                      <span v-else class="tabular-nums font-medium">{{ money(additionalCharges) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                      <span class="text-muted">{{ tx('rental.ui.paid', 'Paid') }}</span>
+                      <span class="tabular-nums font-medium">{{ money(existingPaid) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
         </div>
       </DocumentAppDocumentContentShell>
     </div>
 
-    <UModal v-model:open="customerModalOpen" :title="tx('rental.ui.addNewCustomer', 'Create customer')">
+    <UModal
+      v-model:open="customerModalOpen"
+      :title="tx('rental.ui.addNewCustomer', 'Create customer')"
+      :ui="{ content: 'w-[calc(100%-2rem)] max-w-3xl sm:max-w-3xl' }"
+    >
       <template #body>
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div class="flex flex-col gap-4">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <UFormField
+              :label="tx('rental.ui.fullName', 'Full name')"
+              :help="help('fullName', 'Customer full name as shown on ID.')"
+              required
+            >
+              <UInput v-model="newCustomer.fullName" size="md" class="w-full" />
+            </UFormField>
+            <UFormField
+              :label="tx('rental.ui.phone', 'Phone')"
+              :help="help('phone', 'Primary contact phone number.')"
+              required
+            >
+              <UInput v-model="newCustomer.phone" size="md" class="w-full" />
+            </UFormField>
+          </div>
           <UFormField
-            :label="tx('rental.ui.fullName', 'Full name')"
-            :help="help('fullName', 'Customer full name as shown on ID.')"
-            required
-            class="sm:col-span-2"
+            :label="tx('rental.ui.company', 'Company')"
+            :help="help('company', 'Optional company or shop name.')"
           >
-            <UInput v-model="newCustomer.fullName" size="md" class="w-full" />
-          </UFormField>
-          <UFormField
-            :label="tx('rental.ui.phone', 'Phone')"
-            :help="help('phone', 'Primary contact phone number.')"
-            required
-          >
-            <UInput v-model="newCustomer.phone" size="md" class="w-full" />
+            <UInput v-model="newCustomer.company" size="md" class="w-full" />
           </UFormField>
           <UFormField
             :label="tx('rental.ui.identityType', 'Identity type')"
@@ -1024,19 +1067,17 @@ size="md"
 class="w-full" />
           </UFormField>
           <UFormField
-            :label="tx('rental.ui.passport', 'Passport')"
+            :label="tx('app.modules.rentalCustomers.fields.identityNumber', 'Identity Number')"
             :help="help('identityNumber', 'ID / passport / license number.')"
             required
-            class="sm:col-span-2"
           >
             <UInput v-model="newCustomer.identityNumber" size="md" class="w-full" />
           </UFormField>
           <UFormField
-            :label="tx('rental.ui.company', 'Company')"
-            :help="help('company', 'Optional company or shop name.')"
-            class="sm:col-span-2"
+            :label="tx('app.modules.rentalCustomers.fields.address', 'Address')"
+            :help="help('address', 'Customer home or business address.')"
           >
-            <UInput v-model="newCustomer.company" size="md" class="w-full" />
+            <UTextarea v-model="newCustomer.address" :rows="3" size="md" class="w-full" />
           </UFormField>
         </div>
       </template>
@@ -1057,6 +1098,12 @@ variant="ghost"
         </div>
       </template>
     </UModal>
+
+    <RentalChargesReviewModal
+      v-if="isDetail && detailRental"
+      v-model:open="chargesReviewOpen"
+      :rental="detailRental"
+    />
 
     <RentalInvoicePreview
       v-if="invoiceRental"

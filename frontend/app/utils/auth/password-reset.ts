@@ -60,4 +60,14 @@ export function clearPasswordResetSession() {
   writeRaw(null)
 }
 
+/** Initialize reset session from Telegram web handoff token. */
+export function applyPasswordResetHandoff(email: string, resetToken: string) {
+  writeRaw({
+    email: email.trim().toLowerCase(),
+    verified: true,
+    resetToken,
+    updatedAt: new Date().toISOString(),
+  })
+}
+
 export const MOCK_RESET_CODE = '123456'

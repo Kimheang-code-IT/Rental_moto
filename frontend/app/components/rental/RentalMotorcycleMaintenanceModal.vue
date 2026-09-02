@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useConfirm } from '~/composables/common/useConfirm'
 import { todayDateTimeLocal } from '~/utils/rental/pricing'
 
 const props = defineProps<{
@@ -16,6 +17,7 @@ const store = useAppDataStore()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const saving = ref(false)
 const description = ref('')
@@ -59,6 +61,20 @@ function nextExpenseNumber() {
 
 async function save() {
   if (!canSave.value || !props.motorcycle) return
+
+  const ok = await confirm({
+    kind: 'submit',
+    titleKey: 'rental.ui.confirmMaintenance',
+    descriptionKey: 'rental.ui.confirmMaintenanceDescription',
+    descriptionParams: {
+      motorcycle: motorcycleLabel.value,
+      amount: Number(amount.value).toFixed(2),
+    },
+    confirmLabelKey: 'rental.ui.confirmMaintenance',
+    confirmColor: 'warning',
+  })
+  if (!ok) return
+
   saving.value = true
   try {
     const moto = props.motorcycle
@@ -66,37 +82,15 @@ async function save() {
     const desc = description.value.trim()
     const spent = Number(Number(amount.value).toFixed(2))
 
-    if (store.isHttpMode) {
-      await store.createRemote('rentalExpenses', {
-        date: `${todayDateTimeLocal().slice(0, 10)}T00:00:00`,
-        expenseType: 'Maintenance',
-        description: desc,
-        amount: spent,
-        currency: String(moto.currency || preferences.currency || 'USD'),
-      })
-      await store.setStatusRemote('motorcycles', id, 'Maintenance')
-      await store.fetchList('rentalExpenses')
-    }
-    else {
-      const expenseNo = nextExpenseNumber()
-      store.create('rentalExpenses', {
-        expenseNo,
-        date: todayDateTimeLocal().slice(0, 10),
-        expenseType: 'Maintenance',
-        description: desc,
-        amount: spent,
-        currency: String(moto.currency || preferences.currency || 'USD'),
-        motorcycleId: id,
-        motorcycle: String(moto.model || ''),
-        plate: String(moto.plate || ''),
-        code: String(moto.code || ''),
-        createdBy: auth.user?.name || 'Staff',
-      }, 'rx')
-
-      const saved = store.get('motorcycles', id) || moto
-      store.save('motorcycles', { ...saved, id, status: 'Maintenance' })
-      store.addAudit(`Motorcycle maintenance · ${expenseNo}`, 'Motorcycles', String(moto.code || moto.plate || id), desc)
-    }
+    await store.createRemote('rentalExpenses', {
+      date: `${todayDateTimeLocal().slice(0, 10)}T00:00:00`,
+      expenseType: 'Maintenance',
+      description: desc,
+      amount: spent,
+      currency: String(moto.currency || preferences.currency || 'USD'),
+    })
+    await store.setStatusRemote('motorcycles', id, 'Maintenance')
+    await store.fetchList('rentalExpenses')
 
     toast.add({
       title: tx('rental.ui.motorcycleMaintenanceSaved', 'Maintenance recorded and motorcycle set to Maintenance'),

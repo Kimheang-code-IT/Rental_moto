@@ -29,7 +29,7 @@ const CRUD_EXPORT: readonly RolePermissionAction[] = ['view', 'create', 'edit', 
 const RENTALS: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'delete', 'export', 'print', 'return']
 const VIEW_EXPORT: readonly RolePermissionAction[] = ['view', 'export']
 const VIEW_EXPORT_PRINT: readonly RolePermissionAction[] = ['view', 'export', 'print']
-const FINANCE: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'export']
+const FINANCE: readonly RolePermissionAction[] = ['view', 'create', 'edit', 'delete', 'export']
 const SETTINGS: readonly RolePermissionAction[] = ['view', 'edit', 'configure']
 
 /**
@@ -138,6 +138,19 @@ export function permissionRowsToFlatKeys(rows: AppRolePermissionRow[]): string[]
     for (const action of row.actions) keys.add(`${prefix}.${action}`)
   }
   return [...keys].sort()
+}
+
+export function flatKeysToPermissionRows(keys: readonly string[]): AppRolePermissionRow[] {
+  const rows = ROLE_DOCUMENT_TYPES.map(definition => ({
+    id: `perm_${definition.value}`,
+    documentType: definition.value,
+    onlyIfCreator: false,
+    level: 0,
+    actions: keys.includes('ALL_PAGES')
+      ? [...definition.actions]
+      : definition.actions.filter(action => keys.includes(`${definition.permissionPrefix}.${action}`)),
+  }))
+  return normalizePermissionRows(rows)
 }
 
 export type SeedRolePermissionMode = 'all' | 'staff' | 'viewer'

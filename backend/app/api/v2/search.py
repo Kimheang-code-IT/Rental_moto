@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import envelope, get_db_session, require_permission
+from app.api.deps import envelope, get_current_user, get_db_session
+from app.core.permissions import user_has_permission
 from app.models import Motorcycle, Rental, RentalCustomer
 from app.schemas.settings import SearchHit
 
@@ -15,7 +16,7 @@ async def global_search(
     q: str = Query(min_length=1),
     limit: int = Query(default=10, ge=1, le=50),
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("dashboard.view")),
+    user=Depends(get_current_user),
 ) -> dict:
     term = f"%{q.strip().lower()}%"
     hits: list[dict] = []
@@ -26,7 +27,7 @@ async def global_search(
             .where(or_(func.lower(Motorcycle.code).like(term), func.lower(Motorcycle.model).like(term), func.lower(func.coalesce(Motorcycle.plate, "")).like(term)))
             .limit(limit)
         )
-    ).scalars().all()
+    ).scalars().all() if user_has_permission(user, "rental.motorcycles.view") else []
     for m in motos:
         hits.append(
             SearchHit(
@@ -45,12 +46,13 @@ async def global_search(
                 or_(
                     func.lower(RentalCustomer.code).like(term),
                     func.lower(RentalCustomer.full_name).like(term),
+                    func.lower(func.coalesce(RentalCustomer.company, "")).like(term),
                     func.lower(func.coalesce(RentalCustomer.phone, "")).like(term),
                 )
             )
             .limit(limit)
         )
-    ).scalars().all()
+    ).scalars().all() if user_has_permission(user, "rental.customers.view") else []
     for c in customers:
         hits.append(
             SearchHit(
@@ -68,7 +70,7 @@ async def global_search(
             .where(or_(func.lower(Rental.rental_no).like(term), func.lower(Rental.customer).like(term)))
             .limit(limit)
         )
-    ).scalars().all()
+    ).scalars().all() if user_has_permission(user, "rental.rentals.view") else []
     for r in rentals:
         hits.append(
             SearchHit(

@@ -433,10 +433,9 @@ configuration.view
 
 
 
-## 9. Docker Deployment (Backend Only)
+## 9. Docker Deployment (Full Stack)
 
 ```bash
-cd backend
 docker compose up -d
 ```
 
@@ -451,8 +450,9 @@ Services:
 - `worker-export` — CSV/XLSX/PDF export generation
 - `scheduler` — Celery Beat scheduled summaries and maintenance jobs
 - `telegram-bot` — Telegram commands, keyboards, summaries, notifications, and password-reset delivery
+- `frontend` — statically generated Nuxt client served by nginx (no Node runtime)
 
-Frontend runs separately:
+For local frontend development outside Docker:
 
 ```bash
 # In project root
@@ -510,7 +510,7 @@ pnpm dev
 | Auth mock accounts     | `app/utils/auth/mock-login.ts`                |
 | Backend routes         | `backend/app/api/v2/`                         |
 | DB models              | `backend/app/models/`                         |
-| Docker config          | `backend/docker-compose.yml`                  |
+| Docker config          | `docker-compose.yml`                          |
 
 
 ---

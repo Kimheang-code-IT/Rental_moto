@@ -84,6 +84,7 @@ export function moduleFieldToDocumentField(
     key: field.key,
     type,
     options: type === 'boolean' ? extra.options : options,
+    optionsEndpoint: field.optionsEndpoint,
     readOnly: Boolean(field.computed || extra.readOnly),
     meta: Object.keys(meta).length ? meta : extra.meta,
   }
@@ -129,11 +130,20 @@ function relatedTab(): DocumentTabSchema {
   }
 }
 
+function visibleModuleFields(fields: ModuleField[], options: ModuleDocumentTabsOptions): ModuleField[] {
+  return fields.filter((field) => {
+    if (options.isCreate && field.hideOnCreate) return false
+    if (!options.isCreate && field.createOnly) return false
+    return true
+  })
+}
+
 function mapFields(
   fields: ModuleField[],
   readOnlyKeys?: string[],
+  options: ModuleDocumentTabsOptions = {},
 ): DocumentFieldSchema[] {
-  return fields.map(field => moduleFieldToDocumentField(field, {
+  return visibleModuleFields(fields, options).map(field => moduleFieldToDocumentField(field, {
     readOnly: readOnlyKeys?.includes(field.key) || undefined,
   }))
 }
@@ -156,13 +166,15 @@ function groupedFields(fields: ModuleField[]) {
 function fieldsToSections(
   fields: ModuleField[],
   readOnlyKeys?: string[],
+  options: ModuleDocumentTabsOptions = {},
 ): DocumentSectionSchema[] {
-  return groupedFields(fields).map(group => ({
+  const visible = visibleModuleFields(fields, options)
+  return groupedFields(visible).map(group => ({
     id: i18nSlug(group.title),
     titleKey: `app.sections.${i18nSlug(group.title)}`,
     title: group.title,
-    fields: mapFields(group.fields, readOnlyKeys),
-  }))
+    fields: mapFields(group.fields, readOnlyKeys, options),
+  })).filter(section => section.fields.length > 0)
 }
 
 function tableTab(table: ModuleTable, options: ModuleDocumentTabsOptions): DocumentTabSchema {
@@ -185,7 +197,7 @@ function rolesTabs(module: ModuleConfig, options: ModuleDocumentTabsOptions): Do
       {
         id: 'main',
         titleKey: 'core.sections.main',
-        fields: mapFields(module.fields, options.readOnlyKeys),
+        fields: mapFields(module.fields, options.readOnlyKeys, options),
       },
       {
         id: 'permissions',
@@ -210,7 +222,7 @@ function defaultTabs(module: ModuleConfig, options: ModuleDocumentTabsOptions): 
   const tabs: DocumentTabSchema[] = [{
     id: 'details',
     labelKey: 'app.sections.details',
-    sections: fieldsToSections(module.fields, options.readOnlyKeys),
+    sections: fieldsToSections(module.fields, options.readOnlyKeys, options),
   }]
   for (const table of visibleTables(module, options.isCreate)) {
     tabs.push(tableTab(table, options))

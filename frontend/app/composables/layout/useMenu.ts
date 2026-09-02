@@ -20,7 +20,8 @@ export function useMenu() {
     if (import.meta.client) localStorage.setItem(SIDEBAR_COLLAPSED_KEY, value ? '1' : '0')
   }
 
-  if (import.meta.client && !hydrated.value) {
+  onMounted(() => {
+    if (hydrated.value) return
     hydrated.value = true
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY)
     if (saved === '1' || saved === '0') {
@@ -29,7 +30,7 @@ export function useMenu() {
     }
     else applyAutoCollapse(isNarrow.value)
     watch(isNarrow, applyAutoCollapse)
-  }
+  })
 
   const pageLink = (label: string, to: string): NavigationMenuItem => ({ label, to, exact: true, class: 'text-sm gap-2', onSelect: close })
 

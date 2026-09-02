@@ -7,7 +7,7 @@
  */
 
 export interface AuthRefresherOptions {
-  refreshEndpoint: string
+  refreshEndpoint: string | (() => string)
   timeoutMs?: number
   getRefreshToken: () => string | null
   setAccessToken: (token: string | null) => void
@@ -45,7 +45,10 @@ export function createAuthRefresher(options: AuthRefresherOptions) {
     }
     refreshPromise = (async () => {
       try {
-        const response = await post(options.refreshEndpoint, { refreshToken }, options.timeoutMs || 30000)
+        const endpoint = typeof options.refreshEndpoint === 'function'
+          ? options.refreshEndpoint()
+          : options.refreshEndpoint
+        const response = await post(endpoint, { refreshToken }, options.timeoutMs || 30000)
         const payload = response as { data?: { accessToken?: string }, accessToken?: string }
         const accessToken = payload?.data?.accessToken || payload?.accessToken
         if (!accessToken) {

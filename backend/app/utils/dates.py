@@ -10,8 +10,11 @@ def parse_period(period: str) -> tuple[datetime, datetime]:
     if p in ("3_days", "3days", "last_3_days"):
         start = (now - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
         return start, now
-    if p in ("7_days", "7days", "last_7_days", "week"):
+    if p in ("7_days", "7days", "last_7_days", "week", "1_week"):
         start = (now - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+        return start, now
+    if p in ("all", "all_time"):
+        start = datetime(1970, 1, 1, tzinfo=timezone.utc)
         return start, now
     if p in ("1_month", "1month", "month", "30_days", "last_30_days"):
         start = (now - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)

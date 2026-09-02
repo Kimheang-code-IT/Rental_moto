@@ -13,9 +13,15 @@ export interface AppInfoRepository {
   reset: () => Promise<AppInfo>
 }
 
+export interface ResetAllDataResult {
+  message: string
+  requiresReauth?: boolean
+}
+
 export interface AppConfigRepository {
   get: () => Promise<AppConfig>
   update: (input: Partial<AppConfig>) => Promise<AppConfig>
+  resetAllData: () => Promise<ResetAllDataResult>
   testEmailConnection: () => Promise<{ status: ConnectionStatus, message: string }>
   sendTestEmail: (to: string) => Promise<{ status: ConnectionStatus, message: string }>
   testTelegramConnection: () => Promise<{ status: ConnectionStatus, message: string }>

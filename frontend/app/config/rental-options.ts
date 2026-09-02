@@ -21,18 +21,10 @@ export const RENTAL_EXPENSE_TYPES = ['Fuel', 'Maintenance', 'Salary', 'Rent', 'M
 /** Statuses staff can set after return (Progressing is rental-driven). */
 export const MOTORCYCLE_RETURN_STATUSES = ['Available', 'Maintenance'] as const
 
-/** Currency preference options (owner mockup — `CODE — Name` labels). */
+/** Currency options (USD and KHR only). */
 export const RENTAL_CURRENCY_OPTIONS = [
   { label: 'USD — US Dollar', value: 'USD' },
   { label: 'KHR — Cambodian Riel', value: 'KHR' },
-  { label: 'THB — Thai Baht', value: 'THB' },
-  { label: 'VND — Vietnamese Dong', value: 'VND' },
-  { label: 'SGD — Singapore Dollar', value: 'SGD' },
-  { label: 'EUR — Euro', value: 'EUR' },
-  { label: 'GBP — British Pound', value: 'GBP' },
-  { label: 'JPY — Japanese Yen', value: 'JPY' },
-  { label: 'CNY — Chinese Yuan', value: 'CNY' },
-  { label: 'AUD — Australian Dollar', value: 'AUD' },
 ] as const
 
 /** Status → badge color mapping (template convention: color badge + text). */

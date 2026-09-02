@@ -87,6 +87,15 @@ export interface EmailConfig {
   lastTestMessage?: string
 }
 
+export interface TelegramUserAccess {
+  id: string
+  userId?: number
+  userName: string
+  chatId: string
+  chatbotEnabled: boolean
+  groupEnabled: boolean
+}
+
 export interface TelegramDestination {
   id: string
   name: string
@@ -97,6 +106,21 @@ export interface TelegramDestination {
   enabledEvents: NotificationEvent[]
   status: ConnectionStatus
   enabled: boolean
+  isInteractiveGroup?: boolean
+}
+
+export interface TelegramModulePolicy {
+  finance: boolean
+  motorcycles: boolean
+  customers: boolean
+  rentals: boolean
+}
+
+export interface TelegramSensitiveFields {
+  customerName: boolean
+  customerPhone: boolean
+  financialTotals: boolean
+  rentalBalances: boolean
 }
 
 export interface TelegramConfig {
@@ -107,6 +131,10 @@ export interface TelegramConfig {
   connectionMode: TelegramConnectionMode
   defaultDestinationId?: string
   chatId: string
+  interactiveGroupEnabled: boolean
+  interactiveGroupId: string
+  allowedModules: TelegramModulePolicy
+  sensitiveFields: TelegramSensitiveFields
   messageLanguage: 'en' | 'km'
   includeRecordLink: boolean
   includeBusinessName: boolean
@@ -117,6 +145,9 @@ export interface TelegramConfig {
   notifyPayment: boolean
   notifyCharge: boolean
   notifyExpense: boolean
+  deadlineReminderEnabled: boolean
+  deadlineReminderValue: number
+  deadlineReminderUnit: 'minutes' | 'hours' | 'days'
   dailySummaryEnabled: boolean
   dailySummaryTime: string
   monthlySummaryEnabled: boolean
@@ -130,6 +161,7 @@ export interface TelegramConfig {
   lastTestedAt?: string
   lastTestMessage?: string
   destinations: TelegramDestination[]
+  userAccess: TelegramUserAccess[]
   messageTemplate: string
 }
 
@@ -265,6 +297,10 @@ export const NOTIFICATION_EVENTS: NotificationEvent[] = [
   'meeting_created',
   'file_uploaded',
 ]
+
+export const TELEGRAM_NOTIFICATION_EVENTS: NotificationEvent[] = NOTIFICATION_EVENTS.filter(
+  event => event !== 'password_reset_requested',
+)
 
 export const TELEGRAM_TEMPLATE_VARIABLES = [
   '{{record_number}}',

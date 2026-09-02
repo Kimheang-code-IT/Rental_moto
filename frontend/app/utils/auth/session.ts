@@ -4,15 +4,18 @@ export const AUTH_STORAGE_KEY = 'rental-auth-user'
 
 /** Cookie-safe user: drop bulky permission lists that overflow the 4KB cookie limit. */
 export function compactAuthUser(user: AuthUser): AuthUser {
-  const isAllAccess = user.role === 'SuperAdmin' || user.pageAccess?.includes('ALL_PAGES')
+  const effective = user.effectivePermissions ?? user.permissions ?? user.pageAccess ?? []
+  const isAllAccess = effective.includes('ALL_PAGES')
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
+    roleId: user.roleId,
     avatar: user.avatar,
-    pageAccess: isAllAccess ? ['ALL_PAGES'] : user.pageAccess,
-    permissions: isAllAccess ? undefined : user.permissions,
+    effectivePermissions: isAllAccess ? ['ALL_PAGES'] : effective,
+    pageAccess: isAllAccess ? ['ALL_PAGES'] : effective,
+    permissions: isAllAccess ? ['ALL_PAGES'] : effective,
     sourcePermissions: user.sourcePermissions,
   }
 }

@@ -5,8 +5,6 @@ import { usePreferencesStore, type AppLocale } from '~/stores/preferences'
 const preferences = usePreferencesStore()
 const { locale, locales } = useI18n()
 
-preferences.hydrate()
-
 const currentLabel = computed(() => {
   const match = (locales.value || []).find((loc: { code?: string }) => loc.code === locale.value)
   return match?.name || String(locale.value).toUpperCase()

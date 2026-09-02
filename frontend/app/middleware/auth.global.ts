@@ -15,13 +15,18 @@ export default defineNuxtRouteMiddleware((to, from) => {
   const auth = useAuthStore()
   const { showPermissionDenied } = useAccessAlert()
 
+  if (import.meta.client && auth.user && !auth.hasSessionTokens()) {
+    auth.clearSession()
+  }
+
   const publicPaths = [
     '/auth/login',
     '/auth/forget-password',
     '/auth/verify-code',
     '/auth/reset-password',
   ]
-  const isPublicPage = publicPaths.includes(to.path)
+  const path = to.path.replace(/\/+$/, '') || '/'
+  const isPublicPage = publicPaths.includes(path)
 
   if (!auth.isLoggedIn && !isPublicPage) {
     return navigateTo({

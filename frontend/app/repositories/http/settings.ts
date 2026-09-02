@@ -1,4 +1,4 @@
-import type { AppConfigRepository, AppInfoRepository } from '~/repositories/contracts/settings'
+import type { AppConfigRepository, AppInfoRepository, ResetAllDataResult } from '~/repositories/contracts/settings'
 import type { ApiResponse } from '~/types/rental/common'
 import type { AppConfig, AppInfo, ConnectionStatus } from '~/types/rental/settings'
 import { ApiEndpoints } from '~/utils/constants/api-endpoints'
@@ -23,6 +23,9 @@ export function createHttpAppConfigRepository(): AppConfigRepository {
   return {
     get: async () => unwrapApiData(await api.get<AppConfig | ApiResponse<AppConfig>>(ApiEndpoints.APP_CONFIG)),
     update: async input => unwrapApiData(await api.patch<AppConfig | ApiResponse<AppConfig>>(ApiEndpoints.APP_CONFIG, input)),
+    resetAllData: async () => unwrapApiData(
+      await api.post<ResetAllDataResult | ApiResponse<ResetAllDataResult>>(ApiEndpoints.RESET_ALL_DATA, {}),
+    ),
     testEmailConnection: () => postResult(ApiEndpoints.APP_CONFIG_TEST_EMAIL),
     sendTestEmail: to => postResult(ApiEndpoints.APP_CONFIG_SEND_TEST_EMAIL, { to }),
     testTelegramConnection: () => postResult(ApiEndpoints.APP_CONFIG_TEST_TELEGRAM),

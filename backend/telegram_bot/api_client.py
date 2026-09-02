@@ -7,7 +7,7 @@ logger = logging.getLogger("hollywing.bot.api")
 
 
 class ApiClient:
-    """FastAPI client using short-lived service JWTs."""
+    """FastAPI client using short-lived service JWTs and Telegram context headers."""
 
     def __init__(self, base_url: str, client_id: str, client_secret: str) -> None:
         self.base_url = base_url.rstrip("/")
@@ -30,33 +30,57 @@ class ApiClient:
             self._token_exp = time.time() + data.get("expiresIn", 600)
             return self._token
 
-    async def get(self, path: str, params: dict | None = None, user_token: str | None = None) -> dict:
-        token = user_token or await self._ensure_token()
+    def _context_headers(
+        self,
+        telegram_user_id: str | None,
+        telegram_chat_id: str | None,
+        telegram_chat_type: str | None,
+    ) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        if telegram_user_id:
+            headers["X-Telegram-User-Id"] = str(telegram_user_id)
+        if telegram_chat_id:
+            headers["X-Telegram-Chat-Id"] = str(telegram_chat_id)
+        if telegram_chat_type:
+            headers["X-Telegram-Chat-Type"] = str(telegram_chat_type)
+        return headers
+
+    async def get(
+        self,
+        path: str,
+        params: dict | None = None,
+        *,
+        telegram_user_id: str | None = None,
+        telegram_chat_id: str | None = None,
+        telegram_chat_type: str | None = None,
+    ) -> dict:
+        token = await self._ensure_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        headers.update(self._context_headers(telegram_user_id, telegram_chat_id, telegram_chat_type))
         async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.get(
-                f"{self.base_url}{path}",
-                params=params,
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            if response.status_code == 401 and user_token is None:
+            response = await client.get(f"{self.base_url}{path}", params=params, headers=headers)
+            if response.status_code == 401:
                 self._token = None
                 token = await self._ensure_token()
-                response = await client.get(
-                    f"{self.base_url}{path}",
-                    params=params,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
+                headers["Authorization"] = f"Bearer {token}"
+                response = await client.get(f"{self.base_url}{path}", params=params, headers=headers)
             response.raise_for_status()
             return response.json()
 
-    async def post(self, path: str, payload: dict | None = None, user_token: str | None = None) -> dict:
-        token = user_token or await self._ensure_token()
+    async def post(
+        self,
+        path: str,
+        payload: dict | None = None,
+        *,
+        telegram_user_id: str | None = None,
+        telegram_chat_id: str | None = None,
+        telegram_chat_type: str | None = None,
+    ) -> dict:
+        token = await self._ensure_token()
+        headers = {"Authorization": f"Bearer {token}"}
+        headers.update(self._context_headers(telegram_user_id, telegram_chat_id, telegram_chat_type))
         async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(
-                f"{self.base_url}{path}",
-                json=payload or {},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+            response = await client.post(f"{self.base_url}{path}", json=payload or {}, headers=headers)
             response.raise_for_status()
             return response.json()
 

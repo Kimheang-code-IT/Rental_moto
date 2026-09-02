@@ -27,7 +27,7 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(80), nullable=False, default="Rental Staff")
-    role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id", ondelete="SET NULL"), nullable=True)
+    role_id: Mapped[int] = mapped_column(ForeignKey("roles.id", ondelete="RESTRICT"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="Active")
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     permissions: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -38,6 +38,6 @@ class User(Base, TimestampMixin):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    role_ref: Mapped["Role | None"] = relationship("Role", foreign_keys=[role_id], lazy="joined")
+    role_ref: Mapped["Role"] = relationship("Role", foreign_keys=[role_id], lazy="joined")
 
 

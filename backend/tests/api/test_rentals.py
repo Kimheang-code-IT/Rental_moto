@@ -172,6 +172,23 @@ async def test_overdue_detection_on_list(client, admin_headers):
     assert statuses.get(rental_id) == "Overdue"
 
 
+async def test_rental_update_active(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    created = await client.post("/api/v2/rentals", headers=admin_headers, json=_rental_payload(moto, customer))
+    rental = created.json()["data"][0]
+
+    new_due = datetime.now(timezone.utc) + timedelta(days=7)
+    updated = await client.put(
+        f"/api/v2/rentals/{rental['id']}",
+        headers=admin_headers,
+        json={"dueDate": new_due.isoformat(), "discount": 2},
+    )
+    assert updated.status_code == 200, updated.text
+    data = updated.json()["data"]
+    assert data["discount"] == "2.00"
+    assert data["durationDays"] == 7
+
+
 async def test_rental_delete_only_when_cancelled(client, admin_headers):
     moto, customer = await _setup(client, admin_headers)
     created = await client.post("/api/v2/rentals", headers=admin_headers, json=_rental_payload(moto, customer))

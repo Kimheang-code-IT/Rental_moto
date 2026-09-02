@@ -20,7 +20,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 @router.get("/app-info")
 async def get_app_info(
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.read")),
+    user=Depends(require_permission("settings.app_config.view")),
 ) -> dict:
     service = SettingService(session)
     return envelope(await service.get_app_info())
@@ -30,7 +30,7 @@ async def get_app_info(
 async def patch_app_info(
     body: AppInfoUpdate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.edit")),
 ) -> dict:
     service = SettingService(session, user)
     updated = await service.update_app_info(body.model_dump(exclude_unset=True, by_alias=True))
@@ -41,7 +41,7 @@ async def patch_app_info(
 async def put_app_info(
     body: AppInfoUpdate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.edit")),
 ) -> dict:
     return await patch_app_info(body, session, user)
 
@@ -49,16 +49,25 @@ async def put_app_info(
 @router.post("/app-info/reset")
 async def reset_app_info(
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     service = SettingService(session, user)
     return envelope(await service.reset_app_info())
 
 
+@router.post("/reset-data")
+async def reset_all_data(
+    session: AsyncSession = Depends(get_db_session),
+    user=Depends(require_permission("settings.app_config.configure")),
+) -> dict:
+    service = SettingService(session, user)
+    return envelope(await service.reset_all_data())
+
+
 @router.get("/app-config")
 async def get_app_config(
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.read")),
+    user=Depends(require_permission("settings.app_config.view")),
 ) -> dict:
     service = SettingService(session)
     return envelope(await service.get_app_config(mask=True))
@@ -68,7 +77,7 @@ async def get_app_config(
 async def patch_app_config(
     body: AppConfigUpdate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.edit")),
 ) -> dict:
     service = SettingService(session, user)
     updated = await service.update_app_config(body.model_dump(exclude_unset=True, by_alias=True))
@@ -79,7 +88,7 @@ async def patch_app_config(
 async def put_app_config(
     body: AppConfigUpdate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.edit")),
 ) -> dict:
     return await patch_app_config(body, session, user)
 
@@ -87,7 +96,7 @@ async def put_app_config(
 @router.post("/app-config/email/test-connection")
 async def email_test_connection(
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     result = await test_email_connection(session)
     return envelope(result)
@@ -97,7 +106,7 @@ async def email_test_connection(
 async def email_send_test(
     body: TestEmailRequest,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     result = await test_email_connection(session, send_to=body.to)
     return envelope(result)
@@ -106,7 +115,7 @@ async def email_send_test(
 @router.post("/app-config/telegram/test-connection")
 async def telegram_test_connection(
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     result = await test_telegram_connection(session)
     return envelope(result)
@@ -116,7 +125,7 @@ async def telegram_test_connection(
 async def telegram_send_test(
     body: TestTelegramRequest,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     result = await test_telegram_connection(session, destination_id=body.destination_id, send_message=True)
     return envelope(result)
@@ -125,7 +134,7 @@ async def telegram_send_test(
 @router.get("/storage")
 async def list_storage(
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.read")),
+    user=Depends(require_permission("settings.app_config.view")),
 ) -> dict:
     service = StorageProviderService(session)
     providers = await service.list()
@@ -136,7 +145,7 @@ async def list_storage(
 async def create_storage(
     body: StorageProviderCreate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     service = StorageProviderService(session)
     provider = await service.create(body, user.id if user else None)
@@ -147,7 +156,7 @@ async def create_storage(
 async def get_storage(
     provider_id: str,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.read")),
+    user=Depends(require_permission("settings.app_config.view")),
 ) -> dict:
     service = StorageProviderService(session)
     return envelope(await service.get(provider_id))
@@ -158,7 +167,7 @@ async def update_storage(
     provider_id: str,
     body: StorageProviderUpdate,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     service = StorageProviderService(session)
     return envelope(await service.update(provider_id, body, user.id if user else None))
@@ -168,7 +177,7 @@ async def update_storage(
 async def delete_storage(
     provider_id: str,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     service = StorageProviderService(session)
     await service.delete(provider_id)
@@ -179,7 +188,7 @@ async def delete_storage(
 async def test_storage(
     provider_id: str,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     service = StorageProviderService(session)
     return envelope(await service.test_connection(provider_id))
@@ -189,7 +198,7 @@ async def test_storage(
 async def set_default_storage(
     provider_id: str,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     service = StorageProviderService(session)
     return envelope(await service.set_flag(provider_id, is_default=True))
@@ -199,7 +208,7 @@ async def set_default_storage(
 async def set_active_storage(
     provider_id: str,
     session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.update")),
+    user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
     service = StorageProviderService(session)
     return envelope(await service.set_flag(provider_id, active=True))

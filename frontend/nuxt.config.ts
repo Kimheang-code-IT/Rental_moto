@@ -2,6 +2,9 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 export default defineNuxtConfig({
+  // Generate a client-side static application for nginx/Docker deployment.
+  ssr: false,
+
   modules: [
     '@nuxt/ui',
     '@vueuse/nuxt',
@@ -36,15 +39,22 @@ export default defineNuxtConfig({
     enabled: import.meta.env.DEV
   },
 
+  devServer: {
+    host: '0.0.0.0',
+    port: 3000,
+  },
+
   runtimeConfig: {
+    // Overridden at runtime by NUXT_API_INTERNAL_BASE (Docker: http://api:8000).
+    apiInternalBase: 'http://127.0.0.1:8000',
     public: {
-      apiBase: import.meta.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000',
+      // `auto` uses the page hostname with port 8000 — works for LAN/Wi‑Fi access.
+      apiBase: import.meta.env.NUXT_PUBLIC_API_BASE || 'auto',
       apiTimeoutMs: Number(import.meta.env.NUXT_PUBLIC_API_TIMEOUT_MS || 30000),
       authMode: import.meta.env.NUXT_PUBLIC_AUTH_MODE === 'cookie' ? 'cookie' : 'bearer',
       csrfCookieName: import.meta.env.NUXT_PUBLIC_CSRF_COOKIE_NAME || 'XSRF-TOKEN',
       csrfHeaderName: import.meta.env.NUXT_PUBLIC_CSRF_HEADER_NAME || 'X-CSRF-Token',
-      // Current release is mock-first. Set false later when the HTTP API is available.
-      useMockData: import.meta.env.NUXT_PUBLIC_USE_MOCK_DATA !== 'false',
+      useMockData: import.meta.env.NUXT_PUBLIC_USE_MOCK_DATA === 'true',
       appVersion: import.meta.env.NUXT_PUBLIC_APP_VERSION || '0.1.0',
       // Canonical public origin for Open Graph / Twitter image URLs (no trailing slash).
       // Example: https://app.rental.com — required for link previews to show images.
@@ -137,7 +147,7 @@ export default defineNuxtConfig({
   },
 
   nitro: {
-    preset: 'vercel'
+    preset: 'static',
   },
 
   compatibilityDate: '2024-07-11',

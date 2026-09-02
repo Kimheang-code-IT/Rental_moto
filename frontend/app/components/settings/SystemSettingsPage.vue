@@ -21,6 +21,7 @@ const pending = ref(true)
 const saving = ref(false)
 const testingEmail = ref(false)
 const testingTelegram = ref(false)
+const resettingData = ref(false)
 const activeTab = ref('localization')
 const model = ref<AppConfig | null>(null)
 
@@ -65,10 +66,13 @@ function fieldValue(key: string): unknown {
     return value
   }
 
-  if (key === '__securityAlert') return null
-
   // Select options use string values; coerce number fields for USelect match.
-  if (key === 'general.defaultPageSize' || key === 'system.paginationDefault' || key === 'localization.firstDayOfWeek') {
+  if (key === 'general.defaultPageSize' || key === 'system.paginationDefault') {
+    const raw = getByPath(model.value, key)
+    return raw == null || raw === '' ? undefined : String(raw)
+  }
+
+  if (key === 'localization.firstDayOfWeek') {
     const raw = getByPath(model.value, key)
     return raw == null || raw === '' ? undefined : String(raw)
   }
@@ -79,7 +83,7 @@ function fieldValue(key: string): unknown {
 async function setFieldValue(key: string, value: unknown) {
   if (!model.value) return
 
-  if (key === '__emailConnection' || key === '__telegramConnection' || key === '__securityAlert') {
+  if (key === '__emailConnection' || key === '__telegramConnection') {
     return
   }
 
@@ -97,10 +101,15 @@ async function setFieldValue(key: string, value: unknown) {
     return
   }
 
-  if (key === 'general.defaultPageSize' || key === 'system.paginationDefault' || key === 'localization.firstDayOfWeek') {
+  if (key === 'general.defaultPageSize' || key === 'system.paginationDefault') {
     const n = Number(value)
-    const fallback = key === 'localization.firstDayOfWeek' ? 1 : 20
-    setByPath(model.value, key, Number.isFinite(n) ? n : fallback)
+    setByPath(model.value, key, Number.isFinite(n) ? n : 20)
+    return
+  }
+
+  if (key === 'localization.firstDayOfWeek') {
+    const day = Number(value)
+    setByPath(model.value, key, day === 0 || day === 1 || day === 6 ? day : 1)
     return
   }
 
@@ -113,6 +122,7 @@ async function save() {
   try {
     model.value = await appConfig.update(model.value)
     appLocalization.apply(model.value.localization)
+    usePreferencesStore().setCurrency(model.value.localization.currency)
     usePreferencesStore().syncLocaleWithConfig()
     toast.add({ title: t('core.common.saved'), color: 'success' })
   }
@@ -156,6 +166,30 @@ async function testTelegram() {
   }
 }
 
+async function resetAllData() {
+  const ok = await confirm({
+    kind: 'generic',
+    titleKey: 'core.settings.resetDataConfirmTitle',
+    descriptionKey: 'core.settings.resetDataConfirmHelp',
+    confirmLabelKey: 'core.settings.resetDataAction',
+    confirmColor: 'error',
+  })
+  if (!ok) return
+
+  resettingData.value = true
+  try {
+    await appConfig.resetAllData()
+    toast.add({ title: t('core.settings.resetDataSuccess'), color: 'success' })
+    await auth.logout()
+  }
+  catch (error: unknown) {
+    toast.add({ title: errorMessage(error, t('core.settings.resetDataFailed')), color: 'error' })
+  }
+  finally {
+    resettingData.value = false
+  }
+}
+
 onMounted(() => void load())
 useAppPageTitle(() => t('app.pages.settings'))
 </script>
@@ -186,6 +220,27 @@ useAppPageTitle(() => t('app.pages.settings'))
         :loading="testingTelegram"
         @click="testTelegram"
       />
+    </template>
+
+    <template v-if="activeTab === 'security' && canConfigure" #after-form>
+      <DocumentAppDocumentContentShell wide class="space-y-4 pb-6">
+        <UAlert
+          color="error"
+          variant="subtle"
+          :title="t('core.settings.resetDataTitle')"
+          :description="t('core.settings.resetDataHelp')"
+        />
+        <UButton
+          color="error"
+          variant="soft"
+          icon="i-lucide-database-zap"
+          :loading="resettingData"
+          :disabled="resettingData"
+          @click="resetAllData"
+        >
+          {{ t('core.settings.resetDataAction') }}
+        </UButton>
+      </DocumentAppDocumentContentShell>
     </template>
   </DocumentAppDocumentPage>
 </template>

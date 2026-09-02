@@ -48,7 +48,11 @@ export function useReferenceOptions() {
       requestKey: `field-options:${endpoint}`,
       cancelPrevious: true,
     })
-    return Array.isArray(response) ? response : response.data
+    const rows = Array.isArray(response) ? response : response.data
+    return (rows || []).map((row: FieldOption & { id?: string | number, name?: string }) => ({
+      label: String(row.label ?? row.name ?? row.value ?? row.id ?? ''),
+      value: String(row.value ?? row.id ?? ''),
+    })).filter(row => row.value)
   }
 
   async function loadReferenceOptions(endpoint: string, search = '') {

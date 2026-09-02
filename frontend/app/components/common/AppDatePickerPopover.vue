@@ -7,6 +7,8 @@ import {
   mergeDateWithTime,
   toCalendarDate,
 } from '~/utils/date-picker'
+import { useAppLocalization } from '~/composables/settings/useAppLocalization'
+import { isHour12TimeFormat, timeFormatHasSeconds } from '~/utils/format/localization-config'
 
 const props = withDefaults(defineProps<{
   mode?: 'single' | 'range'
@@ -26,6 +28,12 @@ const modelValue = defineModel<DateValue | undefined>()
 const rangeValue = defineModel<{ start: DateValue, end: DateValue } | undefined>('rangeValue')
 
 const { t } = useI18n()
+const { localization } = useAppLocalization()
+
+const calendarLocale = computed(() => localization.value.locale)
+const weekStartsOn = computed(() => localization.value.firstDayOfWeek)
+const hourCycle = computed(() => isHour12TimeFormat(localization.value.timeFormat) ? 12 : 24)
+const timeGranularity = computed(() => timeFormatHasSeconds(localization.value.timeFormat) ? 'second' : 'minute')
 
 const isDateTime = computed(() => isDateTimeGranularity(props.granularity))
 const calendarSize = computed(() => 'xs' as const)
@@ -210,6 +218,8 @@ const dayRangeCalendar = computed({
       :paged-navigation="true"
       :size="calendarSize"
       :disabled="disabled"
+      :locale="calendarLocale"
+      :week-starts-on="weekStartsOn"
     />
     <UCalendar
       v-else-if="!isDateTime"
@@ -221,6 +231,8 @@ const dayRangeCalendar = computed({
       :paged-navigation="true"
       :size="calendarSize"
       :disabled="disabled"
+      :locale="calendarLocale"
+      :week-starts-on="weekStartsOn"
     />
     <UCalendar
       v-else
@@ -232,6 +244,8 @@ const dayRangeCalendar = computed({
       :paged-navigation="true"
       :size="calendarSize"
       :disabled="disabled"
+      :locale="calendarLocale"
+      :week-starts-on="weekStartsOn"
     />
 
     <div
@@ -245,6 +259,9 @@ const dayRangeCalendar = computed({
         variant="outline"
         size="sm"
         :disabled="disabled"
+        :locale="calendarLocale"
+        :hour-cycle="hourCycle"
+        :granularity="timeGranularity"
         class="min-w-0 flex-1"
       />
       <div
@@ -261,6 +278,9 @@ const dayRangeCalendar = computed({
             variant="outline"
             size="sm"
             :disabled="disabled"
+            :locale="calendarLocale"
+            :hour-cycle="hourCycle"
+            :granularity="timeGranularity"
             class="w-full"
           />
         </div>
@@ -274,6 +294,9 @@ const dayRangeCalendar = computed({
             variant="outline"
             size="sm"
             :disabled="disabled"
+            :locale="calendarLocale"
+            :hour-cycle="hourCycle"
+            :granularity="timeGranularity"
             class="w-full"
           />
         </div>

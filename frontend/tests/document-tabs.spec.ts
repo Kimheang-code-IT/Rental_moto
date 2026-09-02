@@ -37,6 +37,16 @@ describe('document lifecycle status', () => {
     expect(fields.some(field => field.key === 'name')).toBe(true)
   })
 
+  it('omits Active/Inactive status from the user form', () => {
+    const tabs = moduleDocumentTabs(moduleFixture({
+      path: '/administration/users',
+      collection: 'users',
+      permission: 'admin.users.view',
+    }))
+    const fields = tabs.flatMap(tab => tab.sections.flatMap(section => section.fields))
+    expect(fields.some(field => field.key === 'status')).toBe(false)
+  })
+
   it('also removes status from custom module tabs', () => {
     const tabs = moduleDocumentTabs(moduleFixture({
       tabs: [{

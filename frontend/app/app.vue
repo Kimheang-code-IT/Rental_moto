@@ -2,12 +2,18 @@
 import { en, km } from '@nuxt/ui/locale'
 import { useSettingsRepositories } from '~/repositories'
 import { useAppBranding } from '~/composables/settings/useAppBranding'
+import { useAppLocalization } from '~/composables/settings/useAppLocalization'
+import { useAuth } from '~/composables/auth/useAuth'
 import { usePreferencesStore } from '~/stores/preferences'
 
 const colorMode = useColorMode()
 const { locale, t } = useI18n()
 const { applyFromAppInfo } = useAppBranding()
 const preferences = usePreferencesStore()
+const auth = useAuthStore()
+const { appInfo } = useSettingsRepositories()
+const { hydrateSessionFromApi } = useAuth()
+const runtimeConfig = useRuntimeConfig()
 
 const uiLocales: Record<string, typeof en> = { en, km }
 
@@ -24,12 +30,31 @@ const { absoluteUrl, absolutePageUrl } = useSeoAbsoluteUrl()
 const defaultOgImage = computed(() => absoluteUrl('/og-image.png'))
 const pageUrl = computed(() => absolutePageUrl())
 
+async function hydrateStartup() {
+  await preferences.hydrate()
+
+  // Revalidate a restored bearer session from component setup. Calling
+  // useAuth() inside a Nuxt plugin reaches useI18n() outside Vue setup and
+  // aborts application initialization on a full page reload.
+  if (runtimeConfig.public.authMode === 'bearer') {
+    await hydrateSessionFromApi()
+  }
+
+  // App info is protected. Do not request it on public auth pages because an
+  // expected 401 would be mistaken for an expired signed-in session.
+  if (auth.isLoggedIn) {
+    await Promise.all([
+      appInfo.get()
+        .then(info => applyFromAppInfo(info))
+        .catch(() => applyFromAppInfo(null)),
+      useAppLocalization().load(),
+    ])
+  }
+}
+
 onMounted(() => {
-  void preferences.hydrate()
-  // Non-blocking branding hydrate — do not stall first paint
-  void useSettingsRepositories().appInfo.get()
-    .then(info => applyFromAppInfo(info))
-    .catch(() => applyFromAppInfo(null))
+  // Non-blocking startup hydration — do not stall first paint.
+  void hydrateStartup()
 })
 
 useHead({

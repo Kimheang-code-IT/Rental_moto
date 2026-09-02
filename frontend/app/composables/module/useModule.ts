@@ -3,9 +3,10 @@ import { UBadge } from '#components'
 import type { AppHeaderBadge } from '~/composables/layout/useAppHeader'
 import type { ModuleAction, ModuleField, ModuleConfig, ModuleRelated, ModuleTable } from '~/config/modules'
 import { getModule } from '~/config/modules'
-import { isMoneyKey } from '~/utils/module/field-keys'
+import type { ModuleFieldType } from '~/config/modules'
+import { isMoneyKey, isDateFieldKey, isDateTimeFieldKey } from '~/utils/module/field-keys'
 import { documentSequenceTypeLabel } from '~/utils/document-sequences'
-import { formatMoney as formatMoneyValue, formatNumber as formatNumberValue } from '~/utils/format/format-service'
+import { formatDate, formatDateTime, formatMoney as formatMoneyValue, formatNumber as formatNumberValue } from '~/utils/format/format-service'
 import { codeTitle, labeledStatusOptions, shortDay } from '~/utils/module/format'
 
 export { codeTitle, labeledStatusOptions, shortDay }
@@ -104,13 +105,13 @@ export function emptyModuleRecord(module: ModuleConfig) {
   for (const table of module.tables || []) {
     record[table.key] = table.presets ? table.presets.map(row => ({ ...row })) : []
   }
-  if (module.collection === 'roles') {
+  if (module.collection === 'roles' || module.collection === 'users') {
     record.permissionRows = []
     record.userCount = 0
     record.permissionCount = 0
   }
   if (module.collection === 'documentSequences') {
-    record.year = new Date().getFullYear()
+    record.year = null
     record.lastValue = 0
     record.paddingLength = 6
     record.status = 'ACTIVE'
@@ -149,12 +150,25 @@ export function formatMoney(value: unknown, currency?: string) {
   return formatMoneyValue(value, currency)
 }
 
-export function formatModuleCell(value: unknown, key: string, currency?: string) {
+export function formatModuleCell(
+  value: unknown,
+  key: string,
+  currency?: string,
+  fieldType?: ModuleFieldType,
+) {
+  if (value == null || value === '') return '—'
   if (key === 'documentType') return documentSequenceTypeLabel(value)
   if (isMoneyKey(key)) return formatMoney(value, currency)
+
+  const resolvedType = fieldType
+    || (isDateTimeFieldKey(key) ? 'datetime' : isDateFieldKey(key) ? 'date' : undefined)
+  if (resolvedType === 'datetime') return formatDateTime(value)
+  if (resolvedType === 'date') return formatDate(value)
+
   if (typeof value === 'number') return formatNumberValue(value)
   if (Array.isArray(value)) return value.map(item => String(item ?? '').trim()).filter(Boolean).join(', ') || '—'
-  const text = String(value ?? '').trim()
+  const text = String(value).trim()
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return formatDateTime(text)
   return text || '—'
 }
 

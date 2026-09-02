@@ -27,7 +27,7 @@ const emit = defineEmits<{
   'update:modelValue': [string]
 }>()
 
-const { localization } = useAppLocalization()
+const { localization, formatTime } = useAppLocalization()
 const open = ref(false)
 const anchor = useTemplateRef<HTMLElement | null>('anchor')
 const textInput = useTemplateRef<{ inputRef?: HTMLInputElement } | null>('textInput')
@@ -57,8 +57,7 @@ const displayValue = computed(() => {
     if (parsed) {
       const datePart = patternToken(parsed)
       if (!isDateTime.value) return datePart
-      const time = props.modelValue.slice(11, 16)
-      return time ? `${datePart} ${time}` : datePart
+      return `${datePart} ${formatTime(props.modelValue, '')}`.trim()
     }
   }
   return String(props.modelValue ?? '')

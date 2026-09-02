@@ -12,6 +12,7 @@ import {
   useModuleLabel,
   useModuleRoute,
 } from '~/composables/module/useModule'
+import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import type { AppRecord } from '~/config/admin-seed'
 import { appModules, type ModuleSelectOption } from '~/config/modules'
 import { isMoneyKey, isNumericKey } from '~/utils/module/field-keys'
@@ -19,12 +20,16 @@ import { limitFilterSelects, parseFilterQuery } from '~/utils/filter/values'
 import { isFilterValueActive } from '~/utils/filter/select-ui'
 import { listTableRowMetaColumn, listTableSelectColumn } from '~/utils/table/list-columns'
 import { listTablePageSummary, listTableSelectedIds } from '~/utils/table/list-table'
-import { documentSequenceTypeLabel, isDocumentSequenceType } from '~/utils/document-sequences'
+import { documentSequenceTypeLabel } from '~/utils/document-sequences'
+import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 import { normalizeAuditLog, resolveAuditEntityPath } from '~/utils/module/audit-logs'
 import { latestRentalPaymentMethods } from '~/utils/rental/payments'
 import { useRentalCommands } from '~/repositories/index'
 import { PAYMENT_METHODS, RENTAL_CHARGE_TYPES } from '~/config/rental-options'
+import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
 import { toIsoZonedOrNow } from '~/utils/api/datetime'
+import type { ExportFieldOption, ExportRequest } from '~/types/rental/export'
+import { useServerExport } from '~/composables/common/useServerExport'
 
 const { module, route } = useModuleRoute()
 const store = useAppDataStore()
@@ -34,6 +39,10 @@ const { fieldLabel, moduleTitle, moduleSingular } = useModuleLabel()
 const { setTitle, setBreadcrumbs, clear } = useAppHeader()
 const { confirm } = useConfirm()
 const toast = useToast()
+const api = useApi()
+const rentalCommands = useRentalCommands()
+const { request: requestServerExport, running: exportRunning } = useServerExport()
+const seedingDocumentSequences = ref(false)
 
 const q = ref('')
 const pagination = ref<PaginationState>({ pageIndex: 0, pageSize: 20 })
@@ -41,6 +50,7 @@ const filters = reactive<Record<string, string[]>>({})
 const rowSelection = ref<Record<string, boolean>>({})
 const busyId = ref('')
 const preferences = usePreferencesStore()
+const { localization } = useAppLocalization()
 const rentalCloseOpen = ref(false)
 const rentalModalRow = ref<Record<string, unknown> | null>(null)
 const rentalInvoiceRow = ref<Record<string, unknown> | null>(null)
@@ -49,10 +59,12 @@ const motorcycleMaintenanceRow = ref<Record<string, unknown> | null>(null)
 const rentalPaymentRow = ref<Record<string, unknown> | null>(null)
 const rentalChargeRow = ref<Record<string, unknown> | null>(null)
 const financeModalBusy = ref(false)
-const financePaymentMethod = ref<(typeof PAYMENT_METHODS)[number]>(PAYMENT_METHODS[0])
+const paymentMethodOptions = useCreatableOptionList(PAYMENT_METHODS)
+const chargeTypeOptions = useCreatableOptionList(RENTAL_CHARGE_TYPES)
+const financePaymentMethod = ref<string>(PAYMENT_METHODS[0])
 const financePaymentAmount = ref<number | undefined>()
 const financePaymentReference = ref('')
-const financeChargeType = ref<(typeof RENTAL_CHARGE_TYPES)[number]>(RENTAL_CHARGE_TYPES[0])
+const financeChargeType = ref<string>(RENTAL_CHARGE_TYPES[0])
 const financeChargeDescription = ref('')
 const financeChargeAmount = ref<number | undefined>()
 const dateFrom = ref('')
@@ -62,14 +74,33 @@ const current = computed(() => module.value)
 const isHttpMode = computed(() => store.isHttpMode)
 const pending = computed(() => Boolean(current.value && store.isLoading(current.value.collection)))
 const isTableOnly = computed(() => Boolean(current.value?.tableOnly))
-const canManageModule = computed(() => {
-  if (!current.value) return false
-  if (auth.user?.pageAccess?.includes('ALL_PAGES')) return true
-  if (current.value.group === 'master' || current.value.group === 'configuration') return false
-  return true
-})
-const canCreate = computed(() => Boolean(current.value?.canCreate && !current.value.readOnly && canManageModule.value))
-const canMutate = computed(() => Boolean(current.value) && !current.value?.readOnly && canManageModule.value)
+const permissionPrefix = computed(() => current.value?.permission.replace(/\.view$/, '') || '')
+const canCreate = computed(() => Boolean(
+  current.value?.canCreate
+  && !current.value.readOnly
+  && auth.canAccessPage(`${permissionPrefix.value}.create`),
+))
+const canEdit = computed(() => Boolean(
+  current.value
+  && !current.value.readOnly
+  && auth.canAccessPage(`${permissionPrefix.value}.edit`),
+))
+const canDelete = computed(() => Boolean(
+  current.value
+  && !current.value.readOnly
+  && auth.canAccessPage(`${permissionPrefix.value}.delete`),
+))
+const exportResource = computed(() => ({
+  motorcycles: 'motorcycles',
+  rentalCustomers: 'customers',
+  rentals: 'rentals',
+  auditLogs: 'audit_logs',
+} as Record<string, string>)[current.value?.collection || ''] || '')
+const canExport = computed(() => Boolean(exportResource.value) && auth.canAccessPage(`${permissionPrefix.value}.export`))
+const exportFields = computed<ExportFieldOption[]>(() => (current.value?.columns || []).map(column => ({
+  label: fieldLabel(column),
+  value: column.key,
+})))
 const deactivationOnly = computed(() => current.value?.group === 'master' || current.value?.collection === 'documentSequences')
 const dateField = computed(() => {
   const fields = current.value?.fields || []
@@ -140,33 +171,49 @@ watch([q, filters, dateFrom, dateTo], () => {
   pagination.value = { ...pagination.value, pageIndex: 0 }
 }, { deep: true })
 
-// HTTP mode: reload the server-backed collection when transport-level filters
-// change or the module switches. Client-side filters keep filtering the
-// fetched rows locally.
-watch(
-  [current, q, dateFrom, dateTo],
-  () => {
-    if (!isHttpMode.value || !current.value) return
-    const collection = current.value.collection
-    void store.fetchList(collection, {
-      q: q.value || undefined,
-      startDate: dateFrom.value || undefined,
-      endDate: dateTo.value || undefined,
-    })
-    // Dependent collections used for derived columns and row guards.
-    if (collection === 'rentals') void store.fetchList('rentalPayments')
-  },
-  { immediate: true },
-)
+// Client-only: reload list data after mount and when filters change.
+// SSR renders the page shell; data is fetched in the browser (avoids SSR 500 on reload).
+function reloadModuleData() {
+  if (!import.meta.client || !isHttpMode.value || !current.value) return
+  const collection = current.value.collection
+  void store.fetchList(collection, {
+    q: q.value || undefined,
+    startDate: dateFrom.value || undefined,
+    endDate: dateTo.value || undefined,
+  })
+  if (collection === 'rentals') void store.fetchList('rentalPayments')
+}
+
+onMounted(() => {
+  reloadModuleData()
+})
+
+watch([current, q, dateFrom, dateTo], () => {
+  reloadModuleData()
+})
 
 function recordPath(id: unknown) {
   if (!current.value) return '/'
   return `${current.value.path}/${id}`
 }
 
+function fieldTypeForKey(key: string) {
+  return current.value?.fields.find(field => field.key === key)?.type
+}
+
 function cellText(row: Record<string, unknown>, key: string) {
   const source = current.value?.collection === 'auditLogs' ? normalizeAuditLog(row as AppRecord) : row
-  return formatModuleCell(source[key], key, isMoneyKey(key) ? String(source.currency || preferences.currency) : undefined)
+  if (current.value?.collection === 'documentSequences' && key === 'documentType') {
+    const code = String(source[key] || '')
+    const label = documentSequenceTypeLabel(code)
+    return label === code ? code : `${label} (${code})`
+  }
+  return formatModuleCell(
+    source[key],
+    key,
+    isMoneyKey(key) ? String(source.currency || preferences.currency) : undefined,
+    fieldTypeForKey(key),
+  )
 }
 
 function auditEntityLinkFor(row: Record<string, unknown>) {
@@ -184,21 +231,21 @@ const pageSummary = computed(() =>
 )
 
 function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
+  const collection = current.value?.collection
   const items: DropdownMenuItem[] = [
     {
       label: t('app.ui.open'),
-      icon: 'i-lucide-eye',
+      icon: collection === 'rentals' ? 'i-lucide-pencil' : 'i-lucide-eye',
       onSelect: () => openRow(row),
     },
   ]
-  const collection = current.value?.collection
   if (collection === 'documentSequences') {
     items[0] = {
       label: t('core.rowActions.detail'),
       icon: 'i-lucide-eye',
       onSelect: () => openRow(row),
     }
-    if (canMutate.value) {
+    if (canEdit.value) {
       items.push({
         label: 'Edit',
         icon: 'i-lucide-pencil',
@@ -215,22 +262,22 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
     return [items]
   }
   if (collection === 'rentals') {
-    if (auth.canAccessPage('rental.rentals.return')) {
+    const status = String(row.status || '')
+    if (auth.canAccessPage('rental.rentals.return') && ['Active', 'Overdue'].includes(status)) {
       items.push({ label: t('rental.ui.closeRental'), icon: 'i-lucide-circle-check', color: 'success', onSelect: () => { rentalModalRow.value = row; rentalCloseOpen.value = true } })
     }
-    if (auth.canAccessPage('rental.finance.create')) {
-      items.push({ label: t('rental.ui.recordPayment', 'Record payment'), icon: 'i-lucide-hand-coins', onSelect: () => { openRentalPayment(row) } })
-      items.push({ label: t('rental.ui.addCharge', 'Add charge'), icon: 'i-lucide-receipt-text', onSelect: () => { openRentalCharge(row) } })
+    if (auth.canAccessPage('rental.rentals.edit') && ['Active', 'Overdue'].includes(status)) {
+      items.push({ label: t('rental.ui.cancelRental', 'Cancel rental'), icon: 'i-lucide-ban', color: 'error', onSelect: () => { void cancelRental(row) } })
     }
-    if (auth.canAccessPage('rental.rentals.edit')) {
-      const status = String(row.status || '')
-      if (['Active', 'Overdue'].includes(status)) {
-        items.push({ label: t('rental.ui.cancelRental', 'Cancel rental'), icon: 'i-lucide-ban', color: 'error', onSelect: () => { void cancelRental(row) } })
-      }
+    if (auth.canAccessPage('rental.rentals.delete') && status === 'Cancelled') {
+      items.push({
+        label: t('app.ui.delete'),
+        icon: 'i-lucide-trash-2',
+        color: 'error',
+        onSelect: () => { void deleteIds([String(row.id)]) },
+      })
     }
-    if (auth.canAccessPage('rental.rentals.print')) {
-      items.push({ label: t('rental.ui.printInvoice'), icon: 'i-lucide-printer', onSelect: () => { rentalInvoiceRow.value = row } })
-    }
+    return [items]
   }
   else if (collection === 'motorcycles') {
     const status = String(row.status || '')
@@ -251,7 +298,7 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
         onSelect: () => setMotorcycleStatus(row, 'Available'),
       })
     }
-    if (canMutate.value && status !== 'Progressing') {
+    if (canDelete.value && status !== 'Progressing') {
       items.push({
         label: t('app.ui.delete'),
         icon: 'i-lucide-trash-2',
@@ -280,7 +327,7 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
         onSelect: () => setCustomerStatus(row, 'Active'),
       })
     }
-    if (canMutate.value && status === 'Inactive') {
+    if (canDelete.value && status === 'Inactive') {
       items.push({
         label: t('app.ui.delete'),
         icon: 'i-lucide-trash-2',
@@ -290,7 +337,35 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
     }
     return [items]
   }
-  if (canMutate.value && collection !== 'rentals' && collection !== 'motorcycles' && collection !== 'rentalCustomers') {
+  else if (collection === 'users') {
+    const status = String(row.status || 'Active')
+    if (canEdit.value && status === 'Active') {
+      items.push({
+        label: t('core.rowActions.deactivate'),
+        icon: 'i-lucide-circle-off',
+        color: 'warning',
+        onSelect: () => { void setUserStatus(row, 'Inactive') },
+      })
+    }
+    if (canEdit.value && status === 'Inactive') {
+      items.push({
+        label: t('core.rowActions.activate'),
+        icon: 'i-lucide-circle-check',
+        color: 'success',
+        onSelect: () => { void setUserStatus(row, 'Active') },
+      })
+    }
+    if (canDelete.value) {
+      items.push({
+        label: t('app.ui.delete'),
+        icon: 'i-lucide-trash-2',
+        color: 'error',
+        onSelect: () => { void deleteIds([String(row.id)]) },
+      })
+    }
+    return [items]
+  }
+  if (canDelete.value && collection !== 'rentals' && collection !== 'motorcycles' && collection !== 'rentalCustomers' && collection !== 'users') {
     items.push({
       label: deactivationOnly.value ? t('app.ui.deactivate') : t('app.ui.delete'),
       icon: deactivationOnly.value ? 'i-lucide-circle-off' : 'i-lucide-trash-2',
@@ -303,6 +378,9 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
 
 const columns = computed<TableColumn<Record<string, unknown>>[]>(() => {
   if (!current.value) return []
+  void localization.value.dateFormat
+  void localization.value.timeFormat
+  void localization.value.timezone
   const titleKey = current.value.titleField
   const dataColumns = current.value.columns.map((column, index) => ({
     accessorKey: column.key,
@@ -377,14 +455,41 @@ function openMotorcycleMaintenance(row: Record<string, unknown>) {
 async function setMotorcycleStatus(row: Record<string, unknown>, status: 'Available' | 'Maintenance') {
   if (!current.value || current.value.collection !== 'motorcycles') return
   const id = String(row.id || '')
+  const ok = await confirm({
+    kind: 'generic',
+    title: status === 'Available'
+      ? t('rental.ui.confirmSetAvailable', 'Set motorcycle to Available?')
+      : t('rental.ui.confirmMaintenance', 'Send to maintenance'),
+    description: [row.code, row.model, row.plate].filter(Boolean).map(String).join(' · '),
+    confirmLabel: status === 'Available'
+      ? t('rental.ui.setAvailable', 'Available')
+      : t('rental.ui.confirmMaintenance', 'Send to maintenance'),
+    confirmColor: status === 'Available' ? 'primary' : 'warning',
+  })
+  if (!ok) return
   busyId.value = id
   try {
     await store.setStatusRemote('motorcycles', id, status)
-    store.addAudit(`Motorcycle set to ${status}`, 'Motorcycles', String(row.code || row.plate || id))
     toast.add({
       title: status === 'Available'
         ? t('rental.ui.motorcycleAvailable', 'Motorcycle set to Available')
         : t('rental.ui.motorcycleMaintenance', 'Motorcycle set to Maintenance'),
+      color: 'success',
+    })
+  }
+  finally {
+    busyId.value = ''
+  }
+}
+
+async function setUserStatus(row: Record<string, unknown>, status: 'Active' | 'Inactive') {
+  if (!current.value || current.value.collection !== 'users') return
+  const id = String(row.id || '')
+  busyId.value = id
+  try {
+    await store.updateRemote('users', id, { status })
+    toast.add({
+      title: t(status === 'Active' ? 'core.common.activated' : 'core.common.deactivated'),
       color: 'success',
     })
   }
@@ -413,7 +518,6 @@ async function setCustomerStatus(row: Record<string, unknown>, status: 'Active' 
   busyId.value = id
   try {
     await store.updateRemote('rentalCustomers', id, { status })
-    store.addAudit(`Customer set to ${status}`, 'Customers', String(row.code || row.fullName || id))
     toast.add({
       title: status === 'Active'
         ? t('rental.ui.customerActive', 'Customer set to Active')
@@ -439,7 +543,7 @@ function onRowSelect(event: Event, row: TableRow<Record<string, unknown>>) {
 }
 
 async function deleteIds(ids: string[]) {
-  if (!current.value || !canMutate.value || !ids.length) return
+  if (!current.value || !canDelete.value || !ids.length) return
   let targetIds = ids
   if (current.value.collection === 'motorcycles') {
     targetIds = ids.filter((id) => {
@@ -467,12 +571,24 @@ async function deleteIds(ids: string[]) {
       return
     }
   }
+  if (current.value.collection === 'rentals') {
+    targetIds = ids.filter((id) => {
+      const row = store.get('rentals', id)
+      return String(row?.status || '') === 'Cancelled'
+    })
+    if (!targetIds.length) {
+      toast.add({
+        title: t('rental.ui.cannotDeleteActiveRental', 'Only cancelled rentals can be deleted'),
+        color: 'warning',
+      })
+      return
+    }
+  }
   const ok = await confirm({ kind: 'delete', count: targetIds.length })
   if (!ok) return
   busyId.value = targetIds[0] || ''
   try {
     await store.deleteRemote(current.value.collection, targetIds)
-    store.addAudit('Deleted', current.value.title, targetIds.join(', '))
     rowSelection.value = {}
     toast.add({ title: t('core.actions.deletedItems', { n: targetIds.length }), color: 'success' })
   }
@@ -489,14 +605,13 @@ async function deleteIds(ids: string[]) {
 }
 
 async function deactivateIds(ids: string[]) {
-  if (!current.value || !canMutate.value || !ids.length) return
+  if (!current.value || !canEdit.value || !ids.length) return
   busyId.value = ids[0] || ''
   try {
     for (const id of ids) {
       const status = current.value.collection === 'documentSequences' ? 'INACTIVE' : 'Inactive'
       await store.updateRemote(current.value.collection, id, { status })
     }
-    store.addAudit('Deactivated', current.value.title, ids.join(', '))
     rowSelection.value = {}
     toast.add({ title: t('app.ui.deactivated'), color: 'success' })
   }
@@ -512,19 +627,14 @@ function closeRentalModal() {
 
 function onRentalSaved() {
   closeRentalModal()
-  if (isHttpMode.value) {
-    void store.reloadCollections(['rentals', 'motorcycles', 'rentalPayments', 'rentalCharges'])
-    return
-  }
-  store.reload()
+  void store.reloadCollections(['rentals', 'motorcycles', 'rentalPayments', 'rentalCharges'])
 }
 
 async function setDocumentSequenceStatus(row: Record<string, unknown>, status: 'ACTIVE' | 'INACTIVE') {
-  if (!current.value || !canMutate.value) return
+  if (!current.value || !canEdit.value) return
   busyId.value = String(row.id || '')
   try {
     await store.updateRemote(current.value.collection, String(row.id || ''), { status })
-    store.addAudit(status === 'ACTIVE' ? 'Activated' : 'Deactivated', current.value.title, String(row.documentType || row.id || ''))
     toast.add({ title: t(status === 'ACTIVE' ? 'core.common.activated' : 'core.common.deactivated'), color: 'success' })
   }
   finally {
@@ -540,6 +650,11 @@ function refresh() {
   store.reload()
 }
 
+async function exportModule(request: ExportRequest) {
+  if (!canExport.value || !exportResource.value) return
+  await requestServerExport(exportResource.value, request)
+}
+
 async function cancelRental(row: Record<string, unknown>) {
   const ok = await confirm({
     kind: 'generic',
@@ -551,8 +666,7 @@ async function cancelRental(row: Record<string, unknown>) {
   if (!ok) return
   busyId.value = String(row.id || '')
   try {
-    await useRentalCommands().cancel(String(row.id), null)
-    store.addAudit('Rental cancelled', 'Rentals', String(row.rentalNo || ''))
+    await rentalCommands.cancel(String(row.id), null)
     await store.fetchList('rentals', { status: 'Active,Overdue' })
     await store.fetchList('motorcycles')
     toast.add({ title: t('rental.ui.rentalCancelled', 'Rental cancelled'), color: 'success' })
@@ -569,7 +683,17 @@ async function cancelRental(row: Record<string, unknown>) {
   }
 }
 
-function openRentalPayment(row: Record<string, unknown>) {
+function onCreatePaymentMethod(item: string) {
+  const value = paymentMethodOptions.onCreate(item)
+  if (value) financePaymentMethod.value = value
+}
+
+function onCreateChargeType(item: string) {
+  const value = chargeTypeOptions.onCreate(item)
+  if (value) financeChargeType.value = value
+}
+
+function _openRentalPayment(row: Record<string, unknown>) {
   rentalPaymentRow.value = row
   financePaymentAmount.value = Number(row.outstanding || 0) || undefined
   financePaymentMethod.value = PAYMENT_METHODS[0]
@@ -579,6 +703,17 @@ function openRentalPayment(row: Record<string, unknown>) {
 async function submitRentalPayment() {
   const rental = rentalPaymentRow.value
   if (!rental || !financePaymentAmount.value || financePaymentAmount.value <= 0) return
+  const ok = await confirm({
+    kind: 'submit',
+    titleKey: 'rental.ui.confirmAddPayment',
+    descriptionKey: 'rental.ui.confirmAddPaymentDescription',
+    descriptionParams: {
+      rentalNo: String(rental.rentalNo || rental.id || ''),
+      amount: Number(financePaymentAmount.value).toFixed(2),
+    },
+    confirmLabelKey: 'rental.ui.recordPayment',
+  })
+  if (!ok) return
   financeModalBusy.value = true
   try {
     await store.createRemote('rentalPayments', {
@@ -606,7 +741,7 @@ async function submitRentalPayment() {
   }
 }
 
-function openRentalCharge(row: Record<string, unknown>) {
+function _openRentalCharge(row: Record<string, unknown>) {
   rentalChargeRow.value = row
   financeChargeType.value = RENTAL_CHARGE_TYPES[0]
   financeChargeDescription.value = ''
@@ -616,6 +751,17 @@ function openRentalCharge(row: Record<string, unknown>) {
 async function submitRentalCharge() {
   const rental = rentalChargeRow.value
   if (!rental || !financeChargeAmount.value || financeChargeAmount.value <= 0) return
+  const ok = await confirm({
+    kind: 'submit',
+    titleKey: 'rental.ui.confirmAddCharge',
+    descriptionKey: 'rental.ui.confirmAddChargeDescription',
+    descriptionParams: {
+      rentalNo: String(rental.rentalNo || rental.id || ''),
+      amount: Number(financeChargeAmount.value).toFixed(2),
+    },
+    confirmLabelKey: 'rental.ui.recordCharge',
+  })
+  if (!ok) return
   financeModalBusy.value = true
   try {
     await store.createRemote('rentalCharges', {
@@ -642,6 +788,40 @@ async function submitRentalCharge() {
   }
 }
 
+const canSeedDocumentSequences = computed(() =>
+  current.value?.collection === 'documentSequences'
+  && store.isHttpMode
+  && auth.canAccessPage('configuration.create'),
+)
+
+async function seedDocumentSequenceDefaults() {
+  if (!canSeedDocumentSequences.value) return
+  seedingDocumentSequences.value = true
+  try {
+    const response = await api.post<{ data?: { created?: number } }>(
+      `${ApiEndpoints.DOCUMENT_SEQUENCES}/seed-defaults`,
+      {},
+    )
+    const created = Number(response?.data?.created || 0)
+    await store.fetchList('documentSequences')
+    toast.add({
+      title: t('app.documentSequences.seedSuccess'),
+      description: t('app.documentSequences.seedCreated', { n: created }),
+      color: 'success',
+    })
+  }
+  catch (error: unknown) {
+    toast.add({
+      title: t('app.documentSequences.seedFailed'),
+      description: error instanceof Error ? error.message : String(error),
+      color: 'error',
+    })
+  }
+  finally {
+    seedingDocumentSequences.value = false
+  }
+}
+
 function optionValue(option: ModuleSelectOption) {
   return typeof option === 'string' ? option : option.value
 }
@@ -656,7 +836,7 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
     .map(value => String(value).trim())
     .filter(Boolean)
     .map((value) => {
-      const label = filter.key === 'documentType' && isDocumentSequenceType(value)
+      const label = filter.key === 'documentType'
         ? documentSequenceTypeLabel(value)
         : filter.key === 'workflowStatus'
           ? value.replaceAll('_', ' ')
@@ -670,11 +850,27 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
   <div v-if="current" class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/20">
     <LayoutAppHeaderPageActions
       :can-create="canCreate"
+      :can-export="canExport"
+      :export-fields="exportFields"
+      :exporting="exportRunning"
       :create-label="t('app.ui.newEntity', { entity: moduleSingular(current) })"
       :refreshing="pending"
       @create="openCreate"
       @refresh="refresh"
-    />
+      @export="exportModule"
+    >
+      <template v-if="canSeedDocumentSequences" #leading>
+        <UButton
+          color="neutral"
+          variant="outline"
+          size="sm"
+          icon="i-lucide-list-plus"
+          :loading="seedingDocumentSequences"
+          :label="t('app.documentSequences.seedDefaults')"
+          @click="seedDocumentSequenceDefaults"
+        />
+      </template>
+    </LayoutAppHeaderPageActions>
 
     <TableAppListTable
       v-model:search="q"
@@ -702,7 +898,7 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
         />
       </template>
       <template #actions>
-        <template v-if="selectedIds.length && canMutate">
+        <template v-if="selectedIds.length && (canEdit || canDelete)">
           <UButton
             :color="deactivationOnly ? 'warning' : 'error'"
             variant="soft"
@@ -760,8 +956,17 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
               class="w-full"
             />
           </UFormField>
-          <UFormField :label="t('rental.ui.paymentMethod', 'Payment Method')">
-            <USelect v-model="financePaymentMethod" :items="[...PAYMENT_METHODS]" class="w-full" />
+          <UFormField
+            :label="t('rental.ui.paymentMethod', 'Payment Method')"
+            :help="t('rental.fieldHelp.paymentMethod', 'Choose a preset method or type a custom payment method.')"
+          >
+            <UInputMenu
+              v-model="financePaymentMethod"
+              create-item
+              :items="paymentMethodOptions.items.value"
+              class="w-full"
+              @create="onCreatePaymentMethod"
+            />
           </UFormField>
           <UFormField :label="t('rental.ui.reference', 'Reference')">
             <UInput v-model="financePaymentReference" class="w-full" />
@@ -796,8 +1001,18 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
       <template #body>
         <div class="space-y-3">
           <p class="text-sm text-muted">{{ rentalChargeRow?.rentalNo }} · {{ rentalChargeRow?.customer }}</p>
-          <UFormField :label="t('rental.ui.chargeType', 'Charge Type')" required>
-            <USelect v-model="financeChargeType" :items="[...RENTAL_CHARGE_TYPES]" class="w-full" />
+          <UFormField
+            :label="t('rental.ui.chargeType', 'Charge Type')"
+            required
+            :help="t('rental.fieldHelp.chargeType', 'Choose a preset type or type a custom charge name.')"
+          >
+            <UInputMenu
+              v-model="financeChargeType"
+              create-item
+              :items="chargeTypeOptions.items.value"
+              class="w-full"
+              @create="onCreateChargeType"
+            />
           </UFormField>
           <UFormField :label="t('rental.ui.description', 'Description')">
             <UInput v-model="financeChargeDescription" class="w-full" />

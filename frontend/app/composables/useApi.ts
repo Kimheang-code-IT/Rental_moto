@@ -5,7 +5,10 @@ import { compactQuery } from '~/utils/api/query'
 import { normalizeApiError } from '~/utils/api/errors'
 import { getAccessToken, getRefreshToken, setAccessToken } from '~/utils/auth/tokens'
 import { createAuthRefresher } from '~/utils/api/auth-refresher'
+import { isAutoApiBase, isSameOriginApiBase, resolveApiBase } from '~/utils/api/base-url'
 import { useAccessAlert } from '~/composables/common/useAccessAlert'
+import type { AuthUser } from '~/types/auth-user'
+import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 
 type ApiRequestOptions = {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
@@ -33,6 +36,31 @@ type ApiFetchError = Error & {
 // Shared across every useApi() consumer so a later request can cancel an older
 // request even when composables created separate useApi instances.
 const requestControllers = new Map<string, AbortController>()
+let authMeRefreshPromise: Promise<void> | null = null
+
+function refreshCurrentUserAfterForbidden(baseURL: string, timeout: number): Promise<void> {
+  if (authMeRefreshPromise) return authMeRefreshPromise
+  authMeRefreshPromise = (async () => {
+    const token = getAccessToken()
+    if (!token) return
+    try {
+      const response = await $fetch<{ data?: AuthUser }>(ApiEndpoints.AUTH_ME, {
+        baseURL,
+        method: 'GET',
+        timeout,
+        credentials: 'omit',
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      })
+      if (response?.data) useAuthStore().login(response.data)
+    }
+    catch {
+      // Keep the original 403 as the user-facing result.
+    }
+  })().finally(() => {
+    authMeRefreshPromise = null
+  })
+  return authMeRefreshPromise
+}
 
 /**
  * Normalize any thrown request failure into a consistent error carrying
@@ -61,17 +89,29 @@ export function useApi() {
   const pending = computed(() => activeRequests.value > 0)
   const error = ref<string | null>(null)
 
-  const requireSecureApi = import.meta.env.PROD && config.public.useMockData === false
-  const baseURL = safeApiBase(config.public.apiBase, requireSecureApi)
-  if (!baseURL) {
-    throw new Error('Invalid API base URL. Production APIs must use HTTPS.')
+  const configuredBase = String(config.public.apiBase || '')
+  const requireSecureApi = import.meta.env.PROD
+    && config.public.useMockData === false
+    && !isAutoApiBase(configuredBase)
+    && !isSameOriginApiBase(configuredBase)
+
+  function getApiBase(): string {
+    const resolved = resolveApiBase({
+      configured: configuredBase,
+      internalBase: import.meta.server ? String(config.apiInternalBase || '') : undefined,
+      requireHttps: requireSecureApi,
+    })
+    if (!resolved) {
+      throw new Error('Invalid API base URL. Production APIs must use HTTPS.')
+    }
+    return resolved
   }
 
   const bearerMode = config.public.authMode === 'bearer'
 
   // Single-flight refresh: concurrent 401s share one rotation request.
   const refresher = createAuthRefresher({
-    refreshEndpoint: `${config.public.apiBase}/api/v2/auth/refresh`,
+    refreshEndpoint: () => `${getApiBase()}/api/v2/auth/refresh`,
     timeoutMs: Number(config.public.apiTimeoutMs) || 30000,
     getRefreshToken: () => getRefreshToken(),
     setAccessToken: token => setAccessToken(token),
@@ -110,7 +150,8 @@ export function useApi() {
   }
 
   const fetch = async <T>(url: string, options: ApiRequestOptions = {}) => {
-    if (!sameOriginApiUrl(url, String(baseURL))) {
+    const baseURL = getApiBase()
+    if (!sameOriginApiUrl(url, baseURL)) {
       throw new Error('API requests must use the configured API origin')
     }
     const requestKey = getRequestKey(url, options)
@@ -149,13 +190,14 @@ export function useApi() {
           timeout: Number(config.public.apiTimeoutMs) || 30000,
           credentials: 'omit',
           headers,
-          onResponseError({ response }) {
+          async onResponseError({ response }) {
             if (response.status === 401) {
               return
             }
 
             if (response.status === 403) {
               handledAccessError = true
+              await refreshCurrentUserAfterForbidden(baseURL, Number(config.public.apiTimeoutMs) || 30000)
               if (!options.suppressAccessAlert) {
                 showPermissionDenied({
                   requestedPath: route.fullPath,
@@ -184,7 +226,13 @@ export function useApi() {
 
         error.value = fetchError?.message || t('api.requestFailed')
 
-        if (fetchError.name === 'FetchError' && !handledAccessError && !options.suppressErrorToast && fetchError.statusCode !== 401) {
+        if (
+          fetchError.name === 'FetchError'
+          && !handledAccessError
+          && !options.suppressErrorToast
+          && fetchError.statusCode !== 401
+          && (fetchError.statusCode == null || fetchError.statusCode < 400)
+        ) {
           toast.add({
             title: t('api.connectionErrorTitle'),
             description: t('api.connectionErrorDescription'),
@@ -214,15 +262,20 @@ export function useApi() {
           || String(url).includes('/auth/login')
           || String(url).includes('/auth/refresh')
           || String(url).includes('/auth/forgot-password')
-
         if (fetchError.statusCode !== 401 || isAuthEndpoint || !bearerMode) {
+          throw err
+        }
+
+        const hasSessionToken = Boolean(getAccessToken() || getRefreshToken())
+        if (!hasSessionToken) {
+          if (useAuthStore().user) handleSessionFailure()
           throw err
         }
 
         // One refresh for all concurrent 401s, then exactly one retry.
         const rotated = await rotateRefreshToken()
         if (!rotated) {
-          handleSessionFailure()
+          // The refresher already clears the failed session exactly once.
           throw err
         }
         try {

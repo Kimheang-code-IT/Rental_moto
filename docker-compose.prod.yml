@@ -1,0 +1,59 @@
+# Production overlay for HollyWing Motor.
+# Usage (from repository root):
+#   cp .env.production.example .env   # then fill real secrets
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Differences from development:
+# - ENVIRONMENT=production
+# - CORS private-network helper disabled
+# - Database / Redis / RabbitMQ / MinIO ports are not published to the host
+# - RabbitMQ management UI is not published
+
+services:
+  db:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  rabbitmq:
+    ports: !reset []
+
+  minio:
+    ports: !reset []
+
+  api:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ALLOW_PRIVATE_NETWORKS: ${CORS_ALLOW_PRIVATE_NETWORKS:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports: !reset []
+
+  frontend:
+    build:
+      args:
+        NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:-same-origin}
+        NUXT_PUBLIC_SITE_URL: ${NUXT_PUBLIC_SITE_URL:-}
+        NUXT_PUBLIC_APP_VERSION: ${NUXT_PUBLIC_APP_VERSION:-1.0.0}
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+
+  worker-default:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+
+  worker-telegram:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+
+  worker-export:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+
+  scheduler:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+
+  telegram-bot:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}

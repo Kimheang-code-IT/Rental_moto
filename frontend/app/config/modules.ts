@@ -19,9 +19,12 @@ export type ModuleField = {
   type?: ModuleFieldType
   options?: readonly ModuleSelectOption[] | ModuleSelectOption[]
   optionsCollection?: string
+  optionsEndpoint?: string
   required?: boolean
   colSpan?: 1 | 2
   computed?: boolean
+  createOnly?: boolean
+  hideOnCreate?: boolean
   helpKey?: string
   help?: string
   labelKey?: string

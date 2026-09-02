@@ -17,6 +17,8 @@ const store = useAppDataStore()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const { setTitle, setBreadcrumbs, clear } = useAppHeader()
+const financeRepository = useFinanceRepository()
+const { request: requestServerExport } = useServerExport()
 
 onBeforeUnmount(clear)
 
@@ -34,50 +36,10 @@ const money = (value: unknown, currency?: string) => formatMoney(value, currency
 const q = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
-type DatePreset = 'today' | '3_days' | '7_days' | '1_month' | 'range'
-const datePreset = ref<DatePreset>('range')
-const applyingDatePreset = ref(false)
 const typeFilter = ref<string[]>([])
 const expenseModalOpen = ref(false)
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
 const canCreateExpense = computed(() => auth.canAccessPage('rental.finance.create'))
-
-function localDate(value: Date) {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function applyDatePreset(preset: DatePreset) {
-  applyingDatePreset.value = true
-  datePreset.value = preset
-  if (preset === 'range') {
-    dateFrom.value = ''
-    dateTo.value = ''
-  }
-  else {
-    const end = new Date()
-    const start = new Date(end)
-    const days = preset === 'today' ? 1 : preset === '3_days' ? 3 : preset === '7_days' ? 7 : 30
-    start.setDate(start.getDate() - (days - 1))
-    dateFrom.value = localDate(start)
-    dateTo.value = localDate(end)
-  }
-  nextTick(() => { applyingDatePreset.value = false })
-}
-
-watch([dateFrom, dateTo], () => {
-  if (!applyingDatePreset.value) datePreset.value = 'range'
-})
-
-const datePresetItems = computed(() => [
-  { value: 'today' as const, label: tx('rental.settings.today', 'Today') },
-  { value: '3_days' as const, label: tx('rental.settings.last3Days', '3 Days') },
-  { value: '7_days' as const, label: tx('rental.settings.last7Days', '7 Days') },
-  { value: '1_month' as const, label: tx('rental.settings.lastMonth', '1 Month') },
-  { value: 'range' as const, label: tx('rental.settings.rangeDate', 'Date Range') },
-])
 
 const inPeriod = (day: string) => {
   if (dateFrom.value && day < dateFrom.value) return false
@@ -102,7 +64,7 @@ async function loadServerSummary() {
   if (!store.isHttpMode) return
   summaryLoading.value = true
   try {
-    serverSummary.value = await useFinanceRepository().financeSummary(dateFrom.value || undefined, dateTo.value || undefined)
+    serverSummary.value = await financeRepository.financeSummary(dateFrom.value || undefined, dateTo.value || undefined)
   }
   catch {
     serverSummary.value = null
@@ -219,8 +181,7 @@ function refresh() {
 async function exportCsv(request: ExportRequest) {
   if (store.isHttpMode) {
     // Server export job: bounded polling, then a download URL response.
-    const { request: requestExport } = useServerExport()
-    await requestExport('expenses', request, `income-expense-${dateFrom.value || 'all'}-${dateTo.value || 'all'}.csv`)
+    await requestServerExport('expenses', request, `income-expense-${dateFrom.value || 'all'}-${dateTo.value || 'all'}.csv`)
     return
   }
   let exportRows = rows.value.map(row => ({
@@ -248,6 +209,7 @@ async function exportCsv(request: ExportRequest) {
   <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/20">
     <LayoutAppHeaderPageActions
       :can-create="canCreateExpense"
+      :can-export="auth.canAccessPage('rental.finance.export')"
       :create-label="tx('rental.ui.addExpense', 'Add Expense')"
       :export-fields="exportFields"
       @create="expenseModalOpen = true"
@@ -277,25 +239,12 @@ async function exportCsv(request: ExportRequest) {
       :filters-active="Boolean(dateFrom || dateTo || typeFilter.length)"
     >
       <template #filters="{ compact }">
-        <div class="flex flex-wrap items-center gap-2" :class="compact ? 'w-full' : ''">
-          <div class="flex flex-wrap gap-1">
-            <UButton
-              v-for="preset in datePresetItems"
-              :key="preset.value"
-              :label="preset.label"
-              size="xs"
-              :color="datePreset === preset.value ? 'primary' : 'neutral'"
-              :variant="datePreset === preset.value ? 'solid' : 'outline'"
-              @click="applyDatePreset(preset.value)"
-            />
-          </div>
-          <CommonAppFilterSelect
-            v-model="typeFilter"
-            :items="typeFilterItems"
-            :placeholder="tx('rental.ui.type', 'Type')"
-            :class="compact ? 'w-full' : 'w-40'"
-          />
-        </div>
+        <CommonAppFilterSelect
+          v-model="typeFilter"
+          :items="typeFilterItems"
+          :placeholder="tx('rental.ui.type', 'Type')"
+          :class="compact ? 'w-full' : 'w-40'"
+        />
       </template>
     </TableAppListTable>
 

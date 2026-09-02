@@ -26,5 +26,10 @@ def test_date_formats():
 
 
 def test_datetime_12h():
-    fmt = Formatter({"dateFormat": "DD/MM/YYYY", "timeFormat": "h:mm A"})
+    fmt = Formatter({"dateFormat": "DD/MM/YYYY", "timeFormat": "h:mm A", "timezone": "UTC"})
     assert fmt.format_datetime("2026-09-01T14:30:00+00:00") == "01/09/2026 2:30 PM"
+
+
+def test_datetime_uses_configured_timezone():
+    fmt = Formatter({"dateFormat": "DD/MM/YYYY", "timeFormat": "h:mm A", "timezone": "Asia/Phnom_Penh"})
+    assert fmt.format_datetime("2026-09-01T14:30:00+00:00") == "01/09/2026 9:30 PM"

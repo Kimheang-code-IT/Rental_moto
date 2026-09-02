@@ -6,7 +6,7 @@ async def test_telegram_endpoints_reject_anonymous(client):
     for path in (
         "/api/v2/telegram/transactions",
         "/api/v2/telegram/motorcycle-status",
-        "/api/v2/telegram/finance-summary",
+        "/api/v2/telegram/access",
     ):
         response = await client.get(path)
         assert response.status_code == 401
@@ -23,7 +23,6 @@ async def test_service_token_can_read_reports_but_not_mutations(client):
     for path in (
         "/api/v2/telegram/transactions",
         "/api/v2/telegram/motorcycle-status",
-        "/api/v2/telegram/finance-summary",
     ):
         response = await client.get(path, headers=headers)
         assert response.status_code == 200, response.text

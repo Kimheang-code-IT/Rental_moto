@@ -8,16 +8,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models import Motorcycle, Rental, RentalCharge, RentalCustomer, RentalExpense, RentalPayment
+from app.models import AuditLog, Motorcycle, Rental, RentalCharge, RentalCustomer, RentalExpense, RentalPayment
 from app.repositories.admin import ExportRepository, TaskProgressRepository
 
 EXPORT_RESOURCES = {
     "motorcycles": "Motorcycles",
     "customers": "Customers",
     "rentals": "Rentals",
+    "rental_reports": "Rental reports",
     "payments": "Payments",
     "charges": "Charges",
     "expenses": "Expenses",
+    "audit_logs": "Audit logs",
 }
 
 
@@ -34,11 +36,13 @@ def _fmt(value) -> str:
 def _columns(resource: str) -> list[tuple[str, str]]:
     mapping = {
         "motorcycles": [("code", "Code"), ("model", "Model"), ("brand", "Brand"), ("year", "Year"), ("plate", "Plate"), ("dailyRate", "daily_rate"), ("threeDayRate", "three_day_rate"), ("weeklyRate", "weekly_rate"), ("monthlyRate", "monthly_rate"), ("status", "Status")],
-        "customers": [("code", "Code"), ("fullName", "full_name"), ("phone", "Phone"), ("email", "Email"), ("identityType", "identity_type"), ("identityNumber", "identity_number"), ("company", "Company"), ("status", "Status")],
+        "customers": [("code", "Code"), ("fullName", "full_name"), ("company", "Company"), ("phone", "Phone"), ("email", "Email"), ("identityType", "identity_type"), ("identityNumber", "identity_number"), ("status", "Status")],
         "rentals": [("rentalNo", "rental_no"), ("customer", "Customer"), ("motorcycle", "Motorcycle"), ("startDate", "start_date"), ("dueDate", "due_date"), ("rentalCharge", "rental_charge"), ("totalDue", "total_due"), ("paid", "Paid"), ("outstanding", "Outstanding"), ("status", "Status")],
+        "rental_reports": [("rentalNo", "rental_no"), ("customer", "Customer"), ("motorcycle", "Motorcycle"), ("startDate", "start_date"), ("dueDate", "due_date"), ("rentalCharge", "rental_charge"), ("totalDue", "total_due"), ("paid", "Paid"), ("outstanding", "Outstanding"), ("status", "Status")],
         "payments": [("paymentNo", "payment_no"), ("rentalId", "rental_id"), ("amount", "Amount"), ("currency", "Currency"), ("paymentMethod", "payment_method"), ("paidAt", "paid_at"), ("reference", "Reference")],
         "charges": [("chargeNo", "charge_no"), ("rentalId", "rental_id"), ("chargeType", "charge_type"), ("amount", "Amount"), ("currency", "Currency"), ("createdAt", "created_at")],
         "expenses": [("expenseNo", "expense_no"), ("date", "Date"), ("expenseType", "expense_type"), ("description", "Description"), ("amount", "Amount"), ("currency", "Currency")],
+        "audit_logs": [("occurred_at", "Occurred at"), ("user_name", "User"), ("action", "Action"), ("entity_type", "Entity type"), ("entity_id", "Entity ID"), ("entity_label", "Entity"), ("ip_address", "IP address")],
     }
     return mapping.get(resource, [])
 
@@ -50,7 +54,7 @@ async def _rows_for_resource(session: AsyncSession, resource: str) -> list[dict]
     if resource == "customers":
         rows = (await session.execute(select(RentalCustomer).order_by(RentalCustomer.code))).scalars().all()
         return [dict(r.__dict__) for r in rows]
-    if resource == "rentals":
+    if resource in {"rentals", "rental_reports"}:
         rows = (await session.execute(select(Rental).order_by(Rental.rental_no))).scalars().all()
         return [dict(r.__dict__) for r in rows]
     if resource == "payments":
@@ -61,6 +65,9 @@ async def _rows_for_resource(session: AsyncSession, resource: str) -> list[dict]
         return [dict(r.__dict__) for r in rows]
     if resource == "expenses":
         rows = (await session.execute(select(RentalExpense).order_by(RentalExpense.date))).scalars().all()
+        return [dict(r.__dict__) for r in rows]
+    if resource == "audit_logs":
+        rows = (await session.execute(select(AuditLog).order_by(AuditLog.occurred_at.desc()))).scalars().all()
         return [dict(r.__dict__) for r in rows]
     return []
 
@@ -100,6 +107,20 @@ async def process_export(session: AsyncSession, export_id: str, task_id: str) ->
     if job.status == "completed":
         return
 
+    from app.core.permissions import user_has_permission
+    from app.repositories.admin import UserRepository
+
+    owner = await UserRepository(session).get(job.user_id)
+    permission = export_permission(job.resource)
+    if owner is None or permission is None or not user_has_permission(owner, permission):
+        job.status = "failed"
+        job.error = "Export permission was revoked"
+        if task:
+            task.status = "failed"
+            task.message = job.error
+        await session.commit()
+        return
+
     job.status = "processing"
     job.progress = 10
     if task:
@@ -129,4 +150,17 @@ async def process_export(session: AsyncSession, export_id: str, task_id: str) ->
             task.message = str(exc)[:500]
         await session.commit()
         raise
+
+
+def export_permission(resource: str) -> str | None:
+    return {
+        "motorcycles": "rental.motorcycles.export",
+        "customers": "rental.customers.export",
+        "rentals": "rental.rentals.export",
+        "rental_reports": "reports.export",
+        "payments": "rental.finance.export",
+        "charges": "rental.finance.export",
+        "expenses": "rental.finance.export",
+        "audit_logs": "admin.audit_logs.export",
+    }.get(resource)
 

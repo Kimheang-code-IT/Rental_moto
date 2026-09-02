@@ -1,27 +1,26 @@
 import type { AppRecord } from '~/config/admin-seed'
 
-export const DOCUMENT_SEQUENCE_TYPES = [
-  'QUOTATION',
-  'SERVICE_ORDER',
-  'SERVICE_CHARGE',
-  'CUSTOMER_INVOICE',
-  'SUPPLIER_BILL',
-  'CUSTOMER_RECEIPT',
-  'SUPPLIER_PAYMENT',
-  'JOURNAL',
+/** HollyWing Motor document types — one sequence row per type (configured in admin UI). */
+export const DEFAULT_DOCUMENT_SEQUENCE_TYPES = [
+  'RENTAL',
+  'PAYMENT',
+  'CHARGE',
+  'EXPENSE',
+  'CUSTOMER',
+  'MOTORCYCLE',
 ] as const
+
+export const DOCUMENT_SEQUENCE_TYPES = DEFAULT_DOCUMENT_SEQUENCE_TYPES
 
 export const DOCUMENT_SEQUENCE_STATUSES = ['ACTIVE', 'INACTIVE'] as const
 
 const TYPE_LABELS: Record<string, string> = {
-  QUOTATION: 'Quotation',
-  SERVICE_ORDER: 'Service Order',
-  SERVICE_CHARGE: 'Service Charge',
-  CUSTOMER_INVOICE: 'Customer Invoice',
-  SUPPLIER_BILL: 'Supplier Bill',
-  CUSTOMER_RECEIPT: 'Customer Receipt',
-  SUPPLIER_PAYMENT: 'Supplier Payment',
-  JOURNAL: 'Journal Entry',
+  RENTAL: 'Rental',
+  PAYMENT: 'Payment',
+  CHARGE: 'Charge',
+  EXPENSE: 'Expense',
+  CUSTOMER: 'Customer',
+  MOTORCYCLE: 'Motorcycle',
 }
 
 const LEGACY_TYPES: Record<string, string> = {
@@ -30,33 +29,52 @@ const LEGACY_TYPES: Record<string, string> = {
   'Service Charge': 'SERVICE_CHARGE',
   'Financial Document': 'CUSTOMER_INVOICE',
   Receipt: 'CUSTOMER_RECEIPT',
-  Payment: 'SUPPLIER_PAYMENT',
+  Payment: 'PAYMENT',
   Journal: 'JOURNAL',
 }
 
+export function normalizeDocumentSequenceType(value: unknown) {
+  const raw = String(value || '').trim().toUpperCase().replace(/\s+/g, '_')
+  return LEGACY_TYPES[raw] || LEGACY_TYPES[String(value || '')] || raw
+}
+
 export function isDocumentSequenceType(value: string) {
-  return (DOCUMENT_SEQUENCE_TYPES as readonly string[]).includes(value)
+  const normalized = normalizeDocumentSequenceType(value)
+  return (DEFAULT_DOCUMENT_SEQUENCE_TYPES as readonly string[]).includes(normalized)
 }
 
 export function documentSequenceTypeLabel(value: unknown) {
-  const type = String(value || '')
+  const type = normalizeDocumentSequenceType(value)
   return TYPE_LABELS[type] || type.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, letter => letter.toUpperCase())
+}
+
+export function documentSequenceTypeOptions(existing: AppRecord[] = []) {
+  const fromData = existing
+    .map(row => normalizeDocumentSequenceType(row.documentType))
+    .filter(Boolean)
+  const values = [...new Set([...DEFAULT_DOCUMENT_SEQUENCE_TYPES, ...fromData])]
+  return values.map(value => ({
+    label: documentSequenceTypeLabel(value),
+    value,
+  }))
 }
 
 export function documentSequencePreview(record: Record<string, unknown>) {
   const prefix = String(record.prefix || '').trim()
-  const year = Number(record.year || record.periodYear || new Date().getFullYear())
+  const year = Number(record.year || record.periodYear || 0)
   const next = Math.max(0, Number(record.lastValue || 0)) + 1
   const padding = Math.max(1, Number(record.paddingLength || 6))
-  return [prefix, year, String(next).padStart(padding, '0')].filter(Boolean).join('-')
+  const parts = [prefix, year > 0 ? year : null, String(next).padStart(padding, '0')].filter(Boolean)
+  return parts.join('-')
 }
 
 export function normalizeDocumentSequenceRecord(record: AppRecord): AppRecord {
-  const documentType = LEGACY_TYPES[String(record.documentType || '')] || String(record.documentType || '')
+  const documentType = normalizeDocumentSequenceType(record.documentType)
+  const year = Number(record.year || record.periodYear || 0)
   return {
     ...record,
     documentType,
-    year: Number(record.year || record.periodYear || new Date().getFullYear()),
+    year: year > 0 ? year : null,
     prefix: String(record.prefix || '').trim(),
     lastValue: Math.max(0, Number(record.lastValue || 0)),
     paddingLength: Math.max(1, Number(record.paddingLength || 6)),

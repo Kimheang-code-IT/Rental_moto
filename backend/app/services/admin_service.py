@@ -3,7 +3,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -31,45 +31,71 @@ class UserService:
         self.audit = AuditRepository(session)
         self.actor = actor
 
-    def _require_admin(self) -> None:
-        from app.core.permissions import has_permission, is_super_admin
+    def _require(self, permission: str) -> None:
+        from app.core.permissions import user_has_permission
+
+        if self.actor is None or not user_has_permission(self.actor, permission):
+            raise AccessDeniedError(f"Missing permission: {permission}")
+
+    async def _resolve_role(self, role_id: int | None, role_name: str | None) -> Role:
+        by_id = await self.roles.get(role_id) if role_id is not None else None
+        by_name = await self.roles.get_by_name(role_name) if role_name else None
+        if role_id is not None and by_id is None:
+            raise NotFoundError("Role not found")
+        if role_name and by_name is None:
+            raise NotFoundError(f"Role {role_name} not found")
+        if by_id is not None and by_name is not None and by_id.id != by_name.id:
+            raise ConflictError("roleId and legacy role refer to different roles")
+        role = by_id or by_name
+        if role is None:
+            raise ConflictError("roleId is required")
+        self._assert_assignable(role)
+        return role
+
+    def _assert_assignable(self, role: Role) -> None:
+        from app.core.permissions import effective_permissions, is_super_admin_user
 
         if self.actor is None:
             raise AccessDeniedError()
-        if not is_super_admin(self.actor.role, self.actor.permissions):
-            if not has_permission(self.actor.role, self.actor.permissions, "user.manage"):
-                raise AccessDeniedError("You do not have permission to manage users")
+        if is_super_admin_user(self.actor):
+            return
+        if role.name == "SuperAdmin":
+            raise AccessDeniedError("Only SuperAdmin can assign the SuperAdmin role")
+        missing = set(role.permissions or []) - set(effective_permissions(self.actor))
+        if missing:
+            raise AccessDeniedError("You cannot assign a role with permissions you do not have")
 
     async def list(self, q, page, limit):
-        self._require_admin()
+        self._require("admin.users.view")
         return await self.repo.list(q, page, limit)
 
     async def get(self, user_id: int) -> User:
-        self._require_admin()
+        self._require("admin.users.view")
         user = await self.repo.get(user_id)
         if user is None:
             raise NotFoundError("User not found")
         return user
 
     async def create(self, data) -> User:
-        self._require_admin()
+        self._require("admin.users.create")
         if await self.repo.get_by_email(data.email):
             raise ConflictError(f"Email {data.email} is already registered")
         if await self.repo.get_by_username(data.username):
             raise ConflictError(f"Username {data.username} is already taken")
-        role = await self.roles.get_by_name(data.role)
+        role = await self._resolve_role(data.role_id, data.role)
         user = User(
             username=data.username,
             display_name=data.display_name,
             email=data.email.lower(),
             password_hash=hash_password(data.password),
-            role=data.role,
-            role_id=role.id if role else None,
+            role=role.name,
+            role_id=role.id,
             status=data.status,
-            permissions=data.permissions,
-            page_access=data.page_access,
+            permissions=None,
+            page_access=None,
             avatar_url=data.avatar,
         )
+        user.role_ref = role
         await self.repo.create(user)
         await self.audit.add(
             AuditLog(
@@ -79,16 +105,23 @@ class UserService:
                 entity_type="user",
                 entity_id=str(user.id),
                 entity_label=user.email,
+                details={"after": {"roleId": role.id, "role": role.name}},
             )
         )
         await self.session.commit()
-        return user
+        refreshed = await self.repo.get(user.id)
+        return refreshed or user
 
     async def update(self, user_id: int, data) -> User:
-        self._require_admin()
+        self._require("admin.users.edit")
         user = await self.repo.get(user_id)
         if user is None:
             raise NotFoundError("User not found")
+        from app.core.permissions import is_super_admin_user
+
+        if user.role_ref.name == "SuperAdmin" and not is_super_admin_user(self.actor):
+            raise AccessDeniedError("Only SuperAdmin can modify a SuperAdmin user")
+        before = {"roleId": user.role_id, "role": user.role_ref.name, "status": user.status}
         updates = data.model_dump(exclude_unset=True, by_alias=False)
         if updates.get("email") and updates["email"].lower() != user.email.lower():
             other = await self.repo.get_by_email(updates["email"])
@@ -98,14 +131,25 @@ class UserService:
             other = await self.repo.get_by_username(updates["username"])
             if other is not None and other.id != user.id:
                 raise ConflictError(f"Username {updates['username']} is already taken")
-        if updates.get("password"):
-            user.password_hash = hash_password(updates.pop("password"))
+        password = updates.pop("password", None)
+        if password:
+            user.password_hash = hash_password(password)
             user.password_changed_at = utcnow()
+        avatar = updates.pop("avatar", None)
+        if avatar is not None:
+            user.avatar_url = avatar or None
+        role_id = updates.pop("role_id", None)
         role_name = updates.pop("role", None)
-        if role_name:
-            user.role = role_name
-            role = await self.roles.get_by_name(role_name)
-            user.role_id = role.id if role else None
+        target_role = user.role_ref
+        if role_id is not None or role_name:
+            target_role = await self._resolve_role(role_id, role_name)
+        target_status = updates.get("status", user.status)
+        if user.role_ref.name == "SuperAdmin" and (target_role.name != "SuperAdmin" or target_status != "Active"):
+            if (await self._active_super_admin_count()) <= 1:
+                raise ConflictError("Cannot change or disable the final active SuperAdmin user")
+        user.role = target_role.name
+        user.role_id = target_role.id
+        user.role_ref = target_role
         for field, value in updates.items():
             setattr(user, field, value)
         await self.audit.add(
@@ -116,21 +160,29 @@ class UserService:
                 entity_type="user",
                 entity_id=str(user.id),
                 entity_label=user.email,
+                details={
+                    "before": before,
+                    "after": {"roleId": target_role.id, "role": target_role.name, "status": target_status},
+                },
             )
         )
         await self.session.commit()
-        await self.session.refresh(user)
-        return user
+        refreshed = await self.repo.get(user.id)
+        return refreshed or user
 
     async def delete(self, user_id: int) -> None:
-        self._require_admin()
+        self._require("admin.users.delete")
         user = await self.repo.get(user_id)
         if user is None:
             raise NotFoundError("User not found")
         if self.actor and user.id == self.actor.id:
             raise ConflictError("You cannot delete your own account")
-        if user.role == "SuperAdmin" and (await self._super_admin_count()) <= 1:
-            raise ConflictError("Cannot delete the last SuperAdmin account")
+        from app.core.permissions import is_super_admin_user
+
+        if user.role_ref.name == "SuperAdmin" and not is_super_admin_user(self.actor):
+            raise AccessDeniedError("Only SuperAdmin can delete a SuperAdmin user")
+        if user.role_ref.name == "SuperAdmin" and user.status == "Active" and (await self._active_super_admin_count()) <= 1:
+            raise ConflictError("Cannot delete the final active SuperAdmin user")
         await self.repo.delete(user)
         await self.audit.add(
             AuditLog(
@@ -140,12 +192,18 @@ class UserService:
                 entity_type="user",
                 entity_id=str(user_id),
                 entity_label=user.email,
+                details={"before": {"roleId": user.role_id, "role": user.role_ref.name, "status": user.status}},
             )
         )
         await self.session.commit()
 
-    async def _super_admin_count(self) -> int:
-        result = await self.session.execute(select(func.count()).select_from(User).where(User.role == "SuperAdmin"))
+    async def _active_super_admin_count(self) -> int:
+        result = await self.session.execute(
+            select(func.count())
+            .select_from(User)
+            .join(Role, User.role_id == Role.id)
+            .where(Role.name == "SuperAdmin", User.status == "Active")
+        )
         return int(result.scalar() or 0)
 
 
@@ -156,27 +214,41 @@ class RoleService:
         self.audit = AuditRepository(session)
         self.actor = actor
 
-    def _require_admin(self) -> None:
-        from app.core.permissions import has_permission, is_super_admin
+    def _require(self, permission: str) -> None:
+        from app.core.permissions import user_has_permission
 
-        if self.actor is None or not (
-            is_super_admin(self.actor.role, self.actor.permissions) or has_permission(self.actor.role, self.actor.permissions, "role.manage")
-        ):
-            raise AccessDeniedError("You do not have permission to manage roles")
+        if self.actor is None or not user_has_permission(self.actor, permission):
+            raise AccessDeniedError(f"Missing permission: {permission}")
+
+    def _validated_permissions(self, values: list[str] | None) -> list[str]:
+        from app.core.permissions import effective_permissions, is_super_admin_user, normalize_role_permissions
+
+        try:
+            permissions = normalize_role_permissions(values)
+        except ValueError as exc:
+            raise ConflictError(str(exc)) from exc
+        if self.actor is not None and not is_super_admin_user(self.actor):
+            missing = set(permissions) - set(effective_permissions(self.actor))
+            if missing:
+                raise AccessDeniedError("You cannot grant permissions you do not have")
+        return permissions
 
     async def list(self, q, page, limit):
-        self._require_admin()
+        self._require("admin.roles.view")
         return await self.repo.list(q, page, limit)
 
     async def create(self, data) -> Role:
-        self._require_admin()
+        self._require("admin.roles.create")
         if await self.repo.get_by_name(data.name):
             raise ConflictError(f"Role {data.name} already exists")
+        if data.name == "SuperAdmin":
+            raise ConflictError("The SuperAdmin role is reserved")
+        permissions = self._validated_permissions(data.permissions)
         role = Role(
             name=data.name,
             description=data.description,
-            permissions=data.permissions,
-            page_access=data.page_access,
+            permissions=permissions,
+            page_access=permissions,
         )
         await self.repo.create(role)
         await self.audit.add(
@@ -187,23 +259,33 @@ class RoleService:
                 entity_type="role",
                 entity_id=str(role.id),
                 entity_label=role.name,
+                details={"after": {"name": role.name, "permissions": permissions}},
             )
         )
         await self.session.commit()
         return role
 
     async def update(self, role_id: int, data) -> Role:
-        self._require_admin()
+        self._require("admin.roles.edit")
         role = await self.repo.get(role_id)
         if role is None:
             raise NotFoundError("Role not found")
+        if role.name == "SuperAdmin":
+            raise ConflictError("The SuperAdmin role is immutable")
+        before = {"name": role.name, "permissions": list(role.permissions or [])}
         updates = data.model_dump(exclude_unset=True, by_alias=False)
         if updates.get("name") and updates["name"].lower() != role.name.lower():
             other = await self.repo.get_by_name(updates["name"])
             if other is not None and other.id != role.id:
                 raise ConflictError(f"Role {updates['name']} already exists")
+        if "permissions" in updates:
+            updates["permissions"] = self._validated_permissions(updates["permissions"])
+            role.page_access = updates["permissions"]
+        old_name = role.name
         for field, value in updates.items():
             setattr(role, field, value)
+        if role.name != old_name:
+            await self.session.execute(update(User).where(User.role_id == role.id).values(role=role.name))
         await self.audit.add(
             AuditLog(
                 user_id=self.actor.id if self.actor else None,
@@ -212,6 +294,10 @@ class RoleService:
                 entity_type="role",
                 entity_id=str(role.id),
                 entity_label=role.name,
+                details={
+                    "before": before,
+                    "after": {"name": role.name, "permissions": list(role.permissions or [])},
+                },
             )
         )
         await self.session.commit()
@@ -219,15 +305,26 @@ class RoleService:
         return role
 
     async def delete(self, role_id: int) -> None:
-        self._require_admin()
+        self._require("admin.roles.delete")
         role = await self.repo.get(role_id)
         if role is None:
             raise NotFoundError("Role not found")
         if role.is_system:
             raise ConflictError("System roles cannot be deleted")
-        if (await self.repo.users_with_role(role.name)) > 0:
+        if (await self.repo.users_with_role(role.id)) > 0:
             raise ConflictError("Role is assigned to users and cannot be deleted")
         await self.repo.delete(role)
+        await self.audit.add(
+            AuditLog(
+                user_id=self.actor.id if self.actor else None,
+                user_name=self.actor.display_name if self.actor else None,
+                action="role_deleted",
+                entity_type="role",
+                entity_id=str(role.id),
+                entity_label=role.name,
+                details={"before": {"name": role.name, "permissions": list(role.permissions or [])}},
+            )
+        )
         await self.session.commit()
 
 
@@ -273,18 +370,43 @@ class SettingService:
         await cache.delete_keys(f"{SETTINGS_CACHE_PREFIX}app-info")
         return default
 
+    async def reset_all_data(self) -> dict:
+        from app.seed import reset_all_data as run_reset_all_data
+
+        await run_reset_all_data()
+        await cache.delete_keys(
+            f"{SETTINGS_CACHE_PREFIX}app-info",
+            f"{SETTINGS_CACHE_PREFIX}app-config",
+            f"{SETTINGS_CACHE_PREFIX}storage",
+        )
+        await cache.delete_prefix(DASHBOARD_CACHE_PREFIX)
+        return {
+            "message": "All data reset. Bootstrap defaults restored.",
+            "requiresReauth": True,
+        }
+
     async def get_app_config(self, mask: bool = True) -> dict:
+        from app.services.telegram_context import normalize_telegram_config
+
         cached = await cache.get_json(f"{SETTINGS_CACHE_PREFIX}app-config")
         if cached is not None:
-            return cached
+            result = _deep_merge(_default_app_config(), cached)
+            result["telegram"] = normalize_telegram_config(result.get("telegram") or {})
+            return _mask_config(result) if mask else result
         value = await self.repo.get_value("app_config")
-        result = value or _default_app_config()
+        result = _deep_merge(_default_app_config(), value or {})
+        result["telegram"] = normalize_telegram_config(result.get("telegram") or {})
         await cache.set_json(f"{SETTINGS_CACHE_PREFIX}app-config", result, settings.settings_cache_ttl_seconds)
         return _mask_config(result) if mask else result
 
     async def update_app_config(self, patch: dict) -> dict:
         current = await self.repo.get_value("app_config") or _default_app_config()
         merged = _deep_merge(current, _mask_config(patch, write=True))
+        from app.services.telegram_context import normalize_telegram_config, validate_telegram_config
+
+        if "telegram" in merged:
+            merged["telegram"] = normalize_telegram_config(merged["telegram"])
+            validate_telegram_config(merged["telegram"])
         merged["updatedAt"] = utcnow().isoformat()
         await self.repo.put_value("app_config", merged, self.actor.id if self.actor else None)
         await self.audit.add(
@@ -396,15 +518,33 @@ def _default_app_config() -> dict:
             "botToken": "",
             "connectionMode": "bot_api",
             "messageLanguage": "en",
+            "interactiveGroupEnabled": False,
+            "interactiveGroupId": "",
+            "allowedModules": {
+                "finance": False,
+                "motorcycles": True,
+                "customers": False,
+                "rentals": True,
+            },
+            "sensitiveFields": {
+                "customerName": False,
+                "customerPhone": False,
+                "financialTotals": False,
+                "rentalBalances": False,
+            },
             "notifyNewRental": True,
             "notifyOverdueRental": True,
             "notifyRentalCompleted": True,
             "notifyPayment": True,
             "notifyCharge": True,
             "notifyExpense": True,
+            "deadlineReminderEnabled": True,
+            "deadlineReminderValue": 1,
+            "deadlineReminderUnit": "hours",
             "passwordResetEnabled": True,
             "connectionStatus": "not_tested",
             "destinations": [],
+            "userAccess": [],
         },
         "notifications": {
             "inAppEnabled": True,
@@ -463,6 +603,8 @@ class DashboardService:
         outstanding = Decimal(str(outstanding_result.scalar() or 0))
 
         rentals_by_day: list[dict] = []
+        income_by_day: list[dict] = []
+        expense_by_day: list[dict] = []
         if start and end:
             series_start = start
             day_counts = {
@@ -475,10 +617,14 @@ class DashboardService:
                     )
                 ).all()
             }
+            income_map = {day: float(amount) for day, amount in await self.payments.daily_series(start, end)}
+            expense_map = {day: float(amount) for day, amount in await self.expenses.daily_series(start, end)}
             cursor = series_start.date()
             while cursor <= end.date():
                 key = cursor.isoformat()
                 rentals_by_day.append({"date": key, "count": day_counts.get(key, 0)})
+                income_by_day.append({"date": key, "amount": income_map.get(key, 0.0)})
+                expense_by_day.append({"date": key, "amount": expense_map.get(key, 0.0)})
                 cursor += timedelta(days=1)
 
         result = {
@@ -491,6 +637,8 @@ class DashboardService:
             "netIncome": float(income - expense),
             "outstanding": float(outstanding),
             "rentalsByDay": rentals_by_day,
+            "incomeByDay": income_by_day,
+            "expenseByDay": expense_by_day,
             "startDate": start.date().isoformat() if start else None,
             "endDate": end.date().isoformat() if end else None,
         }

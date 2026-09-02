@@ -73,7 +73,6 @@ export const rentalModules: ModuleConfig[] = [
       rcol('status', 'Status', 'ស្ថានភាព'),
     ],
     fields: [
-      rf('code', 'Motorcycle Code', 'លេខកូដម៉ូតូ', 'General Information', 'ព័ត៌មានទូទៅ', 'text', undefined, { required: true }),
       rf('model', 'Model', 'ម៉ូដែល', 'General Information', 'ព័ត៌មានទូទៅ', 'text', undefined, { required: true }),
       rf('brand', 'Brand', 'ម៉ាក', 'General Information', 'ព័ត៌មានទូទៅ'),
       rf('year', 'Year', 'ឆ្នាំ', 'General Information', 'ព័ត៌មានទូទៅ', 'number'),
@@ -85,7 +84,6 @@ export const rentalModules: ModuleConfig[] = [
       rf('threeDayRate', '3 Day Rate', 'តម្លៃ ៣ ថ្ងៃ', 'Rates', 'អត្រា', 'number'),
       rf('weeklyRate', '1 Week Rate', 'តម្លៃ ១ អាទិត្យ', 'Rates', 'អត្រា', 'number'),
       rf('monthlyRate', '1 Month Rate', 'តម្លៃ ១ ខែ', 'Rates', 'អត្រា', 'number'),
-      rf('assetValue', 'Asset Value', 'តម្លៃទ្រព្យ', 'Rates', 'អត្រា', 'number'),
       rf('currency', 'Currency', 'រូបិយប័ណ្ណ', 'Rates', 'អត្រា', 'select', RENTAL_CURRENCY_OPTIONS),
       // Status is driven by row actions / rental lifecycle (not free-form edit).
       rf('status', 'Status', 'ស្ថានភាព', 'Status', 'ស្ថានភាព', 'select', MOTORCYCLE_STATUS, { computed: true }),
@@ -112,19 +110,18 @@ export const rentalModules: ModuleConfig[] = [
     columns: [
       rcol('code', 'Customer Code', 'លេខកូដអតិថិជន'),
       rcol('fullName', 'Full Name', 'ឈ្មោះពេញ'),
+      rcol('company', 'Company', 'ក្រុមហ៊ុន'),
       rcol('identityNumber', 'Identity / Passport', 'អត្តសញ្ញាណ / លិខិតឆ្លងដែន'),
       rcol('phone', 'Phone', 'ទូរស័ព្ទ'),
-      rcol('company', 'Company', 'ក្រុមហ៊ុន'),
       rcol('status', 'Status', 'ស្ថានភាព'),
     ],
     fields: [
-      rf('code', 'Customer Code', 'លេខកូដអតិថិជន', 'General Information', 'ព័ត៌មានទូទៅ', 'text', undefined, { required: true }),
       rf('fullName', 'Full Name', 'ឈ្មោះពេញ', 'General Information', 'ព័ត៌មានទូទៅ', 'text', undefined, { required: true }),
       rf('phone', 'Phone', 'ទូរស័ព្ទ', 'General Information', 'ព័ត៌មានទូទៅ', 'text', undefined, { required: true }),
       rf('email', 'Email', 'អ៊ីមែល', 'General Information', 'ព័ត៌មានទូទៅ'),
+      rf('company', 'Company', 'ក្រុមហ៊ុន', 'General Information', 'ព័ត៌មានទូទៅ'),
       rf('identityType', 'Identity Type', 'ប្រភេទអត្តសញ្ញាណ', 'Identity', 'អត្តសញ្ញាណ', 'select', RENTAL_IDENTITY_TYPES),
       rf('identityNumber', 'Identity Number', 'លេខអត្តសញ្ញាណ', 'Identity', 'អត្តសញ្ញាណ', 'text', undefined, { required: true }),
-      rf('company', 'Company / Shop', 'ក្រុមហ៊ុន / ហាង', 'Identity', 'អត្តសញ្ញាណ'),
       rf('address', 'Address', 'អាសយដ្ឋាន', 'Identity', 'អត្តសញ្ញាណ', 'textarea', undefined, { colSpan: 2 }),
       // Status is driven by row actions (Active ↔ Inactive).
       rf('status', 'Status', 'ស្ថានភាព', 'Status', 'ស្ថានភាព', 'select', RENTAL_CUSTOMER_STATUS, { computed: true }),

@@ -5,6 +5,8 @@ import {
   normalizePermissionRows,
   setPermissionAction,
 } from '~/utils/role/permissions'
+import { ApiEndpoints } from '~/utils/constants/api-endpoints'
+import type { ApiResponse } from '~/types/rental/common'
 
 const rows = defineModel<AppRolePermissionRow[]>({ default: () => [] })
 
@@ -13,11 +15,13 @@ const props = withDefaults(defineProps<{ disabled?: boolean }>(), {
 })
 
 const { t, te } = useI18n()
+const api = useApi()
+const definitions = ref<Array<(typeof ROLE_DOCUMENT_TYPES)[number]>>([])
 
 const displayRows = computed(() => normalizePermissionRows(rows.value))
 const grantedCount = computed(() => displayRows.value.reduce((sum, row) => sum + row.actions.length, 0))
-const totalCount = ROLE_DOCUMENT_TYPES.reduce((sum, definition) => sum + definition.actions.length, 0)
-const allGranted = computed(() => grantedCount.value === totalCount)
+const totalCount = computed(() => definitions.value.reduce((sum, definition) => sum + definition.actions.length, 0))
+const allGranted = computed(() => grantedCount.value === totalCount.value)
 const someGranted = computed(() => grantedCount.value > 0 && !allGranted.value)
 
 function commit(next: AppRolePermissionRow[]) {
@@ -29,11 +33,31 @@ function ensureAllRows() {
   if (JSON.stringify(next) !== JSON.stringify(rows.value)) rows.value = next
 }
 
-onMounted(ensureAllRows)
+onMounted(async () => {
+  ensureAllRows()
+  try {
+    const response = await api.get<ApiResponse<Array<{ module: string, actions: string[] }>>>(
+      ApiEndpoints.PERMISSIONS,
+      { suppressErrorToast: true, requestKey: 'permission-catalog' },
+    )
+    const catalog = Array.isArray(response) ? response : response.data
+    definitions.value = catalog.map((group) => {
+      const existing = ROLE_DOCUMENT_TYPES.find(item => item.permissionPrefix === group.module)
+      return existing
+        ? { ...existing, actions: group.actions.filter((action: string) => existing.actions.includes(action as never)) as typeof existing.actions }
+        : null
+    }).filter(Boolean) as unknown as typeof definitions.value
+  }
+  catch {
+    // The backend catalog is authoritative when available; fail closed if it
+    // cannot be loaded so roles cannot accidentally receive stale permissions.
+    definitions.value = []
+  }
+})
 watch(rows, ensureAllRows, { deep: false })
 
 function documentTypeLabel(value: string) {
-  const found = ROLE_DOCUMENT_TYPES.find(item => item.value === value)
+  const found = definitions.value.find(item => item.value === value)
   if (found && te(found.labelKey)) return t(found.labelKey)
   return value.replaceAll('_', ' ')
 }
@@ -48,7 +72,7 @@ function hasAction(row: AppRolePermissionRow, action: string) {
 }
 
 function allowedActions(documentType: string) {
-  return ROLE_DOCUMENT_TYPES.find(item => item.value === documentType)?.actions || []
+  return definitions.value.find(item => item.value === documentType)?.actions || []
 }
 
 function toggleAction(documentType: string, action: string, checked: boolean | 'indeterminate') {
@@ -115,7 +139,7 @@ function toggleAll(checked: boolean) {
     </div>
 
     <div class="overflow-x-auto">
-      <table class="min-w-[36rem] w-full text-sm">
+      <table class="min-w-xl w-full text-sm">
         <thead>
           <tr class="bg-elevated/50 text-left text-highlighted">
             <th class="w-12 px-3 py-2.5">

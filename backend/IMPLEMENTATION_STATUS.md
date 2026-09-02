@@ -134,9 +134,9 @@ Last verified: 2026-09-01 (Python 3.12.10, Docker 29.1.3 / Compose v2.40.3 on Wi
 | Check | Result |
 |-------|--------|
 | `pytest` (83 tests, local temp Postgres+Redis+RabbitMQ) | PASS |
-| `docker compose -f backend/docker-compose.yml config` | PASS |
-| `docker compose -f backend/docker-compose.yml build` | PASS (api + telegram images) |
-| `docker compose -f backend/docker-compose.yml up -d` (all 9 services healthy) | PASS |
+| `docker compose config` (repository root) | PASS |
+| `docker compose build` (repository root) | PASS (api + telegram images) |
+| `docker compose up -d` (repository root; all 9 services healthy) | PASS |
 | `alembic upgrade head` (in api container) | PASS |
 | `pytest` (in api container, 83 tests) | PASS |
 | `/health/live`, `/health/ready` (postgres/redis/rabbitmq all ok) | PASS |

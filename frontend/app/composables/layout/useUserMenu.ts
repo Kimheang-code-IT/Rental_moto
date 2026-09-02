@@ -18,8 +18,6 @@ export function useUserMenu() {
   const i18n = useI18n()
   const { t } = i18n
 
-  preferences.hydrate()
-
   const aboutOpen = useState('user-menu-about-open', () => false)
   const profileOpen = useState('user-menu-profile-open', () => false)
 

@@ -13,6 +13,7 @@ import { headerListNavDisabled } from '~/utils/layout/header-actions'
  */
 const props = withDefaults(defineProps<{
   canCreate?: boolean
+  canExport?: boolean
   createLabel?: string
   createIcon?: string
   createButtons?: Array<{ label: string, icon?: string }>
@@ -40,6 +41,7 @@ const props = withDefaults(defineProps<{
   metaRailOpen?: boolean
 }>(), {
   canCreate: false,
+  canExport: true,
   createLabel: '',
   createIcon: 'i-lucide-plus',
   createButtons: () => [],
@@ -92,6 +94,10 @@ const resolvedCreateLabel = computed(() =>
   props.createLabel || t('core.actions.addItem'),
 )
 
+const resolvedSaveLabel = computed(() =>
+  props.saveLabel || (props.isCreate ? t('core.confirm.submit') : t('core.common.save')),
+)
+
 const defaultMoreItems = computed<DropdownMenuItem[][]>(() => [[
   {
     label: t('actions.export'),
@@ -118,7 +124,7 @@ function withoutPrint(items: DropdownMenuItem[][]): DropdownMenuItem[][] {
 const menuItems = computed(() => {
   if (!props.showMoreActions) return []
   const custom = props.moreItems || []
-  const exportItem = defaultMoreItems.value[0] || []
+  const exportItem = props.canExport ? (defaultMoreItems.value[0] || []) : []
   const groups = [
     [...exportItem, ...(custom[0] || [])],
     ...custom.slice(1),
@@ -177,7 +183,7 @@ function syncActions() {
       : undefined,
     save: props.showSave
       ? {
-          label: props.saveLabel || t('core.common.save'),
+          label: resolvedSaveLabel.value,
           loading: Boolean(props.saving),
           onClick: () => emit('save'),
         }
@@ -219,7 +225,7 @@ watch(
     props.listNavigationDirection,
     props.isCreate,
     props.showSave,
-    props.saveLabel,
+    resolvedSaveLabel.value,
     props.saving,
     props.showCancel,
     props.cancelTo,

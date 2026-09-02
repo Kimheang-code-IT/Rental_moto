@@ -4,6 +4,7 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import { useAuth } from '~/composables/auth/useAuth'
 import { usePageSeo } from '~/composables/usePageSeo'
 import {
+  applyPasswordResetHandoff,
   clearPasswordResetSession,
   getPasswordResetSession,
 } from '~/utils/auth/password-reset'
@@ -13,11 +14,13 @@ definePageMeta({
 })
 
 const { t } = useI18n()
+const route = useRoute()
 const router = useRouter()
 const toast = useToast()
-const { resetPasswordWithCode } = useAuth()
+const { resetPasswordWithCode, exchangePasswordResetHandoff } = useAuth()
 const submitting = ref(false)
 const session = ref(getPasswordResetSession())
+const handoffLoading = ref(false)
 
 usePageSeo({
   title: () => t('pages.forgetPassword.resetTitle'),
@@ -25,7 +28,25 @@ usePageSeo({
   robots: 'noindex, nofollow',
 })
 
-onMounted(() => {
+onMounted(async () => {
+  const handoff = typeof route.query.handoff === 'string' ? route.query.handoff : ''
+  if (handoff) {
+    handoffLoading.value = true
+    try {
+      const result = await exchangePasswordResetHandoff(handoff)
+      applyPasswordResetHandoff(result.data.email, result.data.resetToken)
+      session.value = getPasswordResetSession()
+      await router.replace({ path: route.path, query: {} })
+    }
+    catch {
+      await router.replace('/auth/forget-password')
+    }
+    finally {
+      handoffLoading.value = false
+    }
+    return
+  }
+
   session.value = getPasswordResetSession()
   if (!session.value?.email) {
     void router.replace('/auth/forget-password')
@@ -108,7 +129,7 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
       :title="t('pages.forgetPassword.resetTitle')"
       icon="i-lucide-lock-keyhole"
       :fields="fields"
-      :loading="submitting"
+      :loading="submitting || handoffLoading"
       :submit="{
         label: t('pages.forgetPassword.resetSubmit'),
         class: 'w-full h-10! text-xl font-normal',
