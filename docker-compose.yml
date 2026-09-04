@@ -12,6 +12,7 @@
 
 x-api-build: &api-build
   image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/api:${IMAGE_TAG:-local}
+  pull_policy: ${PULL_POLICY:-build}
   build:
     context: ./backend
     dockerfile: Dockerfile
@@ -147,6 +148,7 @@ services:
 
   frontend:
     image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/frontend:${IMAGE_TAG:-local}
+    pull_policy: ${PULL_POLICY:-build}
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -286,6 +288,7 @@ services:
 
   telegram-bot:
     image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/telegram-bot:${IMAGE_TAG:-local}
+    pull_policy: ${PULL_POLICY:-build}
     build:
       context: ./backend
       dockerfile: Dockerfile.telegram
