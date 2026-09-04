@@ -81,13 +81,20 @@ After reset, log in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `.env`
 
 See [`docs/PRODUCTION_CHECKLIST.md`](../docs/PRODUCTION_CHECKLIST.md).
 
-```powershell
-# Clean business data + MinIO invoices + local caches
-.\scripts\prepare-production.ps1
+Images are built in GitHub Actions and pushed to GHCR (`ghcr.io/kimheang-code-it/rental_moto/{api,frontend,telegram-bot}`).
 
-# Start with production overlay (no DB/Redis/RabbitMQ/MinIO host ports)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```powershell
+# On the production host: copy .env.production.example -> .env, set secrets, then:
+docker login ghcr.io
+.\scripts\deploy-from-registry.ps1
 ```
+
+```bash
+docker login ghcr.io
+./scripts/deploy-from-registry.sh
+```
+
+Do not pass `--build` on production. The API refuses to start if development secrets are still in `.env`. Swagger `/docs` is disabled when `ENVIRONMENT=production`.
 
 ## Development logins (development-only)
 

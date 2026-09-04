@@ -51,6 +51,8 @@ async def test_app_config_telegram_chat_id_and_user_access(client, admin_headers
     assert telegram["chatId"] == "-5378646026"
     assert telegram["deadlineReminderValue"] == 2
     assert telegram["deadlineReminderUnit"] == "hours"
+    assert "deadline_approaching" in telegram["destinations"][0]["enabledEvents"]
+    assert "rental_created" in telegram["destinations"][0]["enabledEvents"]
     assert len(telegram["userAccess"]) >= 1
     assert telegram["userAccess"][0]["userId"] == 1
 

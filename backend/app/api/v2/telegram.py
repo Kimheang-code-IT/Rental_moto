@@ -319,7 +319,10 @@ async def send_test(
     body = body or {}
     service = TelegramNotificationService(session, redis)
     message = body.get("message") or "HollyWing Motor test message"
-    chat_id = body.get("chatId")
+    chat_id = body.get("chatId") or body.get("chat_id")
+    if not chat_id:
+        config = await SettingService(session).telegram_config()
+        chat_id = config.get("chatId")
     ok = await service.send_direct(chat_id=chat_id, message=message)
     return envelope(
         {

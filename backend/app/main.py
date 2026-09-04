@@ -17,6 +17,7 @@ logger = logging.getLogger("hollywing")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.assert_safe_for_production()
     logger.info("HollyWing Motor API starting (%s)", settings.environment)
     yield
     await close_redis()
@@ -24,12 +25,14 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    docs_enabled = not settings.is_production
     app = FastAPI(
         title=settings.app_name,
         version="2.0.0",
         lifespan=lifespan,
-        docs_url="/docs",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
 
     cors_kwargs: dict = {

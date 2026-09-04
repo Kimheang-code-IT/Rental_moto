@@ -8,6 +8,8 @@ os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "false")
 os.environ.setdefault("RATE_LIMIT_LOGIN_PER_MINUTE", "1000")
 os.environ.setdefault("RATE_LIMIT_REFRESH_PER_MINUTE", "1000")
 os.environ.setdefault("RATE_LIMIT_RESET_PER_HOUR", "1000")
+os.environ.setdefault("ENVIRONMENT", "development")
+os.environ.setdefault("DEBUG", "true")
 
 import asyncio
 from typing import AsyncIterator

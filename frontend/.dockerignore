@@ -3,8 +3,14 @@ node_modules
 .output
 dist
 .git
+.github
 .env
 .env.*
 !.env.example
 coverage
 *.log
+*.md
+test
+tests
+**/*.spec.ts
+**/*.test.ts

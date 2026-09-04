@@ -321,7 +321,7 @@ const selectItems = computed(() =>
   [...(props.field.options || []), ...remoteOptions.value]
     .filter(o => o.value !== '')
     .map(o => ({
-      label: o.labelKey ? t(o.labelKey) : o.label,
+      label: o.labelKey ? t(o.labelKey) : (o.label || o.value),
       value: o.value,
     })),
 )
@@ -359,6 +359,7 @@ const placeholderText = computed(() => {
 })
 
 const isBoolean = computed(() => props.field.type === 'boolean')
+const isDuration = computed(() => props.field.type === 'duration')
 const isPermissionMatrix = computed(() => props.field.type === 'permission-matrix')
 const isSecret = computed(() => props.field.type === 'secret')
 const isColor = computed(() => props.field.type === 'color')
@@ -395,6 +396,46 @@ const showPricingTotals = computed(() => Boolean(props.field.meta?.showPricingTo
 const includeTaxTotal = computed(() => Boolean(props.field.meta?.includeTax))
 const lineCompact = computed(() => Boolean(props.field.meta?.compact))
 const lineViewOnly = computed(() => Boolean(props.field.meta?.viewOnly || props.field.readOnly))
+
+const DURATION_UNITS = ['minutes', 'hours', 'days'] as const
+
+function asDuration(value: unknown): { value: number, unit: (typeof DURATION_UNITS)[number] } {
+  const raw = value && typeof value === 'object' ? value as { value?: unknown, unit?: unknown } : {}
+  const parsed = Number(raw.value)
+  const unit = String(raw.unit || 'hours')
+  return {
+    value: Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 10_080) : 1,
+    unit: DURATION_UNITS.includes(unit as typeof DURATION_UNITS[number]) ? unit as typeof DURATION_UNITS[number] : 'hours',
+  }
+}
+
+const durationValue = computed({
+  get: () => asDuration(props.modelValue).value,
+  set: (value: number | null) => emit('update:modelValue', { ...asDuration(props.modelValue), value: value ?? 1 }),
+})
+
+const durationUnit = computed({
+  get: () => asDuration(props.modelValue).unit,
+  set: (unit: string | { value?: string } | undefined) => {
+    const next = unit && typeof unit === 'object' ? String(unit.value || 'hours') : String(unit || 'hours')
+    emit('update:modelValue', { ...asDuration(props.modelValue), unit: next })
+  },
+})
+
+const durationUnitItems = computed(() => {
+  if (props.field.options?.length) return selectItems.value
+  return DURATION_UNITS.map(unit => ({
+    label: t(`rental.settings.duration${unit.charAt(0).toUpperCase()}${unit.slice(1)}`),
+    value: unit,
+  }))
+})
+
+const durationPreview = computed(() => {
+  const duration = asDuration(props.modelValue)
+  const unitItem = durationUnitItems.value.find(item => item.value === duration.unit)
+  const unitLabel = (unitItem?.label || duration.unit).toLowerCase()
+  return t('rental.settings.deadlineReminderPreview', { value: duration.value, unit: unitLabel })
+})
 
 const { formatMoney } = useAppLocalization()
 
@@ -775,6 +816,37 @@ function removeDestination(id: string) {
     :last-tested-at="connectionValue.lastTestedAt"
     :details="connectionValue.details"
   />
+
+  <UFormField
+    v-else-if="isDuration"
+    class="md:col-span-2"
+    :label="labelText"
+    :help="helpText"
+  >
+    <UFieldGroup size="md" class="w-full max-w-md">
+      <UInputNumber
+        v-model="durationValue"
+        :min="1"
+        :max="10080"
+        :disabled="disabled || field.readOnly"
+        :increment="false"
+        :decrement="false"
+        size="md"
+        class="min-w-0 flex-1"
+      />
+      <USelect
+        v-model="durationUnit"
+        :items="durationUnitItems"
+        value-key="value"
+        :disabled="disabled || field.readOnly"
+        size="md"
+        class="w-36"
+      />
+    </UFieldGroup>
+    <p class="mt-1.5 text-xs text-muted">
+      {{ durationPreview }}
+    </p>
+  </UFormField>
 
   <!-- Checkbox: label beside control + helper text below -->
   <UFormField

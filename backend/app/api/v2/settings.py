@@ -117,7 +117,7 @@ async def telegram_test_connection(
     session: AsyncSession = Depends(get_db_session),
     user=Depends(require_permission("settings.app_config.configure")),
 ) -> dict:
-    result = await test_telegram_connection(session)
+    result = await test_telegram_connection(session, send_message=True)
     return envelope(result)
 
 

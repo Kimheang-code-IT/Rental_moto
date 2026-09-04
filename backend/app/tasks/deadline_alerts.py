@@ -41,57 +41,62 @@ def reminder_label(value: int, unit: str) -> str:
     return f"{value} {singular}"
 
 
+async def enqueue_deadline_alerts(session, batch_limit: int = 100) -> dict:
+    now = utcnow()
+    from app.services.admin_service import SettingService
+
+    app_config = await SettingService(session).get_app_config(mask=False)
+    telegram_config = app_config.get("telegram") or {}
+    lead_time = reminder_delta(telegram_config)
+    if lead_time is None:
+        return {"alerted": 0, "status": "disabled"}
+    window_end = now + lead_time
+    configured_value = reminder_value(telegram_config)
+    configured_unit = telegram_config.get("deadlineReminderUnit", "hours")
+    result = await session.execute(
+        select(Rental)
+        .where(
+            Rental.status == "Active",
+            Rental.due_date > now,
+            Rental.due_date <= window_end,
+            Rental.deadline_alerted_at.is_(None),
+        )
+        .with_for_update(skip_locked=True)
+        .limit(batch_limit)
+    )
+    rentals = list(result.scalars().all())
+    alerted = 0
+    for rental in rentals:
+        rental.deadline_alerted_at = now
+        session.add(
+            OutboxEvent(
+                event_type="deadline_approaching",
+                payload={
+                    "rental_no": rental.rental_no,
+                    "customer": rental.customer,
+                    "motorcycle": rental.motorcycle,
+                    "plate": rental.plate,
+                    "start_date": rental.start_date.isoformat() if rental.start_date else None,
+                    "due_date": rental.due_date.isoformat() if rental.due_date else None,
+                    "outstanding": float(rental.outstanding),
+                    "currency": rental.currency,
+                    "status": rental.status,
+                    "reminder_value": configured_value,
+                    "reminder_unit": configured_unit,
+                    "reminder_label": reminder_label(configured_value, configured_unit),
+                },
+                queue="telegram",
+            )
+        )
+        alerted += 1
+    await session.commit()
+    return {"alerted": alerted}
+
+
 @celery_app.task(base=BaseTask, bind=True, name="app.tasks.deadline_alerts.scan_deadline_alerts")
 def scan_deadline_alerts(self, batch_limit: int = 100) -> dict:
     async def _run() -> dict:
-        now = utcnow()
-        alerted = 0
         async with SessionFactory() as session:
-            from app.services.admin_service import SettingService
-
-            app_config = await SettingService(session).get_app_config(mask=False)
-            telegram_config = app_config.get("telegram") or {}
-            lead_time = reminder_delta(telegram_config)
-            if lead_time is None:
-                return {"alerted": 0, "status": "disabled"}
-            window_end = now + lead_time
-            configured_value = reminder_value(telegram_config)
-            configured_unit = telegram_config.get("deadlineReminderUnit", "hours")
-            result = await session.execute(
-                select(Rental)
-                .where(
-                    Rental.status == "Active",
-                    Rental.due_date > now,
-                    Rental.due_date <= window_end,
-                    Rental.deadline_alerted_at.is_(None),
-                )
-                .with_for_update(skip_locked=True)
-                .limit(batch_limit)
-            )
-            rentals = list(result.scalars().all())
-            for rental in rentals:
-                rental.deadline_alerted_at = now
-                session.add(
-                    OutboxEvent(
-                        event_type="deadline_approaching",
-                        payload={
-                            "rental_no": rental.rental_no,
-                            "customer": rental.customer,
-                            "motorcycle": rental.motorcycle,
-                            "plate": rental.plate,
-                            "due_date": rental.due_date.isoformat() if rental.due_date else None,
-                            "outstanding": float(rental.outstanding),
-                            "currency": rental.currency,
-                            "status": rental.status,
-                            "reminder_value": configured_value,
-                            "reminder_unit": configured_unit,
-                            "reminder_label": reminder_label(configured_value, configured_unit),
-                        },
-                        queue="telegram",
-                    )
-                )
-                alerted += 1
-            await session.commit()
-        return {"alerted": alerted}
+            return await enqueue_deadline_alerts(session, batch_limit)
 
     return run_async(_run())

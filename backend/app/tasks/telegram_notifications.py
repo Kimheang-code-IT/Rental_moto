@@ -1,5 +1,6 @@
 import logging
-from html import escape
+import re
+from html import escape, unescape
 
 from app.core.database import SessionFactory
 from app.core.redis import get_redis
@@ -27,7 +28,7 @@ EVENT_TOGGLE_MAP = {
     "payment_recorded": "notifyPayment",
     "charge_recorded": "notifyCharge",
     "expense_recorded": "notifyExpense",
-    "deadline_approaching": "notifyOverdueRental",
+    "deadline_approaching": "deadlineReminderEnabled",
 }
 
 MESSAGE_SEPARATOR = "———————————————————"
@@ -144,10 +145,16 @@ def _destination_accepts(dest: dict, event_type: str) -> bool:
         return False
     if event_type in NOTIFICATION_EVENTS_EXCLUDE_RESET:
         return False
+    if not dest.get("chatId"):
+        return False
+    # The configured Group ID destination receives every notification type.
+    # Event on/off switches live on the Telegram settings toggles.
+    if dest.get("isInteractiveGroup"):
+        return True
     enabled_events = dest.get("enabledEvents") or []
     if enabled_events and event_type not in enabled_events:
         return False
-    return bool(dest.get("chatId"))
+    return True
 
 
 @celery_app.task(base=BaseTask, bind=True, name="app.tasks.telegram_notifications.deliver_event")
@@ -327,6 +334,21 @@ def _safe_redis():
         return None
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _plain_caption(message: str) -> str:
+    plain = unescape(_HTML_TAG_RE.sub("", message))
+    return f"{plain[:1020]}…" if len(plain) > 1020 else plain
+
+
+def _document_caption(message: str) -> tuple[str, str | None]:
+    """Keep Telegram document captions within the 1024-character limit."""
+    if len(message) <= 1024:
+        return message, "HTML"
+    return _plain_caption(message), None
+
+
 async def _deliver_chat_notification(
     service: TelegramNotificationService,
     chat_id: str,
@@ -337,13 +359,21 @@ async def _deliver_chat_notification(
 ) -> bool:
     """Send invoice PDF and auto text together as one Telegram document caption."""
     if invoice_content:
+        caption, parse_mode = _document_caption(message)
         ok = await service.send_document(
             chat_id,
             invoice_filename or "Invoice.pdf",
             invoice_content,
-            caption=message,
-            parse_mode="HTML",
+            caption=caption,
+            parse_mode=parse_mode,
         )
+        if not ok:
+            ok = await service.send_document(
+                chat_id,
+                invoice_filename or "Invoice.pdf",
+                invoice_content,
+                caption=_plain_caption(message),
+            )
         if ok:
             return True
         logger.warning("Telegram invoice PDF send failed chat_id=%s filename=%s", chat_id, invoice_filename)

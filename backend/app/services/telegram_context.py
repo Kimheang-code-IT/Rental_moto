@@ -14,6 +14,16 @@ from app.repositories.admin import UserRepository
 
 DEADLINE_REMINDER_UNITS = {"minutes", "hours", "days"}
 
+DEFAULT_DESTINATION_EVENTS = [
+    "rental_created",
+    "rental_overdue",
+    "rental_completed",
+    "payment_recorded",
+    "charge_recorded",
+    "expense_recorded",
+    "deadline_approaching",
+]
+
 MODULE_PERMISSIONS = {
     "finance": "rental.finance.view",
     "motorcycles": "rental.motorcycles.view",
@@ -101,15 +111,6 @@ def normalize_telegram_config(config: dict | None) -> dict:
 
 def _sync_main_destination(cfg: dict, chat_id: str) -> None:
     """Keep a default notification destination aligned with the configured group ID."""
-    default_events = [
-        "rental_created",
-        "rental_overdue",
-        "rental_completed",
-        "payment_recorded",
-        "charge_recorded",
-        "expense_recorded",
-        "deadline_approaching",
-    ]
     destinations = list(cfg.get("destinations") or [])
     main = next((item for item in destinations if str(item.get("chatId")) == chat_id), None)
     if main is None:
@@ -121,7 +122,7 @@ def _sync_main_destination(cfg: dict, chat_id: str) -> None:
                 "type": "group",
                 "chatId": chat_id,
                 "enabled": True,
-                "enabledEvents": default_events,
+                "enabledEvents": list(DEFAULT_DESTINATION_EVENTS),
                 "status": "not_tested",
                 "isInteractiveGroup": True,
             },
@@ -129,8 +130,11 @@ def _sync_main_destination(cfg: dict, chat_id: str) -> None:
     else:
         main["enabled"] = True
         main["isInteractiveGroup"] = True
-        if not main.get("enabledEvents"):
-            main["enabledEvents"] = default_events
+        existing = [str(event) for event in (main.get("enabledEvents") or []) if event]
+        for event in DEFAULT_DESTINATION_EVENTS:
+            if event not in existing:
+                existing.append(event)
+        main["enabledEvents"] = existing
     for dest in destinations:
         if str(dest.get("chatId")) != chat_id:
             dest["isInteractiveGroup"] = False

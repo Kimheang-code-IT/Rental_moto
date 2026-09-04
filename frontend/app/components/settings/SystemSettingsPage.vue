@@ -77,6 +77,15 @@ function fieldValue(key: string): unknown {
     return raw == null || raw === '' ? undefined : String(raw)
   }
 
+  if (key === 'telegram.deadlineReminderDuration') {
+    const value = Number(model.value.telegram.deadlineReminderValue)
+    const unit = model.value.telegram.deadlineReminderUnit
+    return {
+      value: Number.isFinite(value) && value >= 1 ? Math.min(Math.trunc(value), 10_080) : 1,
+      unit: unit === 'minutes' || unit === 'days' ? unit : 'hours',
+    }
+  }
+
   return getByPath(model.value, key)
 }
 
@@ -110,6 +119,15 @@ async function setFieldValue(key: string, value: unknown) {
   if (key === 'localization.firstDayOfWeek') {
     const day = Number(value)
     setByPath(model.value, key, day === 0 || day === 1 || day === 6 ? day : 1)
+    return
+  }
+
+  if (key === 'telegram.deadlineReminderDuration') {
+    const duration = value && typeof value === 'object' ? value as { value?: unknown, unit?: unknown } : {}
+    const parsed = Number(duration.value)
+    setByPath(model.value, 'telegram.deadlineReminderValue', Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 10_080) : 1)
+    const unit = String(duration.unit || 'hours')
+    setByPath(model.value, 'telegram.deadlineReminderUnit', unit === 'minutes' || unit === 'days' ? unit : 'hours')
     return
   }
 
@@ -154,7 +172,7 @@ async function testTelegram() {
   testingTelegram.value = true
   try {
     if (model.value) await appConfig.update({ telegram: model.value.telegram })
-    const result = await appConfig.testTelegramConnection()
+    const result = await appConfig.sendTestTelegramMessage()
     model.value = await appConfig.get()
     toast.add({
       title: result.message,

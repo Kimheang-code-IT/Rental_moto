@@ -5,7 +5,11 @@ from app.tasks.telegram_notifications import (
     INVOICE_PDF_EVENTS,
     _archive_invoice,
     _deliver_chat_notification,
+    _destination_accepts,
+    _document_caption,
+    _event_enabled,
     _format_message,
+    _plain_caption,
 )
 
 
@@ -38,6 +42,63 @@ async def test_invoice_events_send_one_document_with_auto_caption():
         parse_mode="HTML",
     )
     telegram.send_direct.assert_not_awaited()
+
+
+async def test_invoice_retries_plain_caption_when_html_document_fails():
+    telegram = SimpleNamespace(
+        send_direct=AsyncMock(return_value=True),
+        send_document=AsyncMock(side_effect=[False, True]),
+    )
+    caption = "<b>🆕 New rental</b>\n\n- Ref: RNT-2026-000001"
+
+    ok = await _deliver_chat_notification(
+        telegram,
+        "-100123",
+        caption,
+        invoice_content=b"%PDF-invoice",
+        invoice_filename="Invoice-RNT-2026-000001.pdf",
+    )
+
+    assert ok is True
+    assert telegram.send_document.await_count == 2
+    first = telegram.send_document.await_args_list[0]
+    second = telegram.send_document.await_args_list[1]
+    assert first.kwargs["parse_mode"] == "HTML"
+    assert "parse_mode" not in second.kwargs
+    assert "<b>" not in second.kwargs["caption"]
+    telegram.send_direct.assert_not_awaited()
+
+
+def test_long_caption_is_stripped_to_plain_text():
+    caption, parse_mode = _document_caption("x" * 1025)
+    assert parse_mode is None
+    assert len(caption) <= 1024
+    assert _plain_caption("<b>Sok &amp; Dara</b>") == "Sok & Dara"
+
+
+def test_interactive_group_accepts_deadline_even_when_event_list_is_stale():
+    dest = {
+        "chatId": "-100123",
+        "enabled": True,
+        "isInteractiveGroup": True,
+        "enabledEvents": ["rental_created"],
+    }
+    assert _destination_accepts(dest, "deadline_approaching") is True
+    assert _destination_accepts(dest, "rental_created") is True
+    assert _destination_accepts({**dest, "enabled": False}, "rental_created") is False
+
+
+def test_extra_destination_still_filters_enabled_events():
+    dest = {"chatId": "900001", "enabled": True, "enabledEvents": ["payment_recorded"]}
+    assert _destination_accepts(dest, "payment_recorded") is True
+    assert _destination_accepts(dest, "deadline_approaching") is False
+
+
+def test_deadline_event_uses_deadline_reminder_toggle():
+    enabled = {"enabled": True, "deadlineReminderEnabled": True, "notifyOverdueRental": False}
+    disabled = {"enabled": True, "deadlineReminderEnabled": False, "notifyOverdueRental": True}
+    assert _event_enabled(enabled, "deadline_approaching") is True
+    assert _event_enabled(disabled, "deadline_approaching") is False
 
 
 async def test_invoice_text_still_sends_when_pdf_is_missing():

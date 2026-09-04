@@ -30,6 +30,28 @@ def test_normalize_syncs_group_id_to_interactive_group():
     assert cfg["interactiveGroupEnabled"] is True
     assert len(cfg["destinations"]) == 1
     assert cfg["destinations"][0]["chatId"] == "-100123"
+    assert "deadline_approaching" in cfg["destinations"][0]["enabledEvents"]
+    assert "rental_created" in cfg["destinations"][0]["enabledEvents"]
+
+
+def test_normalize_adds_deadline_event_to_existing_destination():
+    cfg = normalize_telegram_config(
+        {
+            "chatId": "-100123",
+            "destinations": [
+                {
+                    "id": "main-group",
+                    "chatId": "-100123",
+                    "enabled": True,
+                    "enabledEvents": ["rental_created"],
+                }
+            ],
+        }
+    )
+    events = cfg["destinations"][0]["enabledEvents"]
+    assert "rental_created" in events
+    assert "deadline_approaching" in events
+    assert cfg["destinations"][0]["isInteractiveGroup"] is True
 
 
 def test_validate_accepts_single_group_synced_from_chat_id():

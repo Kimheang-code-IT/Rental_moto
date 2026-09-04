@@ -6,3 +6,10 @@ __pycache__
 .ruff_cache
 data/
 htmlcov/
+.git
+.gitignore
+.github
+tests/
+*.md
+.coverage
+.dockerignore

@@ -2,6 +2,16 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_DEV_JWT_SECRET = "dev-only-secret-change-me-in-production-0123456789abcdef"
+_DEV_TELEGRAM_SECRET = "dev-only-telegram-secret-change-me-0123456789abcdef"
+_DEV_SEED_PASSWORD = "123456"
+_DEV_MINIO_SECRET = "minioadmin123"
+
+
+def _is_placeholder_secret(value: str) -> bool:
+    stripped = (value or "").strip()
+    return not stripped or stripped.startswith("CHANGE_ME") or stripped.startswith("dev-only")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -20,14 +30,14 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://localhost:6379/2"
     rabbitmq_url: str = "amqp://rental:rental@localhost:5672/rental"
 
-    jwt_secret_key: str = "dev-only-secret-change-me-in-production-0123456789abcdef"
+    jwt_secret_key: str = _DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     service_token_expire_minutes: int = 10
 
     telegram_bot_client_id: str = "rental-telegram-bot"
-    telegram_bot_client_secret: str = "dev-only-telegram-secret-change-me-0123456789abcdef"
+    telegram_bot_client_secret: str = _DEV_TELEGRAM_SECRET
     telegram_bot_token: str = ""
     telegram_bot_mode: str = "polling"
     telegram_webhook_url: str = ""
@@ -46,7 +56,7 @@ class Settings(BaseSettings):
     rate_limit_reset_per_hour: int = 5
 
     seed_admin_email: str = "admin@gmail.com"
-    seed_admin_password: str = "123456"
+    seed_admin_password: str = _DEV_SEED_PASSWORD
     seed_admin_name: str = "System Administrator"
 
     task_default_max_retries: int = 5
@@ -61,7 +71,7 @@ class Settings(BaseSettings):
     minio_enabled: bool = True
     minio_endpoint: str = "minio:9000"
     minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin123"
+    minio_secret_key: str = _DEV_MINIO_SECRET
     minio_bucket: str = "rental-files"
     minio_secure: bool = False
 
@@ -70,8 +80,33 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
+    def is_production(self) -> bool:
+        return self.environment.lower() == "production"
+
+    @property
     def sync_database_url(self) -> str:
         return self.database_url.replace("+asyncpg", "")
+
+    def assert_safe_for_production(self) -> None:
+        """Refuse to boot with development secrets when ENVIRONMENT=production."""
+        if not self.is_production:
+            return
+
+        problems: list[str] = []
+        if self.jwt_secret_key == _DEV_JWT_SECRET or _is_placeholder_secret(self.jwt_secret_key) or len(self.jwt_secret_key) < 32:
+            problems.append("JWT_SECRET_KEY is missing, too short, or still a development placeholder")
+        if self.telegram_bot_client_secret == _DEV_TELEGRAM_SECRET or _is_placeholder_secret(self.telegram_bot_client_secret):
+            problems.append("TELEGRAM_BOT_CLIENT_SECRET is still a development placeholder")
+        if self.seed_admin_password == _DEV_SEED_PASSWORD or _is_placeholder_secret(self.seed_admin_password) or len(self.seed_admin_password) < 12:
+            problems.append("SEED_ADMIN_PASSWORD is too weak or still a development placeholder")
+        if self.minio_enabled and (self.minio_secret_key == _DEV_MINIO_SECRET or _is_placeholder_secret(self.minio_secret_key)):
+            problems.append("MINIO_SECRET_KEY is still a development placeholder")
+        if self.debug:
+            problems.append("DEBUG must be false in production")
+        if self.cors_allow_private_networks:
+            problems.append("CORS_ALLOW_PRIVATE_NETWORKS must be false in production")
+        if problems:
+            raise RuntimeError("Unsafe production configuration: " + "; ".join(problems))
 
 
 @lru_cache

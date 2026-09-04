@@ -55,6 +55,7 @@ function isFullWidthField(field: DocumentTabSchema['sections'][0]['fields'][0]) 
     || field.type === 'telegram-user-access'
     || field.type === 'notification-rules'
     || field.type === 'connection-status'
+    || field.type === 'duration'
     || field.type === 'alert'
     || field.type === 'line-table'
     || field.type === 'related-records'

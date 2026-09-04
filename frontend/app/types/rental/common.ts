@@ -64,6 +64,7 @@ export type FieldType =
   | 'color'
   | 'image'
   | 'csv-list'
+  | 'duration'
   | 'telegram-destinations'
   | 'telegram-user-access'
   | 'notification-rules'
@@ -74,7 +75,7 @@ export type FieldType =
   | 'related-records'
 
 export interface FieldOption {
-  label: string
+  label?: string
   value: string
   labelKey?: string
   meta?: Record<string, unknown>
