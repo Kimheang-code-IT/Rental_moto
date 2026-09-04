@@ -1,4 +1,4 @@
-"""Frontend-matched A5 rental invoice PDF generation for Telegram delivery."""
+"""Frontend-matched A4 rental invoice PDF generation for Telegram delivery."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class InvoicePdfService:
         try:
             from reportlab.lib import colors
             from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-            from reportlab.lib.pagesizes import A5
+            from reportlab.lib.pagesizes import A4
             from reportlab.lib.styles import ParagraphStyle
             from reportlab.lib.units import mm
             from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -98,8 +98,8 @@ class InvoicePdfService:
         def style(name: str, **kwargs):
             defaults = {
                 "fontName": regular_font,
-                "fontSize": 6.5,
-                "leading": 8,
+                "fontSize": 9,
+                "leading": 11,
                 "textColor": colors.HexColor(INK),
                 "spaceAfter": 0,
                 "spaceBefore": 0,
@@ -108,19 +108,19 @@ class InvoicePdfService:
             return ParagraphStyle(name, **defaults)
 
         normal = style("invoice-normal")
-        value_right = style("invoice-value-right", alignment=TA_RIGHT, fontSize=6.4, leading=8)
-        money_right = style("invoice-money-right", alignment=TA_RIGHT, fontSize=6.4, leading=8)
-        center = style("invoice-center", alignment=TA_CENTER, fontSize=6.1, leading=7.2)
-        title = style("invoice-title", alignment=TA_CENTER, fontName=bold_font, fontSize=9, leading=10)
-        company = style("invoice-company", fontName=bold_font, fontSize=11, leading=12, textColor=colors.HexColor("#0B4F91"))
-        company_sub = style("invoice-company-sub", fontSize=5.7, leading=7, textColor=colors.HexColor(MUTED))
-        contact_style = style("invoice-contact", alignment=TA_RIGHT, fontSize=5.8, leading=7, textColor=colors.HexColor("#334155"))
-        section = style("invoice-section", fontName=bold_font, fontSize=4.8, leading=6, textColor=colors.HexColor(MUTED))
-        terms = style("invoice-terms", fontSize=5.4, leading=7, textColor=colors.HexColor("#475569"))
-        total_style = style("invoice-total", fontName=bold_font, fontSize=9, leading=10)
-        total_value = style("invoice-total-value", fontName=bold_font, fontSize=9, leading=10, alignment=TA_RIGHT)
-        white_header = style("invoice-white-header", alignment=TA_CENTER, fontName=bold_font, fontSize=5.7, leading=6.8, textColor=colors.white)
-        white_footer = style("invoice-white-footer", alignment=TA_CENTER, fontName=bold_font, fontSize=5.5, leading=7, textColor=colors.white)
+        value_right = style("invoice-value-right", alignment=TA_RIGHT, fontSize=9, leading=11)
+        money_right = style("invoice-money-right", alignment=TA_RIGHT, fontSize=9, leading=11)
+        center = style("invoice-center", alignment=TA_CENTER, fontSize=8.5, leading=10)
+        title = style("invoice-title", alignment=TA_CENTER, fontName=bold_font, fontSize=13, leading=15)
+        company = style("invoice-company", fontName=bold_font, fontSize=15, leading=17, textColor=colors.HexColor("#0B4F91"))
+        company_sub = style("invoice-company-sub", fontSize=8, leading=10, textColor=colors.HexColor(MUTED))
+        contact_style = style("invoice-contact", alignment=TA_RIGHT, fontSize=8, leading=10, textColor=colors.HexColor("#334155"))
+        section = style("invoice-section", fontName=bold_font, fontSize=7, leading=9, textColor=colors.HexColor(MUTED))
+        terms = style("invoice-terms", fontSize=8, leading=10, textColor=colors.HexColor("#475569"))
+        total_style = style("invoice-total", fontName=bold_font, fontSize=13, leading=15)
+        total_value = style("invoice-total-value", fontName=bold_font, fontSize=13, leading=15, alignment=TA_RIGHT)
+        white_header = style("invoice-white-header", alignment=TA_CENTER, fontName=bold_font, fontSize=8, leading=10, textColor=colors.white)
+        white_footer = style("invoice-white-footer", alignment=TA_CENTER, fontName=bold_font, fontSize=8, leading=10, textColor=colors.white)
 
         def p(text: object, paragraph_style=normal):
             return Paragraph(_xml(str(text if text not in (None, "") else "—")), paragraph_style)
@@ -139,7 +139,7 @@ class InvoicePdfService:
                 return p(en, paragraph_style)
             return Paragraph(
                 f'<font name="{khmer_bold_font}">{_xml(km)}</font><br/>'
-                f'<font name="{regular_font}" color="{english_color}" size="5.2">{_xml(en)}</font>',
+                f'<font name="{regular_font}" color="{english_color}" size="7.5">{_xml(en)}</font>',
                 khmer_style(paragraph_style, bold=True),
             )
 
@@ -211,11 +211,11 @@ class InvoicePdfService:
         buffer = BytesIO()
         document = SimpleDocTemplate(
             buffer,
-            pagesize=A5,
-            rightMargin=9 * mm,
-            leftMargin=9 * mm,
-            topMargin=9 * mm,
-            bottomMargin=9 * mm,
+            pagesize=A4,
+            rightMargin=12 * mm,
+            leftMargin=12 * mm,
+            topMargin=12 * mm,
+            bottomMargin=12 * mm,
             title=f"{'Final ' if final else ''}Invoice {invoice_no}",
             author=company_name,
             subject=f"Rental {rental.rental_no}",
@@ -225,18 +225,18 @@ class InvoicePdfService:
         logo_path = Path(__file__).resolve().parents[1] / "assets" / "logo.png"
         brand_cell = []
         if logo_path.exists():
-            brand_cell.append(Image(str(logo_path), width=13 * mm, height=13 * mm))
+            brand_cell.append(Image(str(logo_path), width=18 * mm, height=18 * mm))
         brand_text = Table(
             [[p(company_name, company)], [p(LABELS["motorcycle_rental"][1], company_sub)]],
-            colWidths=[46 * mm],
+            colWidths=[67 * mm],
             style=TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]),
         )
-        brand = Table([brand_cell + [brand_text]] if brand_cell else [[brand_text]], colWidths=([15 * mm, 46 * mm] if brand_cell else [61 * mm]))
+        brand = Table([brand_cell + [brand_text]] if brand_cell else [[brand_text]], colWidths=([21 * mm, 67 * mm] if brand_cell else [88 * mm]))
         brand.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 2), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
         contact_lines = "<br/>".join(_xml(value) for value in (company_address, contact) if value)
         header = Table(
             [[brand, Paragraph(contact_lines, contact_style)]],
-            colWidths=[64 * mm, 66 * mm],
+            colWidths=[92 * mm, 94 * mm],
             style=TableStyle([
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -263,7 +263,7 @@ class InvoicePdfService:
         ]
 
         def info_block(title_text: str, rows: list[list]):
-            table = Table(rows, colWidths=[27 * mm, 34 * mm], hAlign="LEFT")
+            table = Table(rows, colWidths=[40 * mm, 49 * mm], hAlign="LEFT")
             table.setStyle(TableStyle([
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -273,13 +273,13 @@ class InvoicePdfService:
             ]))
             return Table(
                 [[p(title_text.upper(), section)], [table]],
-                colWidths=[61 * mm],
+                colWidths=[89 * mm],
                 style=TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]),
             )
 
         info = Table(
             [[info_block("Invoice Info", left_rows), info_block("Customer Info", right_rows)]],
-            colWidths=[65 * mm, 65 * mm],
+            colWidths=[93 * mm, 93 * mm],
             style=TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]),
         )
         story.extend([info, Spacer(1, 2 * mm)])
@@ -300,7 +300,7 @@ class InvoicePdfService:
             ])
         if not line_items:
             item_rows.append([p("No invoice items", center), "", "", "", "", ""])
-        lines_table = Table(item_rows, colWidths=[10 * mm, 37 * mm, 22 * mm, 15 * mm, 23 * mm, 23 * mm], repeatRows=1)
+        lines_table = Table(item_rows, colWidths=[14 * mm, 53 * mm, 32 * mm, 21 * mm, 33 * mm, 33 * mm], repeatRows=1)
         lines_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(BLUE)),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
@@ -327,7 +327,7 @@ class InvoicePdfService:
                 )
             ])
         terms_body.append([p(TERMS_EN, terms)])
-        terms_block = Table(terms_body, colWidths=[72 * mm])
+        terms_block = Table(terms_body, colWidths=[103 * mm])
         terms_block.setStyle(TableStyle([
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -344,7 +344,7 @@ class InvoicePdfService:
             [bilingual("paid"), p(_money(paid, currency), money_right)],
             [bilingual("outstanding"), p(_money(outstanding, currency), money_right)],
         ]
-        totals_table = Table(totals_data, colWidths=[27 * mm, 29 * mm])
+        totals_table = Table(totals_data, colWidths=[39 * mm, 41 * mm])
         totals_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -357,7 +357,7 @@ class InvoicePdfService:
         ]))
         summary = Table(
             [[terms_block, totals_table]],
-            colWidths=[74 * mm, 56 * mm],
+            colWidths=[106 * mm, 80 * mm],
             style=TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]),
         )
         story.extend([summary, Spacer(1, 4 * mm)])
@@ -372,7 +372,7 @@ class InvoicePdfService:
             )
         footer = Table(
             [[Paragraph("<br/>".join(footer_lines), khmer_style(white_footer, bold=True) if khmer_enabled else white_footer)]],
-            colWidths=[130 * mm],
+            colWidths=[186 * mm],
             style=TableStyle([
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(BLUE)),
                 ("LEFTPADDING", (0, 0), (-1, -1), 6),

@@ -10,6 +10,7 @@ from app.core.money import allocate_payment, distribute_document_discount, money
 from app.core.pricing import (
     duration_days,
     line_charge,
+    rate_type_for,
     resolve_motorcycle_rates,
 )
 from app.models import (
@@ -116,7 +117,7 @@ class RentalService:
                 raise ValidationError("Due date must be after start date")
             days = duration_days(line.start_date, line.due_date)
             rates = resolve_motorcycle_rates(moto.daily_rate, moto.three_day_rate, moto.weekly_rate, moto.monthly_rate)
-            charge = line_charge(rates, days)
+            charge = line_charge(rates, days, line.start_date, line.due_date)
             if charge <= 0:
                 raise ValidationError(f"Cannot compute charge for motorcycle {moto.code}")
             line_charges.append(charge)
@@ -159,7 +160,7 @@ class RentalService:
                 start_date=line.start_date,
                 due_date=line.due_date,
                 duration_days=days,
-                rate_type="Monthly" if 28 <= days <= 31 else "Daily",
+                rate_type=rate_type_for(days, line.start_date, line.due_date),
                 rate_amount=money(charge),
                 deposit=money(line.deposit),
                 discount=discount,
@@ -283,7 +284,7 @@ class RentalService:
 
         days = duration_days(start_date, due_date)
         rates = resolve_motorcycle_rates(moto.daily_rate, moto.three_day_rate, moto.weekly_rate, moto.monthly_rate)
-        charge = line_charge(rates, days)
+        charge = line_charge(rates, days, start_date, due_date)
         if charge <= 0:
             raise ValidationError(f"Cannot compute charge for motorcycle {moto.code}")
 
@@ -307,7 +308,7 @@ class RentalService:
         if due_date_changed:
             rental.deadline_alerted_at = None
         rental.duration_days = days
-        rental.rate_type = "Monthly" if 28 <= days <= 31 else "Daily"
+        rental.rate_type = rate_type_for(days, start_date, due_date)
         rental.rate_amount = money(charge)
         rental.deposit = money(request.deposit if request.deposit is not None else rental.deposit)
         rental.discount = discount

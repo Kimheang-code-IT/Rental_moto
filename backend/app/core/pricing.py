@@ -1,3 +1,4 @@
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -60,10 +61,61 @@ def duration_days(start: datetime, due: datetime) -> int:
     return max(int(seconds / 86400 + 0.999999), 1) if seconds % 86400 else int(seconds // 86400)
 
 
-def line_charge(rates: MotorcycleRates, days: int) -> Decimal:
+def _at_minute(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.replace(second=0, microsecond=0)
+
+
+def add_months(start: datetime, months: int) -> datetime:
+    """Add calendar months, clamping to the last day of the target month."""
+    month_index = start.month - 1 + max(0, int(months or 0))
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(start.day, monthrange(year, month)[1])
+    return start.replace(year=year, month=month, day=day)
+
+
+def calendar_months_between(start: datetime | None, due: datetime | None) -> int:
+    """Return n when due is exactly start plus n calendar months (minute precision)."""
+    if not start or not due:
+        return 0
+    start_m = _at_minute(start)
+    due_m = _at_minute(due)
+    if due_m <= start_m:
+        return 0
+    for n in range(1, 37):
+        if _at_minute(add_months(start_m, n)) == due_m:
+            return n
+    return 0
+
+
+def rate_type_for(days: int, start: datetime | None = None, due: datetime | None = None) -> str:
+    months = calendar_months_between(start, due)
+    if months >= 1:
+        return "Monthly"
+    d = max(0, int(days or 0))
+    if d == 3:
+        return "ThreeDay"
+    if d == 7:
+        return "Weekly"
+    if 28 <= d <= 31:
+        return "Monthly"
+    return "Daily"
+
+
+def line_charge(
+    rates: MotorcycleRates,
+    days: int,
+    start: datetime | None = None,
+    due: datetime | None = None,
+) -> Decimal:
     d = max(0, int(days or 0))
     if d <= 0:
         return Decimal("0.00")
+    months = calendar_months_between(start, due)
+    if months >= 1:
+        return money(rates.monthly * months)
     if d == 1:
         return rates.daily
     if d == 3:
@@ -75,8 +127,10 @@ def line_charge(rates: MotorcycleRates, days: int) -> Decimal:
     return money(rates.daily * d)
 
 
-def line_amounts(rates: MotorcycleRates, days: int, discount=0) -> LineAmounts:
-    charge = line_charge(rates, days)
+def line_amounts(
+    rates: MotorcycleRates, days: int, discount=0, start: datetime | None = None, due: datetime | None = None
+) -> LineAmounts:
+    charge = line_charge(rates, days, start, due)
     disc = min(max(money(discount), Decimal("0.00")), charge)
     return LineAmounts(charge=charge, discount=money(disc), line_total=money(max(charge - disc, Decimal("0"))))
 

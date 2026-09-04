@@ -69,6 +69,9 @@ async def test_rental_invoice_pdf_contains_invoice_details():
     assert content is not None and content.startswith(b"%PDF")
     assert len(content) > 5_000
     assert filename == "Invoice-RNT-2026-001.pdf"
+    # A4 is 595.27 x 841.89 points; A5 is 419.53 x 595.28.
+    assert b"841.88" in content or b"841.89" in content
+    assert b"419.52" not in content and b"419.53" not in content
 
 
 def test_invoice_datetime_uses_ui_localization_config():

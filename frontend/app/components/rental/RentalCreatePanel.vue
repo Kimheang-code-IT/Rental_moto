@@ -10,11 +10,15 @@ import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionL
 import { downloadCsv } from '~/utils/export/csv'
 import {
   addDaysToDateTime,
-  allocateRentalPayment,
+  appliedUnitPrice,
   daysBetween,
+  detectRatePlan,
   documentTotals,
-  resolveMotorcycleRates,
+  dueDateFromRatePlan,
+  lineCharge,
+  rentalRateType,
   todayDateTimeLocal,
+  type RentalRatePlan,
 } from '~/utils/rental/pricing'
 import { toIsoZoned } from '~/utils/api/datetime'
 import { useRentalCommands } from '~/repositories/index'
@@ -81,6 +85,7 @@ onMounted(() => {
 const customerId = ref('')
 const startDate = ref(todayDateTimeLocal())
 const dueDate = ref(addDaysToDateTime(todayDateTimeLocal(), 1))
+const ratePlan = ref<RentalRatePlan>('1d')
 const depositDate = ref(todayDateTimeLocal().slice(0, 10))
 const deposit = ref(0)
 const headerDiscount = ref(0)
@@ -172,8 +177,7 @@ function onSelectModel(line: RentalLine, model: string | number) {
   line.unitPrice = 0
   const first = availableMotorcycles.value.find(row => String(row.model) === line.model)
   if (first) {
-    const rates = resolveMotorcycleRates(first)
-    line.unitPrice = rates.daily
+    line.unitPrice = appliedUnitPrice(first, line.days || 1, startDate.value, dueDate.value)
   }
 }
 
@@ -183,14 +187,14 @@ function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
   const moto = motoById(line.motorcycleId)
   if (!moto) return
   line.model = String(moto.model || line.model)
-  line.unitPrice = resolveMotorcycleRates(moto).daily
-  if (!line.days) line.days = 1
+  if (!line.days) line.days = daysBetween(startDate.value, dueDate.value) || 1
+  line.unitPrice = appliedUnitPrice(moto, line.days, startDate.value, dueDate.value)
 }
 
 function lineAmount(line: RentalLine) {
-  const days = Math.max(0, Number(line.days) || 0)
-  const price = Math.max(0, Number(line.unitPrice) || 0)
-  return Number((days * price).toFixed(2))
+  const moto = motoById(line.motorcycleId)
+  if (moto) return lineCharge(moto, line.days, startDate.value, dueDate.value)
+  return 0
 }
 
 const lineComputed = computed(() => lines.value.map(line => ({
@@ -275,36 +279,62 @@ watch(() => totals.value.total, (total) => {
   if (!isDetail.value && paidAmount.value > total) paidAmount.value = total
 })
 
-watch(startDate, () => {
-  if (isFormReadOnly.value || syncingDates.value) return
-  const days = lines.value[0]?.days || daysBetween(startDate.value, dueDate.value) || 1
-  if (days > 0 && startDate.value) {
-    syncingDates.value = true
-    dueDate.value = addDaysToDateTime(startDate.value, days)
-    syncingDates.value = false
+const ratePlanItems = computed(() => [
+  { label: tx('rental.ui.ratePlan1Day', '1 day'), value: '1d' },
+  { label: tx('rental.ui.ratePlan3Days', '3 days'), value: '3d' },
+  { label: tx('rental.ui.ratePlan1Week', '1 week'), value: '1w' },
+  { label: tx('rental.ui.ratePlan1Month', '1 month'), value: '1m' },
+  { label: tx('rental.ui.ratePlanCustom', 'Custom dates'), value: 'custom' },
+])
+
+function syncLinesFromDates() {
+  const days = Math.max(1, daysBetween(startDate.value, dueDate.value) || lines.value[0]?.days || 1)
+  ratePlan.value = detectRatePlan(startDate.value, dueDate.value, days)
+  for (const line of lines.value) {
+    line.days = days
+    const moto = motoById(line.motorcycleId)
+    line.unitPrice = moto
+      ? appliedUnitPrice(moto, days, startDate.value, dueDate.value)
+      : line.unitPrice
   }
+}
+
+watch(startDate, () => {
+  if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
+  const days = lines.value[0]?.days || daysBetween(startDate.value, dueDate.value) || 1
+  syncingDates.value = true
+  dueDate.value = dueDateFromRatePlan(startDate.value, ratePlan.value, days)
+  syncingDates.value = false
+  syncLinesFromDates()
 })
 
 watch(dueDate, () => {
   if (isFormReadOnly.value || syncingDates.value || !startDate.value || !dueDate.value) return
   const days = daysBetween(startDate.value, dueDate.value)
-  if (days > 0) {
-    syncingDates.value = true
-    for (const line of lines.value) line.days = days
-    syncingDates.value = false
-  }
+  if (days > 0) syncLinesFromDates()
 })
 
-function onLineDaysChange(line: RentalLine) {
+function onRatePlanChange(plan: string) {
   if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
-  const days = Math.max(1, Math.floor(Number(line.days) || 1))
-  line.days = days
+  const next = String(plan || '') as RentalRatePlan
+  if (next === 'custom') {
+    ratePlan.value = detectRatePlan(startDate.value, dueDate.value, lines.value[0]?.days || 1)
+    return
+  }
+  ratePlan.value = next
+  syncingDates.value = true
+  dueDate.value = dueDateFromRatePlan(startDate.value, next, lines.value[0]?.days || 1)
+  syncingDates.value = false
+  syncLinesFromDates()
+}
+
+function onLineDaysChange(daysValue?: number | null) {
+  if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
+  const days = Math.max(1, Math.floor(Number(daysValue ?? lines.value[0]?.days) || 1))
   syncingDates.value = true
   dueDate.value = addDaysToDateTime(startDate.value, days)
-  for (const other of lines.value) {
-    if (other.key !== line.key) other.days = days
-  }
   syncingDates.value = false
+  syncLinesFromDates()
 }
 
 function addLine() {
@@ -469,6 +499,19 @@ function hydrateDetail() {
     days: Math.max(1, Number(found.durationDays || daysBetween(String(found.startDate || ''), String(found.dueDate || '')) || 1)),
     unitPrice: Number(found.rateAmount || 0),
   }]
+  const firstLine = lines.value[0]
+  if (firstLine) {
+    const moto = motoById(firstLine.motorcycleId)
+    if (moto) {
+      firstLine.unitPrice = appliedUnitPrice(
+        moto,
+        firstLine.days,
+        startDate.value,
+        dueDate.value,
+      )
+    }
+    ratePlan.value = detectRatePlan(startDate.value, dueDate.value, firstLine.days)
+  }
 }
 
 watch(
@@ -523,7 +566,7 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     startDate: startDate.value,
     dueDate: dueDate.value,
     durationDays: first?.line.days || 1,
-    rateType: 'Daily',
+    rateType: rentalRateType(first?.line.days || 1, startDate.value, dueDate.value),
     rateAmount: first?.line.unitPrice || 0,
     deposit: deposit.value,
     depositDate: depositDate.value,
@@ -779,6 +822,20 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
               />
             </UFormField>
             <UFormField
+              :label="tx('rental.ui.dueDate', 'Due')"
+              :help="help('dueDate', 'Return date and time. 1 month uses the same day next month.')"
+              required
+            >
+              <CommonAppInputDate
+                v-model="dueDate"
+                granularity="minute"
+                required
+                size="md"
+                class="w-full"
+                :disabled="isFormReadOnly"
+              />
+            </UFormField>
+            <UFormField
               :label="tx('rental.ui.depositDate', 'Deposit date')"
               :help="help('depositDate', 'Date the deposit was received.')"
             >
@@ -811,8 +868,9 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                   <tr class="border-b border-default text-left text-xs uppercase tracking-wide text-muted">
                     <th class="px-2 py-2 font-medium">{{ tx('rental.ui.model', 'Motorcycle Model') }}</th>
                     <th class="px-2 py-2 font-medium">{{ tx('rental.ui.plate', 'Plate') }}</th>
+                    <th class="px-2 py-2 font-medium">{{ tx('rental.ui.ratePlan', 'Rate') }}</th>
                     <th class="px-2 py-2 font-medium">{{ tx('rental.ui.daysCount', 'Days') }}</th>
-                    <th class="px-2 py-2 font-medium">{{ tx('rental.ui.unitPrice', 'Unit price / day') }}</th>
+                    <th class="px-2 py-2 font-medium">{{ tx('rental.ui.unitPrice', 'Rate amount') }}</th>
                     <th class="px-2 py-2 text-right font-medium">{{ tx('rental.ui.amount', 'Amount') }}</th>
                     <th class="w-10 px-1 py-2" />
                   </tr>
@@ -846,6 +904,16 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                       />
                     </td>
                     <td class="px-2 py-2">
+                      <USelect
+                        :model-value="ratePlan"
+                        :items="ratePlanItems"
+                        size="md"
+                        class="w-40"
+                        :disabled="isFormReadOnly"
+                        @update:model-value="onRatePlanChange"
+                      />
+                    </td>
+                    <td class="px-2 py-2">
                       <UInputNumber
                         v-model="row.line.days"
                         :min="1"
@@ -854,7 +922,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                         size="md"
                         class="ml-auto w-24"
                         :disabled="isFormReadOnly"
-                        @update:model-value="onLineDaysChange(row.line)"
+                        @update:model-value="onLineDaysChange"
                       />
                     </td>
                     <td class="px-2 py-2">
@@ -886,7 +954,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 </tbody>
               </table>
             </div>
-            <p class="mt-2 text-xs text-muted">{{ help('lines', 'Select model, then plate. Amount = days × unit price per day.') }}</p>
+            <p class="mt-2 text-xs text-muted">{{ help('lines', 'Select model, then plate. Choose 1 day, 3 days, 1 week, or 1 month. Amount uses the motorcycle package rate. 1 month uses the same calendar day next month.') }}</p>
 
             <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <UFormField

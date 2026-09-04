@@ -3,10 +3,13 @@ from decimal import Decimal
 
 from app.core.money import allocate_payment, clamp_non_negative, distribute_document_discount, money
 from app.core.pricing import (
+    add_months,
+    calendar_months_between,
     document_totals,
     duration_days,
     line_amounts,
     line_charge,
+    rate_type_for,
     resolve_motorcycle_rates,
     suggested_deposit,
 )
@@ -38,6 +41,27 @@ def test_line_charge_tiers():
     assert line_charge(rates, 31) == Decimal("200.00")
     assert line_charge(rates, 32) == Decimal("320.00")
     assert line_charge(rates, 0) == Decimal("0.00")
+
+
+def test_add_months_clamps_end_of_month():
+    start = datetime(2026, 1, 31, 10, 0, tzinfo=timezone.utc)
+    assert add_months(start, 1) == datetime(2026, 2, 28, 10, 0, tzinfo=timezone.utc)
+    leap = datetime(2028, 1, 31, 10, 0, tzinfo=timezone.utc)
+    assert add_months(leap, 1) == datetime(2028, 2, 29, 10, 0, tzinfo=timezone.utc)
+
+
+def test_line_charge_uses_calendar_month():
+    rates = resolve_motorcycle_rates(10, 27, 60, 200)
+    start = datetime(2026, 1, 15, 9, 0, tzinfo=timezone.utc)
+    due = datetime(2026, 2, 15, 9, 0, tzinfo=timezone.utc)
+    days = duration_days(start, due)
+    assert calendar_months_between(start, due) == 1
+    assert line_charge(rates, days, start, due) == Decimal("200.00")
+    assert rate_type_for(days, start, due) == "Monthly"
+    two_months = datetime(2026, 3, 15, 9, 0, tzinfo=timezone.utc)
+    assert line_charge(rates, duration_days(start, two_months), start, two_months) == Decimal("400.00")
+    assert rate_type_for(3, start, datetime(2026, 1, 18, 9, 0, tzinfo=timezone.utc)) == "ThreeDay"
+    assert rate_type_for(7) == "Weekly"
 
 
 def test_line_amounts_clamps_discount():

@@ -460,12 +460,15 @@ Port logic from frontend — **single source of truth should eventually be backe
 
 ### 6.1 Pricing (`app/utils/rental/pricing.ts`)
 
-| Duration (days) | Rate |
+Staff pick **1 day / 3 days / 1 week / 1 month**. Motorcycle package rates apply. **1 month** is a calendar month (same day next month; Jan 31 → Feb 28/29), not a fixed 30-day count.
+
+| Duration | Rate |
 |-----------------|------|
-| 1 | daily_rate |
-| 3 | three_day_rate |
-| 7 | weekly_rate |
-| 28–31 | monthly_rate |
+| 1 day | daily_rate |
+| 3 days | three_day_rate |
+| 7 days | weekly_rate |
+| Exact calendar month(s) | monthly_rate × months |
+| 28–31 days (not an exact calendar month) | monthly_rate |
 | other | daily_rate × days |
 
 ### 6.2 Rental lifecycle

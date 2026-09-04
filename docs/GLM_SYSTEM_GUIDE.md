@@ -203,16 +203,20 @@ Only **Active** customers appear in rental create form.
 
 ### 5.1 Pricing (`app/utils/rental/pricing.ts` + `backend/app/core/pricing.py`)
 
-Rate tiers for duration in days:
+Staff pick a package on the rental form: **1 day**, **3 days**, **1 week**, or **1 month**. The motorcycle’s matching rate is used. Changing start/due dates on the rental page recalculates days, package, and charge.
 
+Rate used:
 
-| Days  | Rate used         |
-| ----- | ----------------- |
-| 1     | daily_rate        |
-| 3     | three_day_rate    |
-| 7     | weekly_rate       |
-| 28–31 | monthly_rate      |
+| Duration | Rate used |
+| ----- | ----- |
+| 1 day | daily_rate |
+| 3 days | three_day_rate |
+| 7 days (1 week) | weekly_rate |
+| Exact calendar month(s) (same clock time) | monthly_rate × months |
+| 28–31 days when dates are not an exact calendar month | monthly_rate |
 | other | daily_rate × days |
+
+**1 month** adds one calendar month to the start date (same day next month; Jan 31 → Feb 28/29). It is not a fixed 30-day span.
 
 
 

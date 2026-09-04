@@ -227,7 +227,7 @@
 
 @media print {
   @page {
-    size: A5 portrait;
+    size: A4 portrait;
     margin: 0;
   }
 
@@ -249,10 +249,10 @@
 
   body.rental-invoice-printing .rental-invoice-sheet {
     box-sizing: border-box !important;
-    width: 148mm !important;
-    min-height: 210mm !important;
+    width: 210mm !important;
+    min-height: 297mm !important;
     margin: 0 !important;
-    padding: 9mm !important;
+    padding: 12mm !important;
     print-color-adjust: exact !important;
     -webkit-print-color-adjust: exact !important;
   }
@@ -284,14 +284,14 @@
   }
 
   body.rental-invoice-printing .rental-invoice-print-only img {
-    max-height: 48px !important;
+    max-height: 72px !important;
   }
 }
 
 .rental-invoice-sheet {
   box-sizing: border-box;
-  width: 148mm;
-  min-height: 210mm;
+  width: 210mm;
+  min-height: 297mm;
   margin: 0 auto;
-  padding: 9mm;
+  padding: 12mm;
 }

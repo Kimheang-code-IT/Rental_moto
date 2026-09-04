@@ -4,7 +4,7 @@ export const MOTORCYCLE_STATUS = ['Available', 'Progressing', 'Maintenance'] as 
 
 export const RENTAL_STATUS = ['Active', 'Overdue', 'Completed', 'Cancelled'] as const
 
-export const RATE_TYPES = ['Daily', 'Monthly'] as const
+export const RATE_TYPES = ['Daily', 'ThreeDay', 'Weekly', 'Monthly'] as const
 
 export const RENTAL_IDENTITY_TYPES = ['National ID', 'Passport', 'Driving License', 'Other'] as const
 
