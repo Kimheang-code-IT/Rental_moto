@@ -5,11 +5,16 @@ import { AUTH_STORAGE_KEY, compactAuthUser } from '~/utils/auth/session'
 import { clearTokens, hasTokens } from '~/utils/auth/tokens'
 
 export const useAuthStore = defineStore('auth', () => {
+  // Secure cookies only work on HTTPS. LAN Wi-Fi access uses http://<ip>, so
+  // lock Secure to the actual page protocol or auth cookies never stick.
+  const cookieSecure = import.meta.client
+    ? window.location.protocol === 'https:'
+    : false
   const cookieUser = useCookie<AuthUser | null>('auth_user', {
     default: () => null,
     path: '/',
     sameSite: 'lax',
-    secure: import.meta.env.PROD,
+    secure: cookieSecure,
     maxAge: 60 * 60 * 24 * 30,
   })
   const storedUser = ref<AuthUser | null>(null)

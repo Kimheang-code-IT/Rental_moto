@@ -12,6 +12,7 @@ export function compactAuthUser(user: AuthUser): AuthUser {
     email: user.email,
     role: user.role,
     roleId: user.roleId,
+    isOwner: user.isOwner,
     avatar: user.avatar,
     effectivePermissions: isAllAccess ? ['ALL_PAGES'] : effective,
     pageAccess: isAllAccess ? ['ALL_PAGES'] : effective,

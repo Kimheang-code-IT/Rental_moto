@@ -59,8 +59,6 @@ class UserService:
             raise AccessDeniedError()
         if is_super_admin_user(self.actor):
             return
-        if role.name == "SuperAdmin":
-            raise AccessDeniedError("Only SuperAdmin can assign the SuperAdmin role")
         missing = set(role.permissions or []) - set(effective_permissions(self.actor))
         if missing:
             raise AccessDeniedError("You cannot assign a role with permissions you do not have")
@@ -90,6 +88,7 @@ class UserService:
             password_hash=hash_password(data.password),
             role=role.name,
             role_id=role.id,
+            is_owner=False,
             status=data.status,
             permissions=None,
             page_access=None,
@@ -117,11 +116,17 @@ class UserService:
         user = await self.repo.get(user_id)
         if user is None:
             raise NotFoundError("User not found")
-        from app.core.permissions import is_super_admin_user
+        if user.is_owner and self.actor and user.id != self.actor.id:
+            from app.core.permissions import is_super_admin_user
 
-        if user.role_ref.name == "SuperAdmin" and not is_super_admin_user(self.actor):
-            raise AccessDeniedError("Only SuperAdmin can modify a SuperAdmin user")
-        before = {"roleId": user.role_id, "role": user.role_ref.name, "status": user.status}
+            if not is_super_admin_user(self.actor):
+                raise AccessDeniedError("Only the owner or another owner-level user can modify the owner account")
+        role_ref = user.role_ref
+        before = {
+            "roleId": user.role_id,
+            "role": role_ref.name if role_ref is not None else None,
+            "status": user.status,
+        }
         updates = data.model_dump(exclude_unset=True, by_alias=False)
         if updates.get("email") and updates["email"].lower() != user.email.lower():
             other = await self.repo.get_by_email(updates["email"])
@@ -144,12 +149,10 @@ class UserService:
         if role_id is not None or role_name:
             target_role = await self._resolve_role(role_id, role_name)
         target_status = updates.get("status", user.status)
-        if user.role_ref.name == "SuperAdmin" and (target_role.name != "SuperAdmin" or target_status != "Active"):
-            if (await self._active_super_admin_count()) <= 1:
-                raise ConflictError("Cannot change or disable the final active SuperAdmin user")
-        user.role = target_role.name
-        user.role_id = target_role.id
-        user.role_ref = target_role
+        if target_role is not None:
+            user.role = target_role.name
+            user.role_id = target_role.id
+            user.role_ref = target_role
         for field, value in updates.items():
             setattr(user, field, value)
         await self.audit.add(
@@ -162,7 +165,11 @@ class UserService:
                 entity_label=user.email,
                 details={
                     "before": before,
-                    "after": {"roleId": target_role.id, "role": target_role.name, "status": target_status},
+                    "after": {
+                        "roleId": target_role.id if target_role is not None else None,
+                        "role": target_role.name if target_role is not None else None,
+                        "status": target_status,
+                    },
                 },
             )
         )
@@ -177,12 +184,11 @@ class UserService:
             raise NotFoundError("User not found")
         if self.actor and user.id == self.actor.id:
             raise ConflictError("You cannot delete your own account")
-        from app.core.permissions import is_super_admin_user
-
-        if user.role_ref.name == "SuperAdmin" and not is_super_admin_user(self.actor):
-            raise AccessDeniedError("Only SuperAdmin can delete a SuperAdmin user")
-        if user.role_ref.name == "SuperAdmin" and user.status == "Active" and (await self._active_super_admin_count()) <= 1:
-            raise ConflictError("Cannot delete the final active SuperAdmin user")
+        if user.is_owner:
+            # The system owner cannot be deleted; there is no transfer-owner
+            # flow, so removing the owner would make administration impossible.
+            raise ConflictError("The system owner account cannot be deleted")
+        role_ref = user.role_ref
         await self.repo.delete(user)
         await self.audit.add(
             AuditLog(
@@ -192,19 +198,14 @@ class UserService:
                 entity_type="user",
                 entity_id=str(user_id),
                 entity_label=user.email,
-                details={"before": {"roleId": user.role_id, "role": user.role_ref.name, "status": user.status}},
+                details={"before": {
+                    "roleId": user.role_id,
+                    "role": role_ref.name if role_ref is not None else None,
+                    "status": user.status,
+                }},
             )
         )
         await self.session.commit()
-
-    async def _active_super_admin_count(self) -> int:
-        result = await self.session.execute(
-            select(func.count())
-            .select_from(User)
-            .join(Role, User.role_id == Role.id)
-            .where(Role.name == "SuperAdmin", User.status == "Active")
-        )
-        return int(result.scalar() or 0)
 
 
 class RoleService:
@@ -223,8 +224,9 @@ class RoleService:
     def _validated_permissions(self, values: list[str] | None) -> list[str]:
         from app.core.permissions import effective_permissions, is_super_admin_user, normalize_role_permissions
 
+        allow_wildcard = bool(self.actor is not None and is_super_admin_user(self.actor))
         try:
-            permissions = normalize_role_permissions(values)
+            permissions = normalize_role_permissions(values, allow_wildcard=allow_wildcard)
         except ValueError as exc:
             raise ConflictError(str(exc)) from exc
         if self.actor is not None and not is_super_admin_user(self.actor):
@@ -241,8 +243,8 @@ class RoleService:
         self._require("admin.roles.create")
         if await self.repo.get_by_name(data.name):
             raise ConflictError(f"Role {data.name} already exists")
-        if data.name == "SuperAdmin":
-            raise ConflictError("The SuperAdmin role is reserved")
+        # No reserved role names: the operator may name a role anything,
+        # including "SuperAdmin". Only the permission keys matter.
         permissions = self._validated_permissions(data.permissions)
         role = Role(
             name=data.name,
@@ -270,8 +272,6 @@ class RoleService:
         role = await self.repo.get(role_id)
         if role is None:
             raise NotFoundError("Role not found")
-        if role.name == "SuperAdmin":
-            raise ConflictError("The SuperAdmin role is immutable")
         before = {"name": role.name, "permissions": list(role.permissions or [])}
         updates = data.model_dump(exclude_unset=True, by_alias=False)
         if updates.get("name") and updates["name"].lower() != role.name.lower():
@@ -309,8 +309,8 @@ class RoleService:
         role = await self.repo.get(role_id)
         if role is None:
             raise NotFoundError("Role not found")
-        if role.is_system:
-            raise ConflictError("System roles cannot be deleted")
+        # Roles are operator-owned; is_system is never set by code anymore and
+        # is not treated as a delete blocker. Only user assignments block.
         if (await self.repo.users_with_role(role.id)) > 0:
             raise ConflictError("Role is assigned to users and cannot be deleted")
         await self.repo.delete(role)
@@ -381,7 +381,7 @@ class SettingService:
         )
         await cache.delete_prefix(DASHBOARD_CACHE_PREFIX)
         return {
-            "message": "All data reset. Bootstrap defaults restored.",
+            "message": "All data reset. Users and roles were removed; document sequences and app defaults were restored.",
             "requiresReauth": True,
         }
 

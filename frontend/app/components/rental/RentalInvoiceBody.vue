@@ -99,30 +99,53 @@ interface LineItem {
   plate: string
   days: number | string
   unitPrice: number
+  discount: number
   amount: number
 }
 
 const lineItems = computed<LineItem[]>(() => {
   if (!props.rental) return []
   const items: LineItem[] = []
-  const rentalCharge = Number(props.rental.rentalCharge || 0)
-  const startTime = new Date(String(props.rental.startDate || '')).getTime()
-  const returnTime = new Date(String(props.rental.returnDate || props.rental.dueDate || '')).getTime()
-  const calculatedDays = Number.isFinite(startTime) && Number.isFinite(returnTime) && returnTime > startTime
-    ? Math.ceil((returnTime - startTime) / 86_400_000)
-    : 1
-  const duration = Math.max(1, Number(props.rental.durationDays || calculatedDays))
-  const motorcycle = String(props.rental.motorcycle || '')
-  const plate = String(props.rental.plate || '')
 
-  if (rentalCharge > 0 || motorcycle) {
-    items.push({
-      motorcycle: motorcycle || '—',
-      plate: plate || '—',
-      days: duration,
-      unitPrice: Number(props.rental.rateAmount || 0),
-      amount: rentalCharge || Number((duration * Number(props.rental.rateAmount || 0)).toFixed(2)),
-    })
+  const draftLines = Array.isArray(props.rental.invoiceLines)
+    ? (props.rental.invoiceLines as Array<Record<string, unknown>>)
+    : []
+
+  if (draftLines.length) {
+    for (const row of draftLines) {
+      items.push({
+        motorcycle: String(row.motorcycle || '—'),
+        plate: String(row.plate || '—'),
+        days: Number(row.days || 1),
+        unitPrice: Number(row.unitPrice || 0),
+        discount: Math.max(0, Number(row.discount || 0)),
+        amount: Number(row.amount || 0),
+      })
+    }
+  }
+  else {
+    const rentalCharge = Number(props.rental.rentalCharge || 0)
+    const startTime = new Date(String(props.rental.startDate || '')).getTime()
+    const returnTime = new Date(String(props.rental.returnDate || props.rental.dueDate || '')).getTime()
+    const calculatedDays = Number.isFinite(startTime) && Number.isFinite(returnTime) && returnTime > startTime
+      ? Math.ceil((returnTime - startTime) / 86_400_000)
+      : 1
+    const duration = Math.max(1, Number(props.rental.durationDays || calculatedDays))
+    const motorcycle = String(props.rental.motorcycle || '')
+    const plate = String(props.rental.plate || '')
+    const discount = Math.max(0, Number(props.rental.discount || 0))
+    const gross = Number(props.rental.rateAmount || 0) || Number((rentalCharge + discount).toFixed(2))
+
+    if (rentalCharge > 0 || motorcycle || gross > 0) {
+      items.push({
+        motorcycle: motorcycle || '—',
+        plate: plate || '—',
+        days: duration,
+        unitPrice: gross,
+        discount,
+        amount: rentalCharge || Number((gross - discount).toFixed(2)),
+      })
+    }
   }
 
   const lateFee = Number(props.rental.lateFee || 0)
@@ -132,6 +155,7 @@ const lineItems = computed<LineItem[]>(() => {
       plate: '—',
       days: '—',
       unitPrice: lateFee,
+      discount: 0,
       amount: lateFee,
     })
   }
@@ -147,6 +171,7 @@ const lineItems = computed<LineItem[]>(() => {
       plate: '—',
       days: '—',
       unitPrice: amount,
+      discount: 0,
       amount,
     })
   }
@@ -158,6 +183,7 @@ const lineItems = computed<LineItem[]>(() => {
       plate: '—',
       days: '—',
       unitPrice: additionalFallback,
+      discount: 0,
       amount: additionalFallback,
     })
   }
@@ -165,8 +191,12 @@ const lineItems = computed<LineItem[]>(() => {
   return items
 })
 
-const subtotal = computed(() => lineItems.value.reduce((sum, item) => sum + item.amount, 0))
-const discount = computed(() => Math.max(0, Number(props.rental?.discount || 0)))
+const subtotal = computed(() => lineItems.value.reduce((sum, item) => sum + item.unitPrice, 0))
+const discount = computed(() => {
+  const stored = Math.max(0, Number(props.rental?.discount || 0))
+  if (stored > 0) return stored
+  return lineItems.value.reduce((sum, item) => sum + Math.max(0, Number(item.discount || 0)), 0)
+})
 const tax = computed(() => {
   const stored = Number(props.rental?.tax || 0)
   if (stored > 0) return stored
@@ -288,12 +318,13 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
 
     <table class="invoice-lines w-full table-fixed border-collapse text-[11px]">
       <colgroup>
-        <col class="w-[8%]">
-        <col class="w-[28%]">
-        <col class="w-[16%]">
-        <col class="w-[12%]">
-        <col class="w-[18%]">
-        <col class="w-[18%]">
+        <col class="w-[7%]">
+        <col class="w-[24%]">
+        <col class="w-[14%]">
+        <col class="w-[10%]">
+        <col class="w-[15%]">
+        <col class="w-[15%]">
+        <col class="w-[15%]">
       </colgroup>
       <thead>
         <tr class="bg-[#2463df] text-white">
@@ -318,6 +349,10 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
             <span class="block text-[9px] font-semibold opacity-90">{{ L.unitPrice.en }}</span>
           </th>
           <th class="px-2 py-2 text-center font-bold leading-tight">
+            <span class="block">{{ L.discount.km }}</span>
+            <span class="block text-[9px] font-semibold opacity-90">{{ L.discount.en }}</span>
+          </th>
+          <th class="px-2 py-2 text-center font-bold leading-tight">
             <span class="block">{{ L.amount.km }}</span>
             <span class="block text-[9px] font-semibold opacity-90">{{ L.amount.en }}</span>
           </th>
@@ -330,10 +365,11 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
           <td class="border border-slate-200 px-2 py-2 tabular-nums">{{ item.plate }}</td>
           <td class="border border-slate-200 px-2 py-2 text-center tabular-nums">{{ item.days }}</td>
           <td class="border border-slate-200 px-2 py-2 text-right tabular-nums">{{ money(item.unitPrice) }}</td>
+          <td class="border border-slate-200 px-2 py-2 text-right tabular-nums">{{ money(item.discount) }}</td>
           <td class="border border-slate-200 px-2 py-2 text-right font-semibold tabular-nums">{{ money(item.amount) }}</td>
         </tr>
         <tr v-if="!lineItems.length">
-          <td colspan="6" class="border border-slate-200 px-3 py-5 text-center text-slate-400">
+          <td colspan="7" class="border border-slate-200 px-3 py-5 text-center text-slate-400">
             <span class="block">{{ L.noItems.km }}</span>
             <span class="block">{{ L.noItems.en }}</span>
           </td>

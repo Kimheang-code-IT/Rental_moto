@@ -24,8 +24,8 @@ Tags published: `latest` (main), `sha-<short>`, and semver when you push a `v*` 
 ## 2. Secrets and environment
 
 1. Copy `.env.production.example` to `.env` on the production host.
-2. Replace every `CHANGE_ME_*` value. The API **refuses to start** in production if JWT, admin password, Telegram client secret, or MinIO secret are still placeholders.
-3. Set a strong `SEED_ADMIN_PASSWORD` (at least 12 characters) **before** the first API start (or reset again after changing it).
+2. Replace every `CHANGE_ME_*` value. The API **refuses to start** in production if JWT, Telegram client secret, or MinIO secret are still placeholders.
+3. Do not set any `SEED_ADMIN_*` variables; they no longer exist. The first administrator registers through the public `/auth/setup` page (email + password) immediately after the first deploy, while the users table is empty.
 4. Set `CORS_ORIGINS` to your real HTTPS origin(s), for example `https://app.your-domain.com`.
 5. Set `CORS_ALLOW_PRIVATE_NETWORKS=false` and `DEBUG=false`.
 6. Set `ENVIRONMENT=production`.
@@ -86,13 +86,13 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api python 
 # docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-After reset, only the SuperAdmin from `SEED_ADMIN_*` remains.
+After reset, no users exist; the app shows the first-run `/auth/setup` page.
 
 ## 5. Post-deploy checks
 
-- [ ] Open the site over HTTPS and sign in as SuperAdmin
-- [ ] Change the admin password immediately after first login if the seed password was temporary
-- [ ] Create real staff users and roles (do not keep demo passwords)
+- [ ] Open the site over HTTPS, register the first system owner through `/auth/setup`, and use a strong password
+- [ ] Confirm `GET /api/v2/auth/setup-status` returns `needsSetup: false` and `POST /api/v2/auth/setup` returns 409 afterwards
+- [ ] Create real staff users and roles
 - [ ] Configure System Settings → Localization, Telegram destinations, company info
 - [ ] Create motorcycles and customers
 - [ ] Create one test rental and confirm Telegram invoice + MinIO archive

@@ -67,6 +67,90 @@ class AuthService:
         self.redis = redis if redis is not None else _safe_redis()
         self.limiter = RateLimiter(self.redis)
 
+    async def setup_status(self) -> bool:
+        """True only when the users table has zero rows (first-run bootstrap)."""
+        return (await self.users.count()) == 0
+
+    @staticmethod
+    def _base_username(email: str) -> str:
+        import re
+
+        local = email.split("@", 1)[0].lower()
+        return re.sub(r"[^a-z0-9._-]", "", local) or "admin"
+
+    async def _derive_username(self, email: str) -> str:
+        """Derive a unique username from the email local part (setup only)."""
+        base = self._base_username(email)
+        candidate = base
+        suffix = 2
+        while await self.users.get_by_username(candidate) is not None:
+            candidate = f"{base}-{suffix}"
+            suffix += 1
+        return candidate
+
+    async def setup_initial_admin(self, email: str, password: str, ip: str | None) -> tuple[str, str, int, int, User]:
+        """Create the system owner while no users exist, then issue tokens.
+
+        Single transaction: owner insert, audit event, refresh session, commit.
+        The raw password is never stored or logged. The owner has no role: full
+        access comes from users.is_owner (ALL_PAGES). Roles are created by the
+        operator through /api/v2/roles after setup.
+        """
+        await self.limiter.hit(f"setup:{ip}", settings.rate_limit_login_per_minute, 60)
+        email = email.strip().lower()
+        if (await self.users.count()) > 0:
+            # Deliberately generic: do not reveal anything about existing accounts.
+            raise ConflictError("Setup has already been completed")
+
+        username = await self._derive_username(email)
+        user = User(
+            username=username,
+            display_name=email.split("@", 1)[0],
+            email=email,
+            password_hash=hash_password(password),
+            role=None,
+            role_id=None,
+            is_owner=True,
+            status="Active",
+            permissions=None,
+            page_access=None,
+        )
+        await self.users.create(user)
+        await self.session.flush()
+
+        await self.audit.add(
+            AuditLog(
+                user_id=user.id,
+                user_name=user.display_name,
+                action="setup_admin_created",
+                entity_type="user",
+                entity_id=str(user.id),
+                entity_label=user.email,
+            )
+        )
+
+        access, _, _ = create_access_token(user.id)
+        refresh, refresh_exp, jti, family = create_refresh_token(user.id)
+        self.session.add(
+            RefreshTokenSession(
+                user_id=user.id,
+                family_id=family,
+                jti=jti,
+                token_hash=hash_token(refresh),
+                expires_at=refresh_exp,
+                ip_address=ip,
+            )
+        )
+        user.last_login_at = utcnow()
+        await self.session.commit()
+        return (
+            access,
+            refresh,
+            settings.access_token_expire_minutes * 60,
+            settings.refresh_token_expire_days * 24 * 3600,
+            user,
+        )
+
     async def login(self, email: str, password: str, ip: str | None, user_agent: str | None) -> tuple[str, str, int, int, User]:
         await self.limiter.hit(f"login:{ip}", settings.rate_limit_login_per_minute, 60)
         await self.limiter.hit(f"login:email:{email.lower()}", settings.rate_limit_login_per_minute, 60)

@@ -1,4 +1,5 @@
 import type { AuthUser } from '~/types/auth-user'
+import { useSetupStatus } from '~/composables/auth/useSetupStatus'
 import { ok } from '~/mocks/query'
 import { clearTokens, getAccessToken, hasTokens, setTokens } from '~/utils/auth/tokens'
 import { ApiEndpoints } from '~/utils/constants/api-endpoints'
@@ -37,6 +38,25 @@ export function useAuth() {
     setTokens(payload.accessToken, payload.refreshToken)
     const user = payload.user
     if (!user) throw createError({ statusCode: 401, statusMessage: 'Invalid credentials' })
+    return ok<LoginResult>({ user })
+  }
+
+  /** Public: true only while no user exists, so the UI can force first-run setup. */
+  async function fetchSetupStatus(): Promise<boolean> {
+    const { ensureSetupStatus } = useSetupStatus()
+    return ensureSetupStatus()
+  }
+
+  /** First-run bootstrap: register the system owner with email + password only. */
+  async function registerInitialAdmin(input: { email: string, password: string }) {
+    const payload = await unwrap<AuthTokenPairResponse>(await api.post<AuthTokenPairResponse | { data: AuthTokenPairResponse }>(
+      ApiEndpoints.AUTH_SETUP,
+      { email: input.email, password: input.password },
+      { isAuthRequest: true, suppressErrorToast: true, suppressAuthErrorUi: true },
+    ))
+    setTokens(payload.accessToken, payload.refreshToken)
+    const user = payload.user
+    if (!user) throw createError({ statusCode: 401, statusMessage: 'Setup failed' })
     return ok<LoginResult>({ user })
   }
 
@@ -133,7 +153,7 @@ export function useAuth() {
   async function logoutServer(refreshToken: string | null) {
     if (!refreshToken) return ok({ message: 'Logged out' })
     try {
-      await api.post(ApiEndpoints.AUTH_LOGOUT, { refreshToken }, { isAuthRequest: true, suppressErrorToast: true, suppressAccessAlert: true })
+      await api.post(ApiEndpoints.AUTH_LOGOUT, { refreshToken }, { isAuthRequest: true, suppressErrorToast: true, suppressAuthErrorUi: true })
     }
     catch {
       // Server logout is best-effort; client state is cleared regardless.
@@ -146,7 +166,7 @@ export function useAuth() {
     if (!hasTokens()) return null
     try {
       const me = await api.get<AuthUser | { data: AuthUser }>(ApiEndpoints.AUTH_ME, {
-        suppressAccessAlert: true,
+        suppressAuthErrorUi: true,
         suppressErrorToast: true,
       })
       const user = me && typeof me === 'object' && 'data' in (me as object)
@@ -171,6 +191,8 @@ export function useAuth() {
 
   return {
     loginWithCredentials,
+    fetchSetupStatus,
+    registerInitialAdmin,
     requestPasswordReset,
     verifyPasswordResetCode,
     resendPasswordResetCode,

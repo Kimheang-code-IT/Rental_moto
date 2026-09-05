@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from tests.conftest import TEST_VIEWER_EMAIL, TEST_VIEWER_PASSWORD
 
 
 async def _setup(client, admin_headers):
@@ -57,6 +58,20 @@ async def test_create_rental_sets_progressing_and_payment(client, admin_headers)
 
     moto_after = await client.get(f"/api/v2/motorcycles/{moto['id']}", headers=admin_headers)
     assert moto_after.json()["data"]["status"] == "Progressing"
+
+
+async def test_create_rental_applies_line_discount(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    payload = _rental_payload(moto, customer)
+    payload["lines"][0]["discount"] = 5
+    payload["discount"] = 2
+    response = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
+    assert response.status_code == 201, response.text
+    rental = response.json()["data"][0]
+    # 3-day package 27 - line 5 - document share 2 = 20
+    assert rental["rateAmount"] == "27.00"
+    assert rental["discount"] == "7.00"
+    assert rental["rentalCharge"] == "20.00"
 
 
 async def test_double_rental_blocked(client, admin_headers):
@@ -203,7 +218,7 @@ async def test_rental_delete_only_when_cancelled(client, admin_headers):
 
 
 async def test_viewer_cannot_create_rental(client, admin_headers):
-    login = await client.post("/api/v2/auth/login", json={"email": "viewer@example.com", "password": "123456"})
+    login = await client.post("/api/v2/auth/login", json={"email": TEST_VIEWER_EMAIL, "password": TEST_VIEWER_PASSWORD})
     viewer_headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}
     moto, customer = await _setup(client, admin_headers)
     response = await client.post("/api/v2/rentals", headers=viewer_headers, json=_rental_payload(moto, customer))

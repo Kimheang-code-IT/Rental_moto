@@ -1,30 +1,30 @@
 <script setup lang="ts">
 import type { NuxtError } from '#app'
-import { usePageSeo } from '~/composables/usePageSeo'
 
-defineProps<{
+const props = defineProps<{
   error: NuxtError
 }>()
 
-const { locale, t } = useI18n()
-const title = computed(() => t('pages.error.title'))
-const description = computed(() => t('pages.error.description'))
-
-usePageSeo({
-  title,
-  description,
-  robots: 'noindex, nofollow',
+const status = computed(() => Number(props.error?.statusCode) || 500)
+const title = computed(() => (status.value === 404 ? 'Page not found' : 'Something went wrong'))
+const description = computed(() => {
+  if (status.value === 404) return 'We are sorry but this page could not be found.'
+  return props.error?.statusMessage
+    || props.error?.message
+    || 'The app could not load. Hard-refresh (Ctrl+F5), then open the Wi-Fi URL again.'
 })
 
-useHead({
-  htmlAttrs: {
-    lang: locale
-  }
-})
+// Keep error recovery free of i18n/SEO helpers — those caused nested boot failures.
+useHead({ title: () => title.value })
 </script>
 
 <template>
-  <UApp>
-    <UError :error="error" />
-  </UApp>
+  <div class="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+    <p class="text-5xl font-semibold text-primary">{{ status }}</p>
+    <h1 class="text-xl font-semibold">{{ title }}</h1>
+    <p class="max-w-md text-sm text-muted">{{ description }}</p>
+    <UButton to="/" color="primary" @click="clearError({ redirect: '/' })">
+      Back to home
+    </UButton>
+  </div>
 </template>

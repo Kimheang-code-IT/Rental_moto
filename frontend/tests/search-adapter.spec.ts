@@ -6,7 +6,7 @@ describe('backend search response adapter', () => {
     const hits = adaptBackendSearchHits([
       { id: 'rt-001', type: 'rental', title: 'RNT-2026-000001', subtitle: 'Sok Dara', url: '/rentals/rt-001' },
       { id: 'mc-001', type: 'motorcycle', title: 'Honda Click', subtitle: 'MC-001', url: '/motorcycles/mc-001' },
-      { id: '1', type: 'user', title: 'Admin', subtitle: 'admin@gmail.com', url: '/administration/users/1' },
+      { id: '1', type: 'user', title: 'Admin', subtitle: 'owner@example.com', url: '/administration/users/1' },
     ])
 
     expect(hits).toHaveLength(3)

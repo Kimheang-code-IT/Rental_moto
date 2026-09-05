@@ -189,9 +189,9 @@ Only **Active** customers appear in rental create form.
 
 ### 4.7 User (`users`)
 
-`username`, `display_name`, `email`, `password_hash`, `role`, `status`, `permissions` (JSON array)
+`username`, `display_name`, `email`, `password_hash`, `role_id`, `status`, `is_owner`
 
-**Demo login:** `admin@gmail.com` / `123456`
+The first administrator registers at `/auth/setup` with email and password only. Seed does not create users or roles. There is no default login pair.
 
 ---
 
@@ -431,7 +431,7 @@ settings.app_config.view|edit
 configuration.view
 ```
 
-`ALL_PAGES` = super admin bypass.
+`ALL_PAGES` is granted to the system owner (`users.is_owner`, created at `/auth/setup`) and to any role the operator later creates that includes that key. Role names are not authorization. The permission catalog also includes `export`, `delete`, `configure`, and related actions used by the API.
 
 ---
 

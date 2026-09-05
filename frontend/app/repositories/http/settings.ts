@@ -21,7 +21,12 @@ export function createHttpAppConfigRepository(): AppConfigRepository {
     unwrapApiData(await api.post<ConnectionResult | ApiResponse<ConnectionResult>>(endpoint, body))
 
   return {
-    get: async () => unwrapApiData(await api.get<AppConfig | ApiResponse<AppConfig>>(ApiEndpoints.APP_CONFIG)),
+    // Localization bootstrap runs on every page including unauthenticated
+    // auth/setup; never toast a 401/502 here — callers already fall back.
+    get: async () => unwrapApiData(await api.get<AppConfig | ApiResponse<AppConfig>>(ApiEndpoints.APP_CONFIG, {
+      suppressErrorToast: true,
+      suppressAuthErrorUi: true,
+    })),
     update: async input => unwrapApiData(await api.patch<AppConfig | ApiResponse<AppConfig>>(ApiEndpoints.APP_CONFIG, input)),
     resetAllData: async () => unwrapApiData(
       await api.post<ResetAllDataResult | ApiResponse<ResetAllDataResult>>(ApiEndpoints.RESET_ALL_DATA, {}),

@@ -149,14 +149,16 @@ const related = computed(() => module.value && !isCreate.value ? store.related(m
 const readOnly = computed(() => {
   if (!module.value) return true
   if (module.value.readOnly) return true
-  if (module.value.collection === 'roles' && model.value.name === 'SuperAdmin') return true
+  // Roles are operator-owned; no role name or system flag locks a record.
   const prefix = module.value.permission.replace(/\.view$/, '')
   return !auth.canAccessPage(`${prefix}.${isCreate.value ? 'create' : 'edit'}`)
 })
 const canMutateRecord = computed(() => Boolean(module.value) && !readOnly.value && !isCreate.value && Boolean(model.value.id))
 const canDeleteRecord = computed(() => {
   if (!module.value || isCreate.value || !model.value.id) return false
-  if (module.value.collection === 'roles' && (model.value.isSystem || Number(model.value.userCount || 0) > 0)) return false
+  // The backend blocks deleting roles still assigned to users (userCount);
+  // operator-created roles are never blocked by a seeded system flag.
+  if (module.value.collection === 'roles' && Number(model.value.userCount || 0) > 0) return false
   return auth.canAccessPage(`${module.value.permission.replace(/\.view$/, '')}.delete`)
 })
 const deactivationOnly = computed(() => module.value?.group === 'master' || module.value?.collection === 'documentSequences')

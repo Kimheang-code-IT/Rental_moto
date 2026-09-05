@@ -1,7 +1,15 @@
 import pytest
 
+from tests.conftest import (
+    TEST_ADMIN_EMAIL,
+    TEST_ADMIN_NAME,
+    TEST_ADMIN_PASSWORD,
+    TEST_STAFF_EMAIL,
+    TEST_STAFF_PASSWORD,
+)
 
-async def _login(client, email="admin@gmail.com", password="123456"):
+
+async def _login(client, email=TEST_ADMIN_EMAIL, password=TEST_ADMIN_PASSWORD):
     return await client.post("/api/v2/auth/login", json={"email": email, "password": password})
 
 
@@ -12,8 +20,9 @@ async def test_login_success_returns_pair_and_user(client):
     assert data["tokenType"] == "Bearer"
     assert data["accessToken"]
     assert data["refreshToken"]
-    assert data["user"]["email"] == "admin@gmail.com"
-    assert data["user"]["role"] == "SuperAdmin"
+    assert data["user"]["email"] == TEST_ADMIN_EMAIL
+    assert data["user"]["role"] is None
+    assert data["user"]["isOwner"] is True
     assert data["user"]["pageAccess"] == ["ALL_PAGES"]
 
 
@@ -37,8 +46,8 @@ async def test_me_returns_user(client, admin_headers):
     response = await client.get("/api/v2/auth/me", headers=admin_headers)
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["email"] == "admin@gmail.com"
-    assert data["name"] == "System Administrator"
+    assert data["email"] == TEST_ADMIN_EMAIL
+    assert data["name"] == TEST_ADMIN_NAME
 
 
 async def test_refresh_rotates_and_reuse_is_blocked(client):
@@ -85,7 +94,7 @@ async def test_change_password_revokes_sessions(client):
     response = await client.post(
         "/api/v2/auth/change-password",
         headers=headers,
-        json={"currentPassword": "123456", "newPassword": "newpass123"},
+        json={"currentPassword": TEST_ADMIN_PASSWORD, "newPassword": "newpass123"},
     )
     assert response.status_code == 200
 
@@ -98,7 +107,7 @@ async def test_change_password_revokes_sessions(client):
     await client.post(
         "/api/v2/auth/change-password",
         headers={"Authorization": f"Bearer {relogin.json()['data']['accessToken']}"},
-        json={"currentPassword": "newpass123", "newPassword": "123456"},
+        json={"currentPassword": "newpass123", "newPassword": TEST_ADMIN_PASSWORD},
     )
 
 
@@ -112,9 +121,11 @@ async def test_change_password_requires_correct_current(client, admin_headers):
 
 
 async def test_service_token_success_and_failure(client):
+    from app.core.config import settings
+
     ok = await client.post(
         "/api/v2/auth/service-token",
-        json={"clientId": "rental-telegram-bot", "clientSecret": "dev-only-telegram-secret-change-me-0123456789abcdef"},
+        json={"clientId": settings.telegram_bot_client_id, "clientSecret": settings.telegram_bot_client_secret},
     )
     assert ok.status_code == 200
     token = ok.json()["data"]["accessToken"]
@@ -139,7 +150,7 @@ async def test_service_token_success_and_failure(client):
 
 
 async def test_staff_cannot_administer_users(client):
-    login = await client.post("/api/v2/auth/login", json={"email": "staff@example.com", "password": "123456"})
+    login = await client.post("/api/v2/auth/login", json={"email": TEST_STAFF_EMAIL, "password": TEST_STAFF_PASSWORD})
     headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}
     response = await client.get("/api/v2/users", headers=headers)
     assert response.status_code == 403
@@ -153,7 +164,7 @@ async def test_staff_cannot_administer_users(client):
 
 
 async def test_forgot_password_generic_response(client):
-    response = await client.post("/api/v2/auth/forgot-password", json={"email": "admin@gmail.com"})
+    response = await client.post("/api/v2/auth/forgot-password", json={"email": TEST_ADMIN_EMAIL})
     assert response.status_code == 200
     assert "reset code" in response.json()["data"]["message"]
 
@@ -165,7 +176,7 @@ async def test_forgot_password_generic_response(client):
 async def test_verify_reset_code_rejects_bad_code(client):
     response = await client.post(
         "/api/v2/auth/forgot-password/verify",
-        json={"email": "admin@gmail.com", "code": "000000"},
+        json={"email": TEST_ADMIN_EMAIL, "code": "000000"},
     )
     assert response.status_code == 422
 

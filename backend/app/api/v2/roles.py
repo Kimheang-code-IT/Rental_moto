@@ -47,7 +47,7 @@ async def role_options(
     options = []
     for role in items:
         if not is_super_admin_user(user):
-            if role.name == "SuperAdmin" or not set(role.permissions or []).issubset(actor_permissions):
+            if not set(role.permissions or []).issubset(actor_permissions):
                 continue
         options.append({
             "id": role.id,

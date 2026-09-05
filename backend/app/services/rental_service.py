@@ -139,7 +139,7 @@ class RentalService:
             moto = info["moto"]
             days = info["days"]
             charge = info["charge"]
-            discount = discount_shares[index]
+            discount = money(min(max(money(line.discount), Decimal("0")) + discount_shares[index], charge))
             rental_charge = money(charge - discount)
             tax = money(rental_charge * request.tax_percent / Decimal("100"))
             total_due = money(rental_charge + tax)

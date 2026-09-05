@@ -4,7 +4,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_JWT_SECRET = "dev-only-secret-change-me-in-production-0123456789abcdef"
 _DEV_TELEGRAM_SECRET = "dev-only-telegram-secret-change-me-0123456789abcdef"
-_DEV_SEED_PASSWORD = "123456"
 _DEV_MINIO_SECRET = "minioadmin123"
 
 
@@ -55,10 +54,6 @@ class Settings(BaseSettings):
     rate_limit_refresh_per_minute: int = 30
     rate_limit_reset_per_hour: int = 5
 
-    seed_admin_email: str = "admin@gmail.com"
-    seed_admin_password: str = _DEV_SEED_PASSWORD
-    seed_admin_name: str = "System Administrator"
-
     task_default_max_retries: int = 5
     task_result_expire_seconds: int = 86400
 
@@ -97,8 +92,6 @@ class Settings(BaseSettings):
             problems.append("JWT_SECRET_KEY is missing, too short, or still a development placeholder")
         if self.telegram_bot_client_secret == _DEV_TELEGRAM_SECRET or _is_placeholder_secret(self.telegram_bot_client_secret):
             problems.append("TELEGRAM_BOT_CLIENT_SECRET is still a development placeholder")
-        if self.seed_admin_password == _DEV_SEED_PASSWORD or _is_placeholder_secret(self.seed_admin_password) or len(self.seed_admin_password) < 12:
-            problems.append("SEED_ADMIN_PASSWORD is too weak or still a development placeholder")
         if self.minio_enabled and (self.minio_secret_key == _DEV_MINIO_SECRET or _is_placeholder_secret(self.minio_secret_key)):
             problems.append("MINIO_SECRET_KEY is still a development placeholder")
         if self.debug:

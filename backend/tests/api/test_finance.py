@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone
+from tests.conftest import TEST_VIEWER_EMAIL, TEST_VIEWER_PASSWORD
 
 
 async def _setup_with_rental(client, admin_headers, paid=10):
@@ -171,7 +172,7 @@ async def test_dashboard_and_finance_summary(client, admin_headers):
 
 
 async def test_viewer_permissions_on_payments(client, admin_headers):
-    login = await client.post("/api/v2/auth/login", json={"email": "viewer@example.com", "password": "123456"})
+    login = await client.post("/api/v2/auth/login", json={"email": TEST_VIEWER_EMAIL, "password": TEST_VIEWER_PASSWORD})
     viewer_headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}
     rental = await _setup_with_rental(client, admin_headers, paid=0)
 

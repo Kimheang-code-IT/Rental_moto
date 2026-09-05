@@ -5,14 +5,11 @@ from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.core.database import SessionFactory, engine
-from app.core.security import hash_password, utcnow
-from app.core.permissions import rental_staff_permissions, viewer_permissions
+from app.core.security import utcnow
 from app.models import (
     AppSetting,
     DocumentSequence,
-    Role,
     StorageProvider,
-    User,
 )
 from app.services.admin_service import default_document_sequences
 
@@ -20,75 +17,16 @@ logger = logging.getLogger("hollywing.seed")
 
 
 async def seed_bootstrap() -> None:
-    """Seed only system bootstrap data: roles, admin user, sequences, app info."""
+    """Seed only non-auth bootstrap data: sequences, app info, storage provider.
+
+    Roles are NEVER created here: the operator defines every role through
+    Administration → Roles after the first administrator completes setup.
+    Users are NEVER created here: the first administrator registers through
+    POST /api/v2/auth/setup while the users table is empty (the setup page is
+    the only public bootstrap path); later staff are created by the owner or
+    another admin at /administration/users.
+    """
     async with SessionFactory() as session:
-        super_admin_role = (await session.execute(select(Role).where(Role.name == "SuperAdmin"))).scalar_one_or_none()
-        if super_admin_role is None:
-            super_admin_role = Role(
-                name="SuperAdmin",
-                description="Full system access",
-                permissions=["ALL_PAGES"],
-                page_access=["ALL_PAGES"],
-                is_system=True,
-            )
-            session.add(super_admin_role)
-        else:
-            super_admin_role.permissions = ["ALL_PAGES"]
-            super_admin_role.page_access = ["ALL_PAGES"]
-            super_admin_role.is_system = True
-
-        staff_role = (await session.execute(select(Role).where(Role.name == "Rental Staff"))).scalar_one_or_none()
-        if staff_role is None:
-            staff_role = Role(
-                name="Rental Staff",
-                description="Rental operations staff",
-                permissions=rental_staff_permissions(),
-                page_access=rental_staff_permissions(),
-                is_system=True,
-            )
-            session.add(staff_role)
-        else:
-            staff_role.permissions = rental_staff_permissions()
-            staff_role.page_access = rental_staff_permissions()
-            staff_role.is_system = True
-
-        viewer_role = (await session.execute(select(Role).where(Role.name == "Report Viewer"))).scalar_one_or_none()
-        if viewer_role is None:
-            viewer_role = Role(
-                name="Report Viewer",
-                description="Read-only reporting access",
-                permissions=viewer_permissions(),
-                page_access=viewer_permissions(),
-                is_system=True,
-            )
-            session.add(viewer_role)
-        else:
-            viewer_role.permissions = viewer_permissions()
-            viewer_role.page_access = viewer_permissions()
-            viewer_role.is_system = True
-        await session.flush()
-
-        admin = (await session.execute(select(User).where(User.email == settings.seed_admin_email))).scalar_one_or_none()
-        if admin is None:
-            admin = User(
-                username="admin",
-                display_name=settings.seed_admin_name,
-                email=settings.seed_admin_email,
-                password_hash=hash_password(settings.seed_admin_password),
-                role="SuperAdmin",
-                role_id=super_admin_role.id,
-                status="Active",
-                permissions=None,
-                page_access=None,
-            )
-            session.add(admin)
-            logger.info("Created admin user %s", settings.seed_admin_email)
-        else:
-            admin.role = super_admin_role.name
-            admin.role_id = super_admin_role.id
-            admin.permissions = None
-            admin.page_access = None
-
         for spec in default_document_sequences():
             existing = (await session.execute(select(DocumentSequence).where(DocumentSequence.document_type == spec["document_type"]))).scalar_one_or_none()
             if existing is None:

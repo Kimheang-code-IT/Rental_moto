@@ -286,7 +286,7 @@
       "confirmModeTitle": "Confirm mode change",
       "confirmModeHelp": "Enabling maintenance or read-only mode affects all users. Continue?",
       "resetDataTitle": "Reset all data",
-      "resetDataHelp": "Permanently deletes rentals, customers, motorcycles, users, settings, audit logs, and other business data. Bootstrap defaults such as the admin user, roles, and document sequences are restored.",
+      "resetDataHelp": "Permanently deletes rentals, customers, motorcycles, users, roles, settings, audit logs, and other business data. Document sequences and app defaults are restored; users and roles are not. After a reset you must run first-time setup and recreate your roles.",
       "resetDataAction": "Reset all data",
       "resetDataConfirmTitle": "Reset all data?",
       "resetDataConfirmHelp": "This cannot be undone. All business data will be deleted and only default bootstrap records will remain. You will be signed out and must sign in again.",
@@ -354,10 +354,7 @@
       "accessDeniedTitle": "Access denied",
       "accessDeniedDescription": "Your account does not have permission to open this page or perform this action.",
       "sessionExpiredTitle": "Session expired",
-      "sessionExpiredDescription": "Your session has expired. Please sign in again to continue.",
-      "signInAgain": "Sign in again",
-      "requestedPage": "Requested page",
-      "requiredPermission": "Required permission"
+      "sessionExpiredDescription": "Your session has expired. Please sign in again to continue."
     },
     "exportDialog": {
       "title": "Export data",
@@ -440,7 +437,12 @@
       "loginFailedDesc": "The email or password you entered is incorrect.",
       "emailRequired": "Email is required",
       "passwordRequired": "Password is required",
-      "forgotPassword": "Forgot password?"
+      "forgotPassword": "Forgot password?",
+      "setupTitle": "Set up HollyWing Motor",
+      "setupDescription": "Create the first administrator account for this system.",
+      "setupBtn": "Create administrator",
+      "setupFailed": "Setup failed",
+      "setupFailedDesc": "The administrator account could not be created. Please try again."
     },
     "forgetPassword": {
       "title": "Forgot Password",
@@ -478,7 +480,9 @@
     },
     "error": {
       "title": "Page not found",
-      "description": "We are sorry but this page could not be found."
+      "description": "We are sorry but this page could not be found.",
+      "failedTitle": "Something went wrong",
+      "failedDescription": "The app could not load this page. Refresh, or open the Wi-Fi address shown when you start HollyWing Motor."
     }
   },
   "settings": {
@@ -488,7 +492,7 @@
     "dark": "Dark",
     "logout": "Log out",
     "about": "About",
-    "aboutCopyright": "Â© HollyWing Motor"
+    "aboutCopyright": "© HollyWing Motor"
   },
   "api": {
     "errorTitle": "API Error: {status}",
@@ -718,7 +722,7 @@
         "fieldHelp": {
           "username": "Login username for this staff account.",
           "password": "Login password for this user. Keep it confidential.",
-          "roleId": "Access role assigned to this user."
+          "roleId": "Access role assigned to this user. Create it first under Administration → Roles if the list is empty."
         }
       },
       "motorcycles": {
@@ -904,6 +908,7 @@
       "deposit": "Deposit",
       "depositDate": "Deposit date",
       "discount": "Discount",
+      "extraDiscount": "Extra discount",
       "createRental": "Create Rental",
       "newRental": "New Rental",
       "rentalNo": "Rental Number",
@@ -981,8 +986,8 @@
       "deposit": "Deposit amount held for this rental. Cannot exceed subtotal.",
       "maintenanceDescription": "What work is being done on this motorcycle.",
       "maintenanceAmount": "Maintenance cost recorded as an expense.",
-      "lines": "Select model, then plate. Choose 1 day, 3 days, 1 week, or 1 month. Amount uses the motorcycle package rate. 1 month uses the same calendar day next month.",
-      "headerDiscount": "Document-level discount applied after line totals.",
+      "lines": "Select model, then plate. Choose a package or Custom dates to set Start/Due freely. Amount uses the motorcycle package rate minus any line discount.",
+      "headerDiscount": "Optional document-level discount shared across motorcycles, applied after each line discount.",
       "taxPercent": "Sales tax percent applied after discount.",
       "note": "Optional note stored on each rental created.",
       "paymentMethod": "Choose a preset method or type a custom payment method.",

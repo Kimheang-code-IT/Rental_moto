@@ -44,8 +44,9 @@ class UserResponse(CamelModel):
     username: str
     display_name: str
     email: str
-    role: str
-    role_id: int
+    role: str | None = None
+    role_id: int | None = None
+    is_owner: bool = False
     status: str
     avatar: str | None = None
     effective_permissions: list[str] = Field(default_factory=list)

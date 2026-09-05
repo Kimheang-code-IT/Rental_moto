@@ -1,4 +1,5 @@
 import uuid
+from tests.conftest import TEST_VIEWER_EMAIL, TEST_VIEWER_PASSWORD
 
 
 async def test_export_creation_and_status_flow(client, admin_headers):
@@ -31,7 +32,7 @@ async def test_task_status_endpoint(client, admin_headers):
 
 
 async def test_exports_viewers_can_create_but_not_others(client):
-    login = await client.post("/api/v2/auth/login", json={"email": "viewer@example.com", "password": "123456"})
+    login = await client.post("/api/v2/auth/login", json={"email": TEST_VIEWER_EMAIL, "password": TEST_VIEWER_PASSWORD})
     viewer_headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}
     response = await client.post(
         "/api/v2/exports",

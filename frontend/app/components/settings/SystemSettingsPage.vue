@@ -238,6 +238,17 @@ useAppPageTitle(() => t('app.pages.settings'))
         :loading="testingTelegram"
         @click="testTelegram"
       />
+      <UButton
+        v-if="canConfigure"
+        color="error"
+        variant="soft"
+        size="sm"
+        icon="i-lucide-database-zap"
+        :loading="resettingData"
+        :disabled="resettingData"
+        :label="t('core.settings.resetDataAction')"
+        @click="resetAllData"
+      />
     </template>
 
     <template v-if="activeTab === 'security' && canConfigure" #after-form>
@@ -248,16 +259,6 @@ useAppPageTitle(() => t('app.pages.settings'))
           :title="t('core.settings.resetDataTitle')"
           :description="t('core.settings.resetDataHelp')"
         />
-        <UButton
-          color="error"
-          variant="soft"
-          icon="i-lucide-database-zap"
-          :loading="resettingData"
-          :disabled="resettingData"
-          @click="resetAllData"
-        >
-          {{ t('core.settings.resetDataAction') }}
-        </UButton>
       </DocumentAppDocumentContentShell>
     </template>
   </DocumentAppDocumentPage>

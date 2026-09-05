@@ -70,6 +70,6 @@ Write-Host ""
 Write-Host "HollyWing Motor is starting on this computer." -ForegroundColor Green
 Write-Host "  App:  http://localhost:$frontendPort"
 Write-Host "  API:  http://localhost:8000/docs"
-Write-Host "  Login: admin@gmail.com / 123456  (from .env SEED_ADMIN_*)"
+Write-Host "  First visit: register the system owner at /auth/setup (email + password)."
 Write-Host ""
 Write-Host "Logs: docker compose logs -f frontend api"

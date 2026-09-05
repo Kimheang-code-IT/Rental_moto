@@ -15,6 +15,7 @@ import {
   detectRatePlan,
   documentTotals,
   dueDateFromRatePlan,
+  lineAmounts,
   lineCharge,
   rentalRateType,
   todayDateTimeLocal,
@@ -70,6 +71,8 @@ interface RentalLine {
   motorcycleId: string
   days: number
   unitPrice: number
+  /** Per-motorcycle discount (currency amount). */
+  discount: number
 }
 
 const customers = computed(() => store.list('rentalCustomers').filter(row => String(row.status || 'Active') === 'Active'))
@@ -109,7 +112,7 @@ const listNavigationDirection = ref<'previous' | 'next' | null>(null)
 
 let lineSeq = 1
 function newLine(): RentalLine {
-  return { key: `line-${lineSeq++}`, model: '', motorcycleId: '', days: 1, unitPrice: 0 }
+  return { key: `line-${lineSeq++}`, model: '', motorcycleId: '', days: 1, unitPrice: 0, discount: 0 }
 }
 const lines = ref<RentalLine[]>([newLine()])
 
@@ -191,17 +194,25 @@ function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
   line.unitPrice = appliedUnitPrice(moto, line.days, startDate.value, dueDate.value)
 }
 
-function lineAmount(line: RentalLine) {
+function lineGross(line: RentalLine) {
   const moto = motoById(line.motorcycleId)
   if (moto) return lineCharge(moto, line.days, startDate.value, dueDate.value)
   return 0
 }
 
-const lineComputed = computed(() => lines.value.map(line => ({
-  line,
-  moto: motoById(line.motorcycleId),
-  amount: lineAmount(line),
-})))
+const lineComputed = computed(() => lines.value.map(line => {
+  const moto = motoById(line.motorcycleId)
+  const priced = moto
+    ? lineAmounts(moto, line.days, line.discount, startDate.value, dueDate.value)
+    : { charge: 0, discount: 0, lineTotal: 0 }
+  return {
+    line,
+    moto,
+    gross: priced.charge,
+    discount: priced.discount,
+    amount: priced.lineTotal,
+  }
+}))
 
 const totals = computed(() => {
   const base = documentTotals({
@@ -289,13 +300,17 @@ const ratePlanItems = computed(() => [
 
 function syncLinesFromDates() {
   const days = Math.max(1, daysBetween(startDate.value, dueDate.value) || lines.value[0]?.days || 1)
-  ratePlan.value = detectRatePlan(startDate.value, dueDate.value, days)
+  // Keep an explicit "Custom dates" choice; only auto-detect for package presets.
+  if (ratePlan.value !== 'custom') {
+    ratePlan.value = detectRatePlan(startDate.value, dueDate.value, days)
+  }
   for (const line of lines.value) {
     line.days = days
     const moto = motoById(line.motorcycleId)
     line.unitPrice = moto
       ? appliedUnitPrice(moto, days, startDate.value, dueDate.value)
       : line.unitPrice
+    if (line.discount > lineGross(line)) line.discount = lineGross(line)
   }
 }
 
@@ -318,7 +333,8 @@ function onRatePlanChange(plan: string) {
   if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
   const next = String(plan || '') as RentalRatePlan
   if (next === 'custom') {
-    ratePlan.value = detectRatePlan(startDate.value, dueDate.value, lines.value[0]?.days || 1)
+    // Stick on Custom so staff can edit Start/Due freely without the select snapping back.
+    ratePlan.value = 'custom'
     return
   }
   ratePlan.value = next
@@ -472,7 +488,6 @@ function hydrateDetail() {
   dueDate.value = String(found.dueDate || '')
   depositDate.value = String(found.depositDate || String(found.startDate || '').slice(0, 10))
   deposit.value = Number(found.deposit || 0)
-  headerDiscount.value = Number(found.discount || 0)
   taxPercent.value = Number(found.taxPercent || 0)
   existingPaid.value = Number(found.paid || 0)
   paidAmount.value = existingPaid.value
@@ -498,6 +513,7 @@ function hydrateDetail() {
     motorcycleId: String(found.motorcycleId || ''),
     days: Math.max(1, Number(found.durationDays || daysBetween(String(found.startDate || ''), String(found.dueDate || '')) || 1)),
     unitPrice: Number(found.rateAmount || 0),
+    discount: Math.max(0, Number(found.discount || 0)),
   }]
   const firstLine = lines.value[0]
   if (firstLine) {
@@ -510,8 +526,11 @@ function hydrateDetail() {
         dueDate.value,
       )
     }
+    // Detail view: show Custom when the stored span is not a named package.
     ratePlan.value = detectRatePlan(startDate.value, dueDate.value, firstLine.days)
   }
+  // Detail stores discount on the rental line; keep header extra at 0 so totals do not double-count.
+  headerDiscount.value = 0
 }
 
 watch(
@@ -553,6 +572,17 @@ function buildInvoicePayload(): Record<string, unknown> | null {
   if (!selectedCustomer.value || !lineComputed.value.some(row => row.moto || row.line.motorcycleId)) return null
   const first = lineComputed.value[0]
   const moto = first?.moto
+  const invoiceLines = lineComputed.value
+    .filter(row => row.moto || row.line.motorcycleId)
+    .map(row => ({
+      motorcycle: row.line.model || row.moto?.model || '',
+      plate: row.moto?.plate || '',
+      days: row.line.days,
+      unitPrice: row.gross || row.line.unitPrice,
+      discount: row.discount,
+      amount: row.amount,
+    }))
+  const lineDiscountTotal = invoiceLines.reduce((sum, row) => sum + Number(row.discount || 0), 0)
   return {
     id: 'draft',
     rentalNo: 'DRAFT',
@@ -567,14 +597,14 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     dueDate: dueDate.value,
     durationDays: first?.line.days || 1,
     rateType: rentalRateType(first?.line.days || 1, startDate.value, dueDate.value),
-    rateAmount: first?.line.unitPrice || 0,
+    rateAmount: first?.gross || first?.line.unitPrice || 0,
     deposit: deposit.value,
     depositDate: depositDate.value,
-    discount: headerDiscount.value,
+    discount: Number((lineDiscountTotal + headerDiscount.value).toFixed(2)),
     taxPercent: taxPercent.value,
     tax: totals.value.tax,
     currency: moto?.currency || preferences.currency,
-    rentalCharge: totals.value.subtotal,
+    rentalCharge: first?.amount || totals.value.subtotal,
     lateFee: 0,
     additionalCharges: 0,
     totalDue: totals.value.total,
@@ -582,6 +612,7 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     outstanding: outstandingPreview.value,
     paymentMethod: paymentMethod.value,
     status: 'Draft',
+    invoiceLines,
   }
 }
 
@@ -664,7 +695,7 @@ async function createRental() {
           startDate: toIsoZoned(startDate.value)!,
           dueDate: toIsoZoned(dueDate.value)!,
           deposit: Number((deposit.value / validLines.length).toFixed(2)),
-          discount: 0,
+          discount: Number(row.line.discount || 0),
           note: null,
         })),
         discount: headerDiscount.value,
@@ -712,7 +743,7 @@ async function updateRental() {
       startDate: toIsoZoned(startDate.value)!,
       dueDate: toIsoZoned(dueDate.value)!,
       deposit: deposit.value,
-      discount: headerDiscount.value,
+      discount: Number(line.line.discount || 0),
       taxPercent: taxPercent.value,
       note: null,
     })
@@ -871,6 +902,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                     <th class="px-2 py-2 font-medium">{{ tx('rental.ui.ratePlan', 'Rate') }}</th>
                     <th class="px-2 py-2 font-medium">{{ tx('rental.ui.daysCount', 'Days') }}</th>
                     <th class="px-2 py-2 font-medium">{{ tx('rental.ui.unitPrice', 'Rate amount') }}</th>
+                    <th class="px-2 py-2 font-medium">{{ tx('rental.ui.discount', 'Discount') }}</th>
                     <th class="px-2 py-2 text-right font-medium">{{ tx('rental.ui.amount', 'Amount') }}</th>
                     <th class="w-10 px-1 py-2" />
                   </tr>
@@ -937,6 +969,19 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                         :disabled="isFormReadOnly"
                       />
                     </td>
+                    <td class="px-2 py-2">
+                      <UInputNumber
+                        v-model="row.line.discount"
+                        :min="0"
+                        :max="Math.max(row.gross, 0)"
+                        :step="0.01"
+                        :increment="false"
+                        :decrement="false"
+                        size="md"
+                        class="ml-auto w-28"
+                        :disabled="isFormReadOnly"
+                      />
+                    </td>
                     <td class="px-2 py-2 text-right font-semibold tabular-nums">
                       {{ money(row.amount) }}
                     </td>
@@ -954,7 +999,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 </tbody>
               </table>
             </div>
-            <p class="mt-2 text-xs text-muted">{{ help('lines', 'Select model, then plate. Choose 1 day, 3 days, 1 week, or 1 month. Amount uses the motorcycle package rate. 1 month uses the same calendar day next month.') }}</p>
+            <p class="mt-2 text-xs text-muted">{{ help('lines', 'Select model, then plate. Choose a package or Custom dates to set Start/Due freely. Amount uses the motorcycle package rate minus any line discount.') }}</p>
 
             <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <UFormField
@@ -980,8 +1025,8 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
               </div>
 
               <UFormField
-                :label="tx('rental.ui.discount', 'Discount')"
-                :help="help('headerDiscount', 'Document-level discount applied after line totals.')"
+                :label="tx('rental.ui.extraDiscount', 'Extra discount')"
+                :help="help('headerDiscount', 'Optional document-level discount shared across motorcycles, applied after each line discount.')"
               >
                 <UInputNumber
                   v-model="headerDiscount"

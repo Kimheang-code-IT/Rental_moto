@@ -1,4 +1,5 @@
 import uuid
+from tests.conftest import TEST_VIEWER_EMAIL, TEST_VIEWER_PASSWORD
 
 
 async def test_app_info_get_update_reset(client, admin_headers):
@@ -84,14 +85,14 @@ async def test_app_config_masks_secrets(client, admin_headers):
 
 
 async def test_reset_data_permission_boundary(client):
-    login = await client.post("/api/v2/auth/login", json={"email": "viewer@example.com", "password": "123456"})
+    login = await client.post("/api/v2/auth/login", json={"email": TEST_VIEWER_EMAIL, "password": TEST_VIEWER_PASSWORD})
     viewer_headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}
     denied = await client.post("/api/v2/settings/reset-data", headers=viewer_headers)
     assert denied.status_code == 403
 
 
 async def test_app_config_permission_boundary(client):
-    login = await client.post("/api/v2/auth/login", json={"email": "viewer@example.com", "password": "123456"})
+    login = await client.post("/api/v2/auth/login", json={"email": TEST_VIEWER_EMAIL, "password": TEST_VIEWER_PASSWORD})
     viewer_headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}
     response = await client.get("/api/v2/settings/app-config", headers=viewer_headers)
     assert response.status_code == 200

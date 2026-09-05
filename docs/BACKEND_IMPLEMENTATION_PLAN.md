@@ -349,7 +349,7 @@ Already defined in `app/utils/constants/api-endpoints.ts`:
 
 **AuthUser response fields:** `id`, `name`, `email`, `role`, `avatar`, `permissions[]`, `pageAccess[]`, `sourcePermissions[]`
 
-**Demo seed user:** `admin@gmail.com` / `123456` (from `mock-login.ts`)
+**First administrator:** register at `/auth/setup` (email + password). Seed does not create users or a default password.
 
 ### 5.2 Rental CRUD (new — not in frontend constants yet)
 
@@ -946,7 +946,7 @@ When the backend is done, you should be able to:
 
 - [ ] `docker compose up` starts API + PostgreSQL + Redis + RabbitMQ + workers + scheduler + Telegram bot
 - [ ] `http://localhost:8000/docs` shows all endpoints
-- [ ] Login with `admin@gmail.com` / `123456` returns a JWT access/refresh token pair
+- [ ] `GET /api/v2/auth/setup-status` is `needsSetup: true` on an empty users table; `POST /api/v2/auth/setup` with email + password creates the owner and returns a JWT pair
 - [ ] List 12 motorcycles from seeded data
 - [ ] Create a rental → motorcycle becomes Progressing
 - [ ] Close a rental → motorcycle becomes Available

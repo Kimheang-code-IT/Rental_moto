@@ -6,6 +6,7 @@ import {
   detectRatePlan,
   dueDateFromRatePlan,
   lineCharge,
+  lineAmounts,
   rentalRateType,
 } from '../app/utils/rental/pricing'
 
@@ -59,5 +60,16 @@ describe('rental package pricing', () => {
     expect(detectRatePlan(start, dueDateFromRatePlan(start, '3d'))).toBe('3d')
     expect(rentalRateType(3, start, dueDateFromRatePlan(start, '3d'))).toBe('ThreeDay')
     expect(rentalRateType(7, start, dueDateFromRatePlan(start, '1w'))).toBe('Weekly')
+  })
+
+  it('detects custom spans and applies per-line discounts', () => {
+    const start = '2026-09-04T08:00'
+    const due = '2026-09-09T08:00'
+    expect(detectRatePlan(start, due)).toBe('custom')
+    expect(lineAmounts(moto, 5, 7, start, due)).toEqual({
+      charge: 50,
+      discount: 7,
+      lineTotal: 43,
+    })
   })
 })

@@ -26,8 +26,14 @@ class User(Base, TimestampMixin):
     display_name: Mapped[str] = mapped_column(String(160), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(80), nullable=False, default="Rental Staff")
-    role_id: Mapped[int] = mapped_column(ForeignKey("roles.id", ondelete="RESTRICT"), nullable=False)
+    # Denormalized role name, kept in sync with role_ref by the services.
+    # Nullable: the first-setup system owner has no role until the operator
+    # assigns one created through the roles API.
+    role: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id", ondelete="RESTRICT"), nullable=True)
+    # System owner (created by POST /api/v2/auth/setup while users is empty).
+    # The owner has full access via ALL_PAGES without any Role row.
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="Active")
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     permissions: Mapped[list | None] = mapped_column(JSON, nullable=True)

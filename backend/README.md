@@ -74,8 +74,9 @@ docker compose down -v
 docker compose up -d --build
 ```
 
-After reset, log in with `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `.env`
-(defaults are development-only: `admin@gmail.com` / `123456`).
+After reset, no users exist. Open the app and register the first
+administrator through the public `/auth/setup` page (email + password).
+There are no `SEED_ADMIN_*` variables and no default admin credentials.
 
 ## Production
 
@@ -96,17 +97,15 @@ docker login ghcr.io
 
 Do not pass `--build` on production. The API refuses to start if development secrets are still in `.env`. Swagger `/docs` is disabled when `ENVIRONMENT=production`.
 
-## Development logins (development-only)
+## First login and accounts
 
-| Email | Password | Role |
-|-------|----------|------|
-| `admin@gmail.com` | `123456` | SuperAdmin (all permissions) |
-| `staff@example.com` | `123456` | Rental Staff |
-| `viewer@example.com` | `123456` | Report Viewer (read-only) |
-
-All values come from `SEED_ADMIN_*` / seed constants in `.env` and must be
-changed before any real deployment. Seeded demo motorcycles (`mc-001`…`mc-012`)
-and demo customers are also development-only.
+The first administrator is registered through the public `/auth/setup` page
+while the database has zero users; that account becomes the system owner
+(`users.is_owner`) and has `ALL_PAGES` without any role. The roles table starts
+empty: create every role under Administration → Roles, then create staff at
+`/administration/users` and assign them a role. After setup, that page is
+closed. There are no seeded demo logins, no default roles, and no default
+passwords anywhere in the application or seed.
 
 ## Services
 
@@ -196,8 +195,9 @@ Money is stored as PostgreSQL `Numeric(14,2)` and computed with Python
 - Refresh-token JTI denylist in Redis; reuse of a rotated/revoked refresh token
   revokes the whole token family.
 - Argon2id password hashes. No cookie sessions, CSRF tokens, or API keys.
-- Permission checks on every route (e.g. `rental.rentals.create`); `SuperAdmin`
-  role or `ALL_PAGES` bypasses.
+- Permission checks on every route (e.g. `rental.rentals.create`); the system
+  owner (`users.is_owner`) or a role whose permissions include `ALL_PAGES`
+  bypasses.
 - Login/refresh/password-recovery rate limits via Redis (degrade gracefully if
   Redis is down).
 - Telegram password recovery: single-use hashed six-digit codes in Redis with
@@ -289,8 +289,8 @@ can read group messages when operating in the configured interactive group.
   codes.
 - **Email config test** performs a TCP connect to the configured SMTP host; it
   does not send real mail in development.
-- Demo seed emails use `staff@example.com` / `viewer@example.com` because the
-  login schema validates real email domains (`.local` is rejected).
+- The login and setup schemas validate real email domains (`.local` is
+  rejected by the email format validators).
 
 ## Implementation status
 

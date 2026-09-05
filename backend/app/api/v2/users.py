@@ -11,13 +11,15 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 def _to_dict(user) -> dict:
     permissions = effective_permissions(user)
+    role_ref = getattr(user, "role_ref", None)
     return {
         "id": user.id,
         "username": user.username,
         "displayName": user.display_name,
         "email": user.email,
         "roleId": user.role_id,
-        "role": user.role_ref.name,
+        "role": role_ref.name if role_ref is not None else None,
+        "isOwner": bool(getattr(user, "is_owner", False)),
         "status": user.status,
         "avatar": user.avatar_url,
         "effectivePermissions": permissions,

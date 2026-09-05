@@ -21,4 +21,19 @@ describe('role-only authorization', () => {
       pageAccess: ['ALL_PAGES'],
     })).toEqual(['reports.view'])
   })
+
+  it('starts the operator role form from an empty matrix (no preset roles)', () => {
+    // The new-role form starts from ROLE_DOCUMENT_TYPES with no actions checked.
+    expect(permissionRowsToFlatKeys(flatKeysToPermissionRows([]))).toEqual([])
+  })
+
+  it('treats ALL_PAGES as a permission key, not a reserved role name', () => {
+    const rows = flatKeysToPermissionRows(['ALL_PAGES'])
+    expect(permissionRowsToFlatKeys(rows)).toEqual(resolveUserPermissionKeys({
+      name: 'Owner',
+      email: 'owner@example.com',
+      isOwner: true,
+      effectivePermissions: ['ALL_PAGES'],
+    }))
+  })
 })

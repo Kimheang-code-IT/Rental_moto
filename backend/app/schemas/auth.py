@@ -8,6 +8,21 @@ class LoginRequest(CamelModel):
     password: str = Field(min_length=1)
 
 
+class SetupRequest(CamelModel):
+    """First-administrator registration. Allowed only while the users table is empty.
+
+    The password rule mirrors `ChangePasswordRequest.new_password` (min 6) so the
+    API has one shared minimum; the UI zod schema uses the same length.
+    """
+
+    email: EmailStr
+    password: str = Field(min_length=6)
+
+
+class SetupStatusResponse(CamelModel):
+    needs_setup: bool
+
+
 class RefreshRequest(CamelModel):
     refresh_token: str
 
@@ -33,11 +48,22 @@ class SourcePermissionModel(CamelModel):
 
 
 class AuthUserResponse(CamelModel):
+    """Matches the dict returned by `app.api.v2.auth._auth_user_payload`.
+
+    `effective_permissions` is the only field the UI should trust;
+    `permissions` / `page_access` are compatibility mirrors of the same
+    role-derived list.
+    """
+
     id: int
     name: str
     email: str
+    role_id: int | None = None
     role: str | None = None
+    is_owner: bool = False
     avatar: str | None = None
+    telegram_linked: bool = False
+    effective_permissions: list[str] = []
     permissions: list[str] = []
     page_access: list[str] = []
     source_permissions: list[str] = []

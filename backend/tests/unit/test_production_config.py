@@ -9,7 +9,6 @@ _PROD_OK = {
     "cors_allow_private_networks": False,
     "jwt_secret_key": "production-jwt-secret-key-that-is-long-enough-32+",
     "telegram_bot_client_secret": "production-telegram-client-secret-value",
-    "seed_admin_password": "StrongAdminPass1!",
     "minio_enabled": True,
     "minio_secret_key": "not-the-dev-minio-secret",
 }
@@ -30,8 +29,6 @@ def test_production_settings_accept_rotated_secrets():
         ("jwt_secret_key", "CHANGE_ME_LONG_RANDOM_JWT_SECRET"),
         ("jwt_secret_key", "short"),
         ("telegram_bot_client_secret", "dev-only-telegram-secret-change-me-0123456789abcdef"),
-        ("seed_admin_password", "123456"),
-        ("seed_admin_password", "short"),
         ("minio_secret_key", "minioadmin123"),
         ("debug", True),
         ("cors_allow_private_networks", True),

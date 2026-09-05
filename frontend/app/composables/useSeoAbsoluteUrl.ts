@@ -7,8 +7,20 @@
  */
 export function useSeoAbsoluteUrl() {
   const config = useRuntimeConfig()
-  // Must run synchronously in setup so the Nitro request event is available.
-  const requestUrl = useRequestURL()
+  // SPA / static hosting: prefer the browser location. useRequestURL() can throw
+  // during some client error recoveries; never let SEO helpers crash boot.
+  let requestUrl: URL
+  try {
+    if (import.meta.client && typeof window !== 'undefined' && window.location?.href) {
+      requestUrl = new URL(window.location.href)
+    }
+    else {
+      requestUrl = useRequestURL()
+    }
+  }
+  catch {
+    requestUrl = new URL('http://localhost/')
+  }
 
   function siteOrigin(): string {
     const configured = String(config.public.siteUrl || '').replace(/\/$/, '')

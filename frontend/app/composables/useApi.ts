@@ -6,7 +6,6 @@ import { normalizeApiError } from '~/utils/api/errors'
 import { getAccessToken, getRefreshToken, setAccessToken } from '~/utils/auth/tokens'
 import { createAuthRefresher } from '~/utils/api/auth-refresher'
 import { isAutoApiBase, isSameOriginApiBase, resolveApiBase } from '~/utils/api/base-url'
-import { useAccessAlert } from '~/composables/common/useAccessAlert'
 import type { AuthUser } from '~/types/auth-user'
 import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 
@@ -16,7 +15,9 @@ type ApiRequestOptions = {
   body?: Record<string, unknown> | BodyInit | null
   query?: object | TableQueryParams
   suppressErrorToast?: boolean
-  suppressAccessAlert?: boolean
+  /** Skip the auth-failure UI (403 toast, session-expired toast + redirect)
+   * for calls that handle their own errors (login, me, setup, logout). */
+  suppressAuthErrorUi?: boolean
   requestKey?: string
   cancelPrevious?: boolean
   /** Requests that must never trigger refresh/retry (login, refresh itself). */
@@ -81,9 +82,7 @@ export function toNormalizedApiError(error: unknown): Error & { statusCode: numb
 
 export function useApi() {
   const toast = useToast()
-  const { showPermissionDenied, showSessionExpired } = useAccessAlert()
   const { t } = useI18n()
-  const route = useRoute()
   const config = useRuntimeConfig()
   const activeRequests = ref(0)
   const pending = computed(() => activeRequests.value > 0)
@@ -137,16 +136,20 @@ export function useApi() {
   function handleSessionFailure() {
     const authStore = useAuthStore()
     authStore.clearSession()
-    if (!optionsSuppressAccessAlert()) {
-      showSessionExpired()
-      void navigateTo('/auth/login')
+    if (!optionsSuppressAuthErrorUi()) {
+      toast.add({
+        title: t('core.states.sessionExpiredTitle'),
+        description: t('core.states.sessionExpiredDescription'),
+        color: 'error',
+      })
+      void navigateTo('/auth/login', { replace: true })
     }
   }
 
   // Mutable per-call flag access for the retry path.
-  let currentSuppressAccessAlert = false
-  function optionsSuppressAccessAlert() {
-    return currentSuppressAccessAlert
+  let currentSuppressAuthErrorUi = false
+  function optionsSuppressAuthErrorUi() {
+    return currentSuppressAuthErrorUi
   }
 
   const fetch = async <T>(url: string, options: ApiRequestOptions = {}) => {
@@ -161,7 +164,7 @@ export function useApi() {
       cancelRequest(requestKey)
     }
 
-    currentSuppressAccessAlert = Boolean(options.suppressAccessAlert)
+    currentSuppressAuthErrorUi = Boolean(options.suppressAuthErrorUi)
 
     const execute = async () => {
       const controller = new AbortController()
@@ -198,10 +201,13 @@ export function useApi() {
             if (response.status === 403) {
               handledAccessError = true
               await refreshCurrentUserAfterForbidden(baseURL, Number(config.public.apiTimeoutMs) || 30000)
-              if (!options.suppressAccessAlert) {
-                showPermissionDenied({
-                  requestedPath: route.fullPath,
-                  description: response._data?.detail?.message || response._data?.message,
+              // Backend 403 is authoritative; the toast is UX feedback only.
+              if (!options.suppressErrorToast && !options.suppressAuthErrorUi) {
+                const normalized = normalizeApiError(response._data, response.status)
+                toast.add({
+                  title: t('core.states.accessDeniedTitle'),
+                  description: normalized.message || t('core.states.accessDeniedDescription'),
+                  color: 'error'
                 })
               }
               return

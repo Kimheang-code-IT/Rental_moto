@@ -9,7 +9,7 @@ from app.api.deps import (
     get_redis_dep,
 )
 from app.core.config import settings
-from app.core.errors import AccessDeniedError
+from app.core.errors import AccessDeniedError, ValidationError
 from app.core.permissions import effective_permissions
 from app.core.security import create_service_token
 from app.schemas.auth import (
@@ -22,6 +22,7 @@ from app.schemas.auth import (
     ResendResetCodeRequest,
     ResetPasswordRequest,
     ServiceTokenRequest,
+    SetupRequest,
     VerifyResetCodeRequest,
 )
 from app.services.auth_service import AuthService
@@ -31,19 +32,60 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 def _auth_user_payload(user) -> dict:
     permissions = effective_permissions(user)
+    role_ref = getattr(user, "role_ref", None)
     return {
         "id": user.id,
         "name": user.display_name,
         "email": user.email,
         "roleId": user.role_id,
-        "role": user.role_ref.name,
+        "role": role_ref.name if role_ref is not None else None,
         "avatar": user.avatar_url,
+        "isOwner": bool(getattr(user, "is_owner", False)),
         "telegramLinked": bool(user.telegram_linked_at and user.telegram_chat_id),
         "effectivePermissions": permissions,
         "permissions": permissions,
         "pageAccess": permissions,
         "sourcePermissions": permissions,
     }
+
+
+@router.get("/setup-status")
+async def setup_status(
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis_dep),
+) -> dict:
+    """Public: true only while no user exists, so the UI can force first-run setup."""
+    service = AuthService(session, redis)
+    return envelope({"needsSetup": await service.setup_status()}, {"page": 1, "limit": 1, "total": 1})
+
+
+@router.post("/setup", response_model=None)
+async def setup(
+    body: SetupRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    redis=Depends(get_redis_dep),
+) -> dict:
+    """Public one-shot bootstrap: create the system owner and log it in.
+
+    Returns 409 once any user exists, without revealing whether other emails
+    are registered. Later staff accounts are created via /users by the owner
+    or another admin.
+    """
+    service = AuthService(session, redis)
+    access, refresh, expires_in, refresh_expires_in, user = await service.setup_initial_admin(
+        body.email, body.password, client_ip(request)
+    )
+    return envelope(
+        {
+            "accessToken": access,
+            "refreshToken": refresh,
+            "tokenType": "Bearer",
+            "expiresIn": expires_in,
+            "refreshExpiresIn": refresh_expires_in,
+            "user": _auth_user_payload(user),
+        }
+    )
 
 
 @router.post("/login", response_model=None)

@@ -4,7 +4,8 @@ from collections.abc import Iterable
 
 from argon2 import PasswordHasher
 
-SUPER_ADMIN_ROLE = "SuperAdmin"
+# Wildcard access key. Granted to the system owner (users.is_owner) and to any
+# operator-created role that includes it. There is no reserved role name.
 SUPER_ADMIN_PERMISSION = "ALL_PAGES"
 
 # The single catalog for permissions assignable to interactive user roles.
@@ -65,51 +66,33 @@ def normalize_role_permissions(values: Iterable[str] | None, *, allow_wildcard: 
     return ordered
 
 
-def rental_staff_permissions() -> list[str]:
-    return [
-        "dashboard.view",
-        "rental.motorcycles.view", "rental.motorcycles.create", "rental.motorcycles.edit",
-        "rental.customers.view", "rental.customers.create", "rental.customers.edit",
-        "rental.rentals.view", "rental.rentals.create", "rental.rentals.edit",
-        "rental.rentals.return", "rental.rentals.print",
-        "rental.finance.view", "rental.finance.create",
-        "reports.view", "reports.print",
-    ]
-
-
-def viewer_permissions() -> list[str]:
-    return [
-        "dashboard.view",
-        "rental.motorcycles.view",
-        "rental.customers.view",
-        "rental.rentals.view", "rental.rentals.print",
-        "rental.finance.view",
-        "reports.view", "reports.print",
-    ]
-
-
 def permissions_hasher() -> PasswordHasher:
     return PasswordHasher()
 
 
 def effective_permissions(user: object) -> list[str]:
-    """Resolve access exclusively from the authoritative related role."""
+    """Resolve access from the owner flag or the authoritative related role."""
+    if getattr(user, "is_owner", False):
+        return [SUPER_ADMIN_PERMISSION]
     role = getattr(user, "role_ref", None)
     if role is None:
         return []
     values = list(getattr(role, "permissions", None) or [])
-    if getattr(role, "name", None) == SUPER_ADMIN_ROLE and SUPER_ADMIN_PERMISSION in values:
+    if SUPER_ADMIN_PERMISSION in values:
         return [SUPER_ADMIN_PERMISSION]
     return [value for value in values if value in ASSIGNABLE_PERMISSIONS]
 
 
 def is_super_admin_user(user: object) -> bool:
+    """True for the system owner or a user whose role grants ALL_PAGES.
+
+    Role names are not authorization data; any role (whatever the operator
+    named it) may contain the ALL_PAGES key if its creator had it.
+    """
+    if getattr(user, "is_owner", False):
+        return True
     role = getattr(user, "role_ref", None)
-    return bool(
-        role
-        and getattr(role, "name", None) == SUPER_ADMIN_ROLE
-        and SUPER_ADMIN_PERMISSION in (getattr(role, "permissions", None) or [])
-    )
+    return bool(role and SUPER_ADMIN_PERMISSION in (getattr(role, "permissions", None) or []))
 
 
 def user_has_permission(user: object, required: str) -> bool:
@@ -118,9 +101,9 @@ def user_has_permission(user: object, required: str) -> bool:
 
 
 # Compatibility helpers for isolated code/tests. HTTP request authorization uses
-# user_has_permission and therefore cannot trust a denormalized user role name.
-def is_super_admin(role: str | None, permissions: list[str] | None) -> bool:
-    return role == SUPER_ADMIN_ROLE or bool(permissions and SUPER_ADMIN_PERMISSION in permissions)
+# user_has_permission. Role names are never authorization data.
+def is_super_admin(_role: str | None, permissions: list[str] | None) -> bool:
+    return bool(permissions and SUPER_ADMIN_PERMISSION in permissions)
 
 
 def has_permission(role: str | None, permissions: list[str] | None, required: str) -> bool:

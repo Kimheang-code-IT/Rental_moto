@@ -37,10 +37,10 @@ LABELS = {
     "plate": ("លេខផ្ទាំង", "Plate"),
     "days": ("ថ្ងៃ", "Day(s)"),
     "unit_price": ("តម្លៃឯកតា", "Unit price"),
+    "discount": ("បញ្ចុះតម្លៃ", "Discount"),
     "amount": ("ចំនួនទឹកប្រាក់", "Amount"),
     "subtotal": ("សរុបរង", "Subtotal"),
     "deposit": ("ប្រាក់កក់", "Deposit"),
-    "discount": ("បញ្ចុះតម្លៃ", "Discount"),
     "tax": ("ពន្ធ", "Tax"),
     "total": ("សរុប", "TOTAL"),
     "paid": ("បានបង់", "Paid"),
@@ -159,18 +159,27 @@ class InvoicePdfService:
         ))
         payment_method = ", ".join(methods) or str(getattr(rental, "payment_method", None) or "—")
 
-        line_items: list[tuple[str, str, object, Decimal, Decimal]] = []
+        line_items: list[tuple[str, str, object, Decimal, Decimal, Decimal]] = []
         rental_charge = _decimal(getattr(rental, "rental_charge", 0))
         rate_amount = _decimal(getattr(rental, "rate_amount", 0))
+        line_discount = max(_decimal(getattr(rental, "discount", 0)), Decimal("0"))
         duration_days = max(1, int(getattr(rental, "duration_days", 1) or 1))
         motorcycle = str(getattr(rental, "motorcycle", None) or "—")
         plate = str(getattr(rental, "plate", None) or "—")
-        if rental_charge > 0 or motorcycle != "—":
-            line_items.append((motorcycle, plate, duration_days, rate_amount, rental_charge or rate_amount * duration_days))
+        gross = rate_amount if rate_amount > 0 else (rental_charge + line_discount)
+        if rental_charge > 0 or motorcycle != "—" or gross > 0:
+            line_items.append((
+                motorcycle,
+                plate,
+                duration_days,
+                gross,
+                line_discount,
+                rental_charge if rental_charge > 0 else max(gross - line_discount, Decimal("0")),
+            ))
 
         late_fee = _decimal(getattr(rental, "late_fee", 0))
         if late_fee > 0:
-            line_items.append((LABELS["late_fee"][1], "—", "—", late_fee, late_fee))
+            line_items.append((LABELS["late_fee"][1], "—", "—", late_fee, Decimal("0"), late_fee))
 
         recorded_additional = Decimal("0")
         for charge in charges:
@@ -181,16 +190,16 @@ class InvoicePdfService:
             charge_label = " · ".join(
                 str(value) for value in (getattr(charge, "charge_type", None), getattr(charge, "description", None)) if value
             )
-            line_items.append((charge_label or LABELS["additional_charges"][1], "—", "—", charge_amount, charge_amount))
+            line_items.append((charge_label or LABELS["additional_charges"][1], "—", "—", charge_amount, Decimal("0"), charge_amount))
 
         additional = _decimal(getattr(rental, "additional_charges", 0))
         additional_fallback = max(additional - recorded_additional, Decimal("0"))
         if additional_fallback > 0:
-            line_items.append((LABELS["additional_charges"][1], "—", "—", additional_fallback, additional_fallback))
+            line_items.append((LABELS["additional_charges"][1], "—", "—", additional_fallback, Decimal("0"), additional_fallback))
 
-        subtotal = sum((item[4] for item in line_items), Decimal("0"))
+        subtotal = sum((item[3] for item in line_items), Decimal("0"))
         deposit = max(_decimal(getattr(rental, "deposit", 0)), Decimal("0"))
-        discount = max(_decimal(getattr(rental, "discount", 0)), Decimal("0"))
+        discount = max(sum((item[4] for item in line_items), Decimal("0")), line_discount)
         stored_tax = _decimal(getattr(rental, "tax", 0))
         total_due = _decimal(getattr(rental, "total_due", subtotal - discount + stored_tax))
         tax = stored_tax if stored_tax > 0 else max(total_due - (subtotal - discount), Decimal("0"))
@@ -286,7 +295,7 @@ class InvoicePdfService:
 
         header_row = [
             bilingual(key, white_header, english_color="#FFFFFF")
-            for key in ("no", "motorcycle", "plate", "days", "unit_price", "amount")
+            for key in ("no", "motorcycle", "plate", "days", "unit_price", "discount", "amount")
         ]
         item_rows = [header_row]
         for index, item in enumerate(line_items, start=1):
@@ -296,11 +305,12 @@ class InvoicePdfService:
                 p(item[1], normal),
                 p(item[2], center),
                 p(_money(item[3], currency), money_right),
-                Paragraph(f"<b>{_xml(_money(item[4], currency))}</b>", money_right),
+                p(_money(item[4], currency), money_right),
+                Paragraph(f"<b>{_xml(_money(item[5], currency))}</b>", money_right),
             ])
         if not line_items:
-            item_rows.append([p("No invoice items", center), "", "", "", "", ""])
-        lines_table = Table(item_rows, colWidths=[14 * mm, 53 * mm, 32 * mm, 21 * mm, 33 * mm, 33 * mm], repeatRows=1)
+            item_rows.append([p("No invoice items", center), "", "", "", "", "", ""])
+        lines_table = Table(item_rows, colWidths=[12 * mm, 44 * mm, 28 * mm, 18 * mm, 28 * mm, 28 * mm, 28 * mm], repeatRows=1)
         lines_style = [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(BLUE)),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),

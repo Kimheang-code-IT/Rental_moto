@@ -859,17 +859,16 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
       @refresh="refresh"
       @export="exportModule"
     >
-      <template v-if="canSeedDocumentSequences" #leading>
-        <UButton
-          color="neutral"
-          variant="outline"
-          size="sm"
-          icon="i-lucide-list-plus"
-          :loading="seedingDocumentSequences"
-          :label="t('app.documentSequences.seedDefaults')"
-          @click="seedDocumentSequenceDefaults"
-        />
-      </template>
+      <UButton
+        v-if="canSeedDocumentSequences"
+        color="neutral"
+        variant="outline"
+        size="sm"
+        icon="i-lucide-list-plus"
+        :loading="seedingDocumentSequences"
+        :label="t('app.documentSequences.seedDefaults')"
+        @click="seedDocumentSequenceDefaults"
+      />
     </LayoutAppHeaderPageActions>
 
     <TableAppListTable
