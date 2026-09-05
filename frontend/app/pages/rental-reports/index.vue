@@ -3,7 +3,7 @@ import type { DropdownMenuItem, TableColumn } from '@nuxt/ui'
 import { UBadge, ULink } from '#components'
 import type { ExportFieldOption, ExportRequest } from '~/types/rental/export'
 import { useAppHeader } from '~/composables/layout/useAppHeader'
-import { formatMoney } from '~/composables/module/useModule'
+import { formatMoney, statusLabel } from '~/composables/module/useModule'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { listTableRowMetaColumn } from '~/utils/table/list-columns'
 import { useServerExport } from '~/composables/common/useServerExport'
@@ -89,9 +89,18 @@ watch([q, dateFrom, dateTo], () => {
   reloadReports()
 })
 
-const selectItems = (values: string[]) => [...new Set(values.filter(Boolean))].map(value => ({ label: value, value }))
+const selectItems = (values: string[]) => [...new Set(values.filter(Boolean))].map(value => ({
+  label: value,
+  value,
+}))
+
 const motorcycleItems = computed(() => selectItems(completed.value.map(row => String(row.motorcycle || ''))))
-const paymentStatusItems = computed(() => selectItems(completed.value.map(row => String(row.paymentStatus || 'Paid'))))
+const paymentStatusItems = computed(() => [...new Set(
+  completed.value.map(row => String(row.paymentStatus || (Number(row.outstanding) > 0 ? 'Partial' : 'Paid'))).filter(Boolean),
+)].map(value => ({
+  label: statusLabel(value, t, te),
+  value,
+})))
 const paymentMethodItems = computed(() => selectItems(completed.value.map(row => String(row.paymentMethod || ''))))
 
 const rows = computed(() => completed.value
@@ -222,7 +231,11 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => {
     header: tx('rental.ui.paymentStatus', 'Payment Status'),
     cell: ({ row }) => {
       const status = String(row.original.paymentStatus || (Number(row.original.outstanding) > 0 ? 'Partial' : 'Paid'))
-      return h(UBadge, { color: status === 'Paid' ? 'success' : 'warning', variant: 'subtle', size: 'sm' }, () => status)
+      return h(UBadge, {
+        color: status === 'Paid' ? 'success' : 'warning',
+        variant: 'subtle',
+        size: 'sm',
+      }, () => statusLabel(status, t, te))
     },
   },
   { accessorKey: 'paymentMethod', header: tx('rental.ui.paymentMethod', 'Payment Method') },
@@ -288,10 +301,29 @@ async function refresh() {
   store.reload()
 }
 
+const currentPageRowIds = computed(() => {
+  const start = pagination.value.pageIndex * pagination.value.pageSize
+  return rows.value.slice(start, start + pagination.value.pageSize)
+    .map(row => String(row.id || '')).filter(Boolean)
+})
+
 async function exportCsv(request: ExportRequest) {
   if (store.isHttpMode) {
-    // Server export job through the exports queue.
-    await requestServerExport('rental_reports', request, `rental-reports-${new Date().toISOString().slice(0, 10)}.csv`)
+    // Server export job through the exports queue; filters ride along in `query`.
+    const query: Record<string, unknown> = {
+      q: q.value || undefined,
+      status: 'Completed',
+      motorcycle: [...motorcycle.value],
+      paymentStatus: [...paymentStatus.value],
+      paymentMethod: [...paymentMethod.value],
+    }
+    if (request.scope === 'current_page') query.ids = currentPageRowIds.value
+    await requestServerExport('rental_reports', request, `rental-reports-${new Date().toISOString().slice(0, 10)}.csv`, {
+      query,
+      selectedIds: request.scope === 'selected'
+        ? rows.value.map(row => String(row.id || '')).filter(Boolean)
+        : undefined,
+    })
     return
   }
   let exportRows = [...rows.value]

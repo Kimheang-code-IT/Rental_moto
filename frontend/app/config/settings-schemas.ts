@@ -68,8 +68,8 @@ export const appConfigTabs: DocumentTabSchema[] = [
             labelKey: 'core.settings.defaultRecordView',
             type: 'select',
             options: [
-              { label: 'Table', value: 'table' },
-              { label: 'Kanban', value: 'kanban' },
+              { label: 'Table', labelKey: 'common.options.table', value: 'table' },
+              { label: 'Kanban', labelKey: 'common.options.kanban', value: 'kanban' },
             ],
           },
           { key: 'general.maxUploadSizeMb', labelKey: 'core.config.maxFileSizeMb', type: 'number' },
@@ -92,8 +92,8 @@ export const appConfigTabs: DocumentTabSchema[] = [
             labelKey: 'core.settings.defaultLanguage',
             type: 'select',
             options: [
-              { label: 'English', value: 'en' },
-              { label: 'Khmer', value: 'km' },
+              { label: 'English', labelKey: 'common.options.langEn', value: 'en' },
+              { label: 'Khmer', labelKey: 'common.options.langKm', value: 'km' },
             ],
           },
           {
@@ -160,7 +160,7 @@ export const appConfigTabs: DocumentTabSchema[] = [
             labelKey: 'core.settings.encryption',
             type: 'select',
             options: [
-              { label: 'None', value: 'none' },
+              { label: 'None', labelKey: 'common.options.none', value: 'none' },
               { label: 'SSL', value: 'ssl' },
               { label: 'TLS', value: 'tls' },
               { label: 'STARTTLS', value: 'starttls' },
@@ -326,8 +326,8 @@ const storageCommonFields = [
     labelKey: 'core.settings.accessMode',
     type: 'select' as const,
     options: [
-      { label: 'Private', value: 'private' },
-      { label: 'Public', value: 'public' },
+      { label: 'Private', labelKey: 'common.options.private', value: 'private' },
+      { label: 'Public', labelKey: 'common.options.public', value: 'public' },
     ],
   },
   { key: 'maxFileSizeMb', labelKey: 'core.config.maxFileSizeMb', type: 'number' as const },

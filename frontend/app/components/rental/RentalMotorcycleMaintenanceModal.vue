@@ -28,7 +28,9 @@ function tx(key: string, fallback: string) {
 }
 
 function help(key: string, fallback: string) {
-  return te(`core.fieldHelp.${key}`) ? String(t(`core.fieldHelp.${key}`)) : fallback
+  if (te(`rental.fieldHelp.${key}`)) return String(t(`rental.fieldHelp.${key}`))
+  if (te(`core.fieldHelp.${key}`)) return String(t(`core.fieldHelp.${key}`))
+  return fallback
 }
 
 const motorcycleLabel = computed(() => {

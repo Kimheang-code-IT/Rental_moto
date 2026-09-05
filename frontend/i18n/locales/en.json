@@ -418,7 +418,16 @@
     "actions": "Actions",
     "home": "Home",
     "pages": "Pages",
-    "rowsPerPage": "Rows per page"
+    "rowsPerPage": "Rows per page",
+    "options": {
+      "table": "Table",
+      "kanban": "Kanban",
+      "none": "None",
+      "private": "Private",
+      "public": "Public",
+      "langEn": "English",
+      "langKm": "Khmer"
+    }
   },
   "components": {
     "filterSearch": "Search options...",
@@ -620,8 +629,45 @@
     "sections": {
       "details": "Details",
       "general": "General",
+      "general-information": "General Information",
+      "registration": "Registration",
+      "rates": "Rates",
+      "identity": "Identity",
+      "status": "Status",
+      "telegram": "Telegram",
       "notes": "Notes",
-      "reference": "Reference"
+      "reference": "Reference",
+      "rental": "Rental",
+      "charges": "Charges",
+      "balance": "Balance",
+      "return": "Return",
+      "log": "Log",
+      "entity": "Entity",
+      "data": "Data",
+      "result": "Result",
+      "traceability": "Traceability",
+      "main-information": "Main information"
+    },
+    "statuses": {
+      "available": "Available",
+      "progressing": "Progressing",
+      "maintenance": "Maintenance",
+      "active": "Active",
+      "inactive": "Inactive",
+      "overdue": "Overdue",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "canceled": "Cancelled",
+      "draft": "Draft",
+      "paid": "Paid",
+      "partial": "Partial",
+      "unpaid": "Unpaid",
+      "success": "Success",
+      "failed": "Failed",
+      "denied": "Denied",
+      "good": "Good",
+      "minor_issues": "Minor issues",
+      "damaged": "Damaged"
     },
     "fields": {
       "action": "Action",
@@ -719,10 +765,21 @@
         "title": "Users",
         "singular": "User",
         "description": "Manage staff access by role and department.",
+        "fields": {
+          "username": "Username",
+          "displayName": "Display Name",
+          "email": "Email",
+          "password": "Password",
+          "roleId": "Role",
+          "telegramUsername": "Telegram Username",
+          "telegramChatId": "Telegram Chat ID"
+        },
         "fieldHelp": {
           "username": "Login username for this staff account.",
           "password": "Login password for this user. Keep it confidential.",
-          "roleId": "Access role assigned to this user. Create it first under Administration → Roles if the list is empty."
+          "roleId": "Access role assigned to this user. Create it first under Administration → Roles if the list is empty.",
+          "telegramUsername": "Linked automatically through the Telegram bot.",
+          "telegramChatId": "Linked automatically through the Telegram bot. Password reset codes are sent only to this private chat."
         }
       },
       "motorcycles": {
@@ -735,8 +792,10 @@
           "plate": "Plate Number",
           "chassisNo": "Chassis Number",
           "engineNo": "Engine Number",
-          "dailyRate": "Daily Rate",
-          "monthlyRate": "Monthly Rate",
+          "dailyRate": "1 Day Rate",
+          "threeDayRate": "3 Day Rate",
+          "weeklyRate": "1 Week Rate",
+          "monthlyRate": "1 Month Rate",
           "assetValue": "Asset Value",
           "currency": "Currency",
           "status": "Status"
@@ -839,7 +898,9 @@
       "motorcycles": "Motorcycles",
       "customers": "Customers",
       "rentals": "Rentals",
-      "incomeExpense": "Income & Expense"
+      "incomeExpense": "Income & Expense",
+      "rentalReports": "Rental Reports",
+      "dashboard": "Dashboard"
     },
     "ui": {
       "closeRental": "Return / Close",
@@ -986,7 +1047,7 @@
       "deposit": "Deposit amount held for this rental. Cannot exceed subtotal.",
       "maintenanceDescription": "What work is being done on this motorcycle.",
       "maintenanceAmount": "Maintenance cost recorded as an expense.",
-      "lines": "Select model, then plate. Choose a package or Custom dates to set Start/Due freely. Amount uses the motorcycle package rate minus any line discount.",
+      "lines": "Select model, then plate. Each motorcycle has its own rate package and days. Amount uses that motorcycle package rate minus any line discount.",
       "headerDiscount": "Optional document-level discount shared across motorcycles, applied after each line discount.",
       "taxPercent": "Sales tax percent applied after discount.",
       "note": "Optional note stored on each rental created.",

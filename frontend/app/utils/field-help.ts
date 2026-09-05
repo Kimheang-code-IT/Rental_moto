@@ -17,7 +17,7 @@ function firstExistingHelp(t: Translate, te: TranslateExists, keys: string[]): s
 
 /**
  * ERPNext-style helper text under every form field.
- * Order: literal help → helpKey → core.fieldHelp → core.fieldHelp → calculated → default.
+ * Order: literal help → helpKey → rental/module/core fieldHelp → calculated → default.
  */
 export function resolveFormFieldHelp(
   field: FormFieldHelpSource,
@@ -31,10 +31,12 @@ export function resolveFormFieldHelp(
   const key = String(field.key || '').trim()
   const leaf = key.includes('.') ? key.slice(key.lastIndexOf('.') + 1) : key
   const found = firstExistingHelp(t, te, [
-    `core.fieldHelp.${key}`,
+    `rental.fieldHelp.${key}`,
+    `rental.fieldHelp.${leaf}`,
     `core.fieldHelp.${key}`,
     `core.fieldHelp.${leaf}`,
-    `core.fieldHelp.${leaf}`,
+    `app.fieldHelp.${key}`,
+    `app.fieldHelp.${leaf}`,
   ])
   if (found) return found
 

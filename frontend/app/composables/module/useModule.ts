@@ -7,9 +7,9 @@ import type { ModuleFieldType } from '~/config/modules'
 import { isMoneyKey, isDateFieldKey, isDateTimeFieldKey } from '~/utils/module/field-keys'
 import { documentSequenceTypeLabel } from '~/utils/document-sequences'
 import { formatDate, formatDateTime, formatMoney as formatMoneyValue, formatNumber as formatNumberValue } from '~/utils/format/format-service'
-import { codeTitle, labeledStatusOptions, shortDay } from '~/utils/module/format'
+import { codeTitle, labeledStatusOptions, shortDay, statusLabel, statusSlug } from '~/utils/module/format'
 
-export { codeTitle, labeledStatusOptions, shortDay }
+export { codeTitle, labeledStatusOptions, shortDay, statusLabel, statusSlug }
 
 export function i18nSlug(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general'
@@ -38,11 +38,15 @@ export function useModuleLabel() {
 
   function moduleTitle(module: ModuleConfig) {
     if (module.titleKey && te(module.titleKey)) return String(t(module.titleKey))
-    return tx(`app.modules.${module.collection}.title`, module.title)
+    const fromI18n = tx(`app.modules.${module.collection}.title`)
+    if (fromI18n) return fromI18n
+    return km.value && module.titleKm ? module.titleKm : module.title
   }
 
   function moduleSingular(module: ModuleConfig) {
-    return tx(`app.modules.${module.collection}.singular`, module.singular)
+    const fromI18n = tx(`app.modules.${module.collection}.singular`)
+    if (fromI18n) return fromI18n
+    return km.value && module.singularKm ? module.singularKm : module.singular
   }
 
   function sectionTitle(field: Pick<ModuleField, 'section'>) {
@@ -58,8 +62,10 @@ export function useModuleLabel() {
     return tx(`app.tables.${table.key}`, table.title)
   }
 
-  function actionLabel(action: Pick<ModuleAction, 'key' | 'label'>) {
-    return tx(`app.moduleActions.${action.key}`, action.label)
+  function actionLabel(action: Pick<ModuleAction, 'key' | 'label' | 'labelKm'>) {
+    const fromI18n = tx(`app.moduleActions.${action.key}`)
+    if (fromI18n) return fromI18n
+    return km.value && action.labelKm ? action.labelKm : action.label
   }
 
   function relatedTitle(group: Pick<ModuleRelated, 'title'>) {

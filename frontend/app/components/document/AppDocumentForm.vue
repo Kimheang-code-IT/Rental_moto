@@ -15,7 +15,7 @@ const props = withDefaults(defineProps<{
   wide: false,
 })
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 
 provide(moduleDocumentRecordKey, {
   get: (key: string) => props.fieldValue(key),
@@ -23,6 +23,7 @@ provide(moduleDocumentRecordKey, {
 
 function sectionHeading(section: DocumentTabSchema['sections'][0]) {
   if (section.titleKey && te(section.titleKey)) return t(section.titleKey)
+  if (locale.value === 'km' && section.titleKm) return section.titleKm
   return section.title || ''
 }
 

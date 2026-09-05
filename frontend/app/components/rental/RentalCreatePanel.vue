@@ -4,7 +4,7 @@ import type { ExportFieldOption, ExportRequest } from '~/types/rental/export'
 import { useConfirm } from '~/composables/common/useConfirm'
 import { useAppHeader } from '~/composables/layout/useAppHeader'
 import { usePageSeo } from '~/composables/usePageSeo'
-import { formatMoney, statusColor } from '~/composables/module/useModule'
+import { formatMoney, statusColor, statusLabel } from '~/composables/module/useModule'
 import { PAYMENT_METHODS, RENTAL_IDENTITY_TYPES } from '~/config/rental-options'
 import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
 import { downloadCsv } from '~/utils/export/csv'
@@ -62,13 +62,17 @@ function tx(key: string, fallback: string) {
 }
 
 function help(key: string, fallback: string) {
-  return te(`core.fieldHelp.${key}`) ? String(t(`core.fieldHelp.${key}`)) : fallback
+  if (te(`rental.fieldHelp.${key}`)) return String(t(`rental.fieldHelp.${key}`))
+  if (te(`core.fieldHelp.${key}`)) return String(t(`core.fieldHelp.${key}`))
+  return fallback
 }
 
 interface RentalLine {
   key: string
   model: string
   motorcycleId: string
+  /** Per-line package; independent from other motorcycle rows. */
+  ratePlan: RentalRatePlan
   days: number
   unitPrice: number
   /** Per-motorcycle discount (currency amount). */
@@ -88,7 +92,6 @@ onMounted(() => {
 const customerId = ref('')
 const startDate = ref(todayDateTimeLocal())
 const dueDate = ref(addDaysToDateTime(todayDateTimeLocal(), 1))
-const ratePlan = ref<RentalRatePlan>('1d')
 const depositDate = ref(todayDateTimeLocal().slice(0, 10))
 const deposit = ref(0)
 const headerDiscount = ref(0)
@@ -112,9 +115,60 @@ const listNavigationDirection = ref<'previous' | 'next' | null>(null)
 
 let lineSeq = 1
 function newLine(): RentalLine {
-  return { key: `line-${lineSeq++}`, model: '', motorcycleId: '', days: 1, unitPrice: 0, discount: 0 }
+  return {
+    key: `line-${lineSeq++}`,
+    model: '',
+    motorcycleId: '',
+    ratePlan: '1d',
+    days: 1,
+    unitPrice: 0,
+    discount: 0,
+  }
 }
 const lines = ref<RentalLine[]>([newLine()])
+
+/** Due datetime for one line from shared start + that line's plan/days. */
+function lineDueDate(line: RentalLine) {
+  if (!startDate.value) return ''
+  if (line.ratePlan === 'custom') {
+    return addDaysToDateTime(startDate.value, Math.max(1, line.days || 1))
+  }
+  return dueDateFromRatePlan(startDate.value, line.ratePlan, line.days)
+}
+
+function daysForRatePlan(plan: RentalRatePlan, fallbackDays = 1) {
+  if (plan === '1d') return 1
+  if (plan === '3d') return 3
+  if (plan === '1w') return 7
+  if (plan === '1m') {
+    if (!startDate.value) return Math.max(1, fallbackDays)
+    const due = dueDateFromRatePlan(startDate.value, '1m', fallbackDays)
+    return Math.max(1, daysBetween(startDate.value, due) || fallbackDays)
+  }
+  return Math.max(1, Math.floor(Number(fallbackDays) || 1))
+}
+
+function repriceLine(line: RentalLine) {
+  const due = lineDueDate(line)
+  const moto = motoById(line.motorcycleId)
+  line.unitPrice = moto
+    ? appliedUnitPrice(moto, line.days, startDate.value, due)
+    : line.unitPrice
+  const gross = moto ? lineCharge(moto, line.days, startDate.value, due) : 0
+  if (line.discount > gross) line.discount = gross
+}
+
+/** Header Due mirrors the latest line due; does not rewrite other lines. */
+function refreshHeaderDueFromLines() {
+  if (!startDate.value || !lines.value.length) return
+  const dues = lines.value.map(lineDueDate).filter(Boolean)
+  if (!dues.length) return
+  const latest = dues.reduce((a, b) => (a > b ? a : b))
+  if (latest === dueDate.value) return
+  syncingDates.value = true
+  dueDate.value = latest
+  syncingDates.value = false
+}
 
 const selectedCustomer = computed(() =>
   store.list('rentalCustomers').find(row => String(row.id) === customerId.value) || null,
@@ -180,7 +234,7 @@ function onSelectModel(line: RentalLine, model: string | number) {
   line.unitPrice = 0
   const first = availableMotorcycles.value.find(row => String(row.model) === line.model)
   if (first) {
-    line.unitPrice = appliedUnitPrice(first, line.days || 1, startDate.value, dueDate.value)
+    repriceLine(line)
   }
 }
 
@@ -190,24 +244,20 @@ function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
   const moto = motoById(line.motorcycleId)
   if (!moto) return
   line.model = String(moto.model || line.model)
-  if (!line.days) line.days = daysBetween(startDate.value, dueDate.value) || 1
-  line.unitPrice = appliedUnitPrice(moto, line.days, startDate.value, dueDate.value)
-}
-
-function lineGross(line: RentalLine) {
-  const moto = motoById(line.motorcycleId)
-  if (moto) return lineCharge(moto, line.days, startDate.value, dueDate.value)
-  return 0
+  if (!line.days) line.days = daysForRatePlan(line.ratePlan, daysBetween(startDate.value, dueDate.value) || 1)
+  repriceLine(line)
 }
 
 const lineComputed = computed(() => lines.value.map(line => {
   const moto = motoById(line.motorcycleId)
+  const due = lineDueDate(line)
   const priced = moto
-    ? lineAmounts(moto, line.days, line.discount, startDate.value, dueDate.value)
+    ? lineAmounts(moto, line.days, line.discount, startDate.value, due)
     : { charge: 0, discount: 0, lineTotal: 0 }
   return {
     line,
     moto,
+    due,
     gross: priced.charge,
     discount: priced.discount,
     amount: priced.lineTotal,
@@ -298,72 +348,70 @@ const ratePlanItems = computed(() => [
   { label: tx('rental.ui.ratePlanCustom', 'Custom dates'), value: 'custom' },
 ])
 
-function syncLinesFromDates() {
-  const days = Math.max(1, daysBetween(startDate.value, dueDate.value) || lines.value[0]?.days || 1)
-  // Keep an explicit "Custom dates" choice; only auto-detect for package presets.
-  if (ratePlan.value !== 'custom') {
-    ratePlan.value = detectRatePlan(startDate.value, dueDate.value, days)
-  }
-  for (const line of lines.value) {
-    line.days = days
-    const moto = motoById(line.motorcycleId)
-    line.unitPrice = moto
-      ? appliedUnitPrice(moto, days, startDate.value, dueDate.value)
-      : line.unitPrice
-    if (line.discount > lineGross(line)) line.discount = lineGross(line)
-  }
-}
-
+/** Header Start changed: keep each line's own plan/days, only reprice. */
 watch(startDate, () => {
   if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
-  const days = lines.value[0]?.days || daysBetween(startDate.value, dueDate.value) || 1
-  syncingDates.value = true
-  dueDate.value = dueDateFromRatePlan(startDate.value, ratePlan.value, days)
-  syncingDates.value = false
-  syncLinesFromDates()
+  for (const line of lines.value) repriceLine(line)
+  refreshHeaderDueFromLines()
 })
 
+/**
+ * Header Due edited by staff: apply that shared duration to every line.
+ * Programmatic due updates (from line edits) are ignored via syncingDates.
+ */
 watch(dueDate, () => {
   if (isFormReadOnly.value || syncingDates.value || !startDate.value || !dueDate.value) return
-  const days = daysBetween(startDate.value, dueDate.value)
-  if (days > 0) syncLinesFromDates()
+  const days = Math.max(1, daysBetween(startDate.value, dueDate.value) || 1)
+  const plan = detectRatePlan(startDate.value, dueDate.value, days)
+  for (const line of lines.value) {
+    line.days = days
+    line.ratePlan = plan
+    repriceLine(line)
+  }
 })
 
-function onRatePlanChange(plan: string) {
-  if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
+function onRatePlanChange(line: RentalLine, plan: string) {
+  if (isFormReadOnly.value || !startDate.value) return
   const next = String(plan || '') as RentalRatePlan
-  if (next === 'custom') {
-    // Stick on Custom so staff can edit Start/Due freely without the select snapping back.
-    ratePlan.value = 'custom'
-    return
+  line.ratePlan = next
+  if (next !== 'custom') {
+    line.days = daysForRatePlan(next, line.days)
   }
-  ratePlan.value = next
-  syncingDates.value = true
-  dueDate.value = dueDateFromRatePlan(startDate.value, next, lines.value[0]?.days || 1)
-  syncingDates.value = false
-  syncLinesFromDates()
+  repriceLine(line)
+  refreshHeaderDueFromLines()
 }
 
-function onLineDaysChange(daysValue?: number | null) {
-  if (isFormReadOnly.value || syncingDates.value || !startDate.value) return
-  const days = Math.max(1, Math.floor(Number(daysValue ?? lines.value[0]?.days) || 1))
-  syncingDates.value = true
-  dueDate.value = addDaysToDateTime(startDate.value, days)
-  syncingDates.value = false
-  syncLinesFromDates()
+function onLineDaysChange(line: RentalLine, daysValue?: number | null) {
+  if (isFormReadOnly.value || !startDate.value) return
+  const days = Math.max(1, Math.floor(Number(daysValue ?? line.days) || 1))
+  line.days = days
+  // Manual day edits stay on Custom unless they exactly match a package.
+  const due = addDaysToDateTime(startDate.value, days)
+  const detected = detectRatePlan(startDate.value, due, days)
+  line.ratePlan = detected === 'custom' ? 'custom' : detected
+  repriceLine(line)
+  refreshHeaderDueFromLines()
 }
 
 function addLine() {
   if (isFormReadOnly.value) return
-  const days = lines.value[0]?.days || daysBetween(startDate.value, dueDate.value) || 1
   const row = newLine()
-  row.days = days
+  // New row starts from the first line's duration, but keeps its own ratePlan state.
+  const template = lines.value[0]
+  if (template) {
+    row.days = template.days
+    row.ratePlan = template.ratePlan
+  } else {
+    row.days = daysBetween(startDate.value, dueDate.value) || 1
+    row.ratePlan = detectRatePlan(startDate.value, dueDate.value, row.days)
+  }
   lines.value.push(row)
 }
 
 function removeLine(key: string) {
   if (isFormReadOnly.value || lines.value.length <= 1) return
   lines.value = lines.value.filter(row => row.key !== key)
+  refreshHeaderDueFromLines()
 }
 
 const canEditRental = computed(() => Boolean(
@@ -512,22 +560,17 @@ function hydrateDetail() {
     model: String(found.motorcycle || ''),
     motorcycleId: String(found.motorcycleId || ''),
     days: Math.max(1, Number(found.durationDays || daysBetween(String(found.startDate || ''), String(found.dueDate || '')) || 1)),
+    ratePlan: detectRatePlan(
+      String(found.startDate || ''),
+      String(found.dueDate || ''),
+      Math.max(1, Number(found.durationDays || 1)),
+    ),
     unitPrice: Number(found.rateAmount || 0),
     discount: Math.max(0, Number(found.discount || 0)),
   }]
   const firstLine = lines.value[0]
   if (firstLine) {
-    const moto = motoById(firstLine.motorcycleId)
-    if (moto) {
-      firstLine.unitPrice = appliedUnitPrice(
-        moto,
-        firstLine.days,
-        startDate.value,
-        dueDate.value,
-      )
-    }
-    // Detail view: show Custom when the stored span is not a named package.
-    ratePlan.value = detectRatePlan(startDate.value, dueDate.value, firstLine.days)
+    repriceLine(firstLine)
   }
   // Detail stores discount on the rental line; keep header extra at 0 so totals do not double-count.
   headerDiscount.value = 0
@@ -554,7 +597,7 @@ watch([headerTitle, isDetail, rentalNo, rentalStatus, notFound, rentalsListLabel
     { label: headerTitle.value },
   ])
   if (isDetail.value && rentalStatus.value && !notFound.value) {
-    setBadges([{ label: rentalStatus.value, color: statusColor(rentalStatus.value) }])
+    setBadges([{ label: statusLabel(rentalStatus.value, t, te), color: statusColor(rentalStatus.value) }])
   }
   else {
     setBadges([])
@@ -693,7 +736,7 @@ async function createRental() {
         lines: validLines.map(row => ({
           motorcycleId: String(row.line.motorcycleId),
           startDate: toIsoZoned(startDate.value)!,
-          dueDate: toIsoZoned(dueDate.value)!,
+          dueDate: toIsoZoned(row.due || lineDueDate(row.line))!,
           deposit: Number((deposit.value / validLines.length).toFixed(2)),
           discount: Number(row.line.discount || 0),
           note: null,
@@ -937,12 +980,12 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                     </td>
                     <td class="px-2 py-2">
                       <USelect
-                        :model-value="ratePlan"
+                        :model-value="row.line.ratePlan"
                         :items="ratePlanItems"
                         size="md"
                         class="w-40"
                         :disabled="isFormReadOnly"
-                        @update:model-value="onRatePlanChange"
+                        @update:model-value="(v: string) => onRatePlanChange(row.line, v)"
                       />
                     </td>
                     <td class="px-2 py-2">
@@ -954,7 +997,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                         size="md"
                         class="ml-auto w-24"
                         :disabled="isFormReadOnly"
-                        @update:model-value="onLineDaysChange"
+                        @update:model-value="(v: number | null) => onLineDaysChange(row.line, v)"
                       />
                     </td>
                     <td class="px-2 py-2">
@@ -999,7 +1042,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 </tbody>
               </table>
             </div>
-            <p class="mt-2 text-xs text-muted">{{ help('lines', 'Select model, then plate. Choose a package or Custom dates to set Start/Due freely. Amount uses the motorcycle package rate minus any line discount.') }}</p>
+            <p class="mt-2 text-xs text-muted">{{ help('lines', 'Select model, then plate. Each motorcycle has its own rate package and days. Amount uses that motorcycle package rate minus any line discount.') }}</p>
 
             <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <UFormField

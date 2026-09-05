@@ -60,7 +60,12 @@ export function useServerExport() {
     saveBlob(response, filename)
   }
 
-  async function request(resource: string, request: ExportRequest, filename?: string) {
+  async function request(
+    resource: string,
+    request: ExportRequest,
+    filename?: string,
+    options: { query?: Record<string, unknown>, selectedIds?: string[] } = {},
+  ) {
     if (running.value) return
     running.value = true
     error.value = null
@@ -72,6 +77,8 @@ export function useServerExport() {
         fieldCodes: request.fieldCodes,
         startDate: request.startDate || null,
         endDate: request.endDate || null,
+        query: options.query || null,
+        selectedIds: options.selectedIds || null,
       })
       const job = ('data' in (created as object) && (created as { data?: ExportJobView }).data)
         ? (created as { data: ExportJobView }).data

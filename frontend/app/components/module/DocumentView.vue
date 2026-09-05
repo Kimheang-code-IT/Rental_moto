@@ -6,6 +6,7 @@ import { usePageSeo } from '~/composables/usePageSeo'
 import {
   emptyModuleRecord,
   statusColor,
+  statusLabel,
   useModuleLabel,
   useModuleRoute,
 } from '~/composables/module/useModule'
@@ -23,7 +24,7 @@ import {
 const { module, isCreate, recordId, route } = useModuleRoute()
 const store = useAppDataStore()
 const auth = useAuthStore()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const toast = useToast()
 const { moduleTitle, moduleSingular, fieldLabel } = useModuleLabel()
 const { setBreadcrumbs, setBadges, clear } = useAppHeader()
@@ -139,7 +140,9 @@ watch([title, () => module.value, () => model.value.status], () => {
     { label: moduleTitle(module.value), to: module.value.path },
     { label: title.value },
   ])
-  setBadges(model.value.status ? [{ label: String(model.value.status), color: statusColor(String(model.value.status)) }] : [])
+  setBadges(model.value.status
+    ? [{ label: statusLabel(model.value.status, t, te), color: statusColor(String(model.value.status)) }]
+    : [])
 }, { immediate: true })
 
 onBeforeUnmount(clear)

@@ -92,6 +92,8 @@ export interface DocumentFieldSchema {
   key: string
   labelKey: string
   label?: string
+  /** Khmer label when labelKey is missing from locale files. */
+  labelKm?: string
   type: FieldType
   required?: boolean
   readOnly?: boolean
@@ -112,6 +114,7 @@ export interface DocumentSectionSchema {
   id: string
   titleKey?: string
   title?: string
+  titleKm?: string
   descriptionKey?: string
   description?: string
   fields: DocumentFieldSchema[]

@@ -277,11 +277,15 @@ function exportIncomeExpense() {
   downloadCsv({
     filename: `income-expense-${start}_${end}.csv`,
     fields: [
-      { label: 'Day', value: 'day' },
+      { label: tx('rental.ui.date', 'Date'), value: 'day' },
       { label: tx('rental.ui.income', 'Income'), value: 'income' },
       { label: tx('rental.ui.expense', 'Expense'), value: 'expense' },
+      { label: tx('rental.ui.net', 'Net'), value: 'net' },
     ],
-    rows: financeByDay.value,
+    rows: financeByDay.value.map(row => ({
+      ...row,
+      net: Number(row.income || 0) - Number(row.expense || 0),
+    })),
   })
 }
 

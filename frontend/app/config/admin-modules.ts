@@ -70,19 +70,18 @@ export const adminModules: ModuleConfig[] = [
       }),
       f('roleId', 'Role', 'តួនាទី', 'General', 'ទូទៅ', 'select', undefined, {
         required: true,
-        labelKey: 'core.fields.roleAssignments',
         optionsEndpoint: '/api/v2/roles/options',
         helpKey: 'app.modules.users.fieldHelp.roleId',
       }),
       f('telegramUsername', 'Telegram Username', 'ឈ្មោះអ្នកប្រើ Telegram', 'Telegram', 'Telegram', 'text', undefined, {
         computed: true,
         hideOnCreate: true,
-        help: 'Linked automatically through the Telegram bot.',
+        helpKey: 'app.modules.users.fieldHelp.telegramUsername',
       }),
       f('telegramChatId', 'Telegram Chat ID', 'លេខ Chat ID Telegram', 'Telegram', 'Telegram', 'text', undefined, {
         computed: true,
         hideOnCreate: true,
-        help: 'Linked automatically through the Telegram bot. Password reset codes are sent only to this private chat.',
+        helpKey: 'app.modules.users.fieldHelp.telegramChatId',
       }),
     ],
   }),

@@ -2,14 +2,14 @@
 import type { TableColumn, TableRow } from '@nuxt/ui'
 import type { ModuleRelated } from '~/config/modules'
 import type { AppRecord } from '~/config/admin-seed'
-import { useModuleLabel } from '~/composables/module/useModule'
+import { statusLabel, useModuleLabel } from '~/composables/module/useModule'
 import { rentalTableUiCompact } from '~/utils/table/theme'
 
 defineProps<{
   groups: Array<ModuleRelated & { rows: AppRecord[] }>
 }>()
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { relatedTitle } = useModuleLabel()
 
 function titleOf(row: AppRecord) {
@@ -27,7 +27,13 @@ const columns = computed<TableColumn<AppRecord>[]>(() => [
     accessorKey: 'status',
     header: t('app.ui.cols.status'),
     enableSorting: false,
-    cell: ({ row }) => String(row.original.status || row.original.containerNo || row.original.date || '—'),
+    cell: ({ row }) => {
+      const raw = row.original.status
+      if (raw == null || raw === '') {
+        return String(row.original.containerNo || row.original.date || '—')
+      }
+      return statusLabel(raw, t, te)
+    },
   },
 ])
 

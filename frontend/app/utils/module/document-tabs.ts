@@ -41,6 +41,7 @@ export type ModuleDocumentTabsOptions = {
   includeRelated?: boolean
   compact?: boolean
   readOnlyKeys?: string[]
+  collection?: string
 }
 
 export function moduleSelectOptions(
@@ -56,9 +57,16 @@ export function moduleSelectOptions(
   })
 }
 
+function resolveFieldLabelKey(field: ModuleField, collection?: string) {
+  if (field.labelKey) return field.labelKey
+  if (collection) return `app.modules.${collection}.fields.${field.key}`
+  return `app.fields.${field.key}`
+}
+
 export function moduleFieldToDocumentField(
   field: ModuleField,
   extra: Partial<DocumentFieldSchema> = {},
+  collection?: string,
 ): DocumentFieldSchema {
   const type = extra.type || TYPE_MAP[field.type || 'text'] || 'text'
   const options = extra.options || moduleSelectOptions(field.options)
@@ -73,7 +81,7 @@ export function moduleFieldToDocumentField(
     ...extra.meta,
   }
   return {
-    labelKey: field.labelKey || `app.fields.${field.key}`,
+    labelKey: resolveFieldLabelKey(field, collection),
     label: field.label,
     required: field.required,
     colSpan: field.colSpan,
@@ -87,6 +95,7 @@ export function moduleFieldToDocumentField(
     optionsEndpoint: field.optionsEndpoint,
     readOnly: Boolean(field.computed || extra.readOnly),
     meta: Object.keys(meta).length ? meta : extra.meta,
+    labelKm: extra.labelKm ?? field.labelKm,
   }
 }
 
@@ -145,7 +154,7 @@ function mapFields(
 ): DocumentFieldSchema[] {
   return visibleModuleFields(fields, options).map(field => moduleFieldToDocumentField(field, {
     readOnly: readOnlyKeys?.includes(field.key) || undefined,
-  }))
+  }, options.collection))
 }
 
 function i18nSlug(value: string) {
@@ -173,6 +182,7 @@ function fieldsToSections(
     id: i18nSlug(group.title),
     titleKey: `app.sections.${i18nSlug(group.title)}`,
     title: group.title,
+    titleKm: group.titleKm,
     fields: mapFields(group.fields, readOnlyKeys, options),
   })).filter(section => section.fields.length > 0)
 }
@@ -272,15 +282,19 @@ export function moduleDocumentTabs(
   module: ModuleConfig,
   options: ModuleDocumentTabsOptions = {},
 ): DocumentTabSchema[] {
+  const opts: ModuleDocumentTabsOptions = {
+    ...options,
+    collection: options.collection || module.collection,
+  }
   let tabs: DocumentTabSchema[]
   if (module.tabs?.length) {
-    tabs = withRuntimeLineTables(module.tabs, module, options)
+    tabs = withRuntimeLineTables(module.tabs, module, opts)
   }
   else {
-    tabs = recipeTabs(module, options) || defaultTabs(module, options)
+    tabs = recipeTabs(module, opts) || defaultTabs(module, opts)
   }
-  if (options.isCreate && module.hideTablesOnCreate) tabs = withoutLineTables(tabs)
-  if (options.includeRelated && module.related?.length && !tabs.some(tab => tab.id === 'related')) {
+  if (opts.isCreate && module.hideTablesOnCreate) tabs = withoutLineTables(tabs)
+  if (opts.includeRelated && module.related?.length && !tabs.some(tab => tab.id === 'related')) {
     tabs = [...tabs, relatedTab()]
   }
   return withoutLifecycleStatus(tabs)

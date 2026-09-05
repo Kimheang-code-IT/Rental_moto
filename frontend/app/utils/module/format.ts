@@ -13,20 +13,43 @@ export function shortDay(value: unknown, fallback = '—') {
   return formatDate(value, fallback)
 }
 
-/** Select items for status constants, using `app.reportCatalog.statuses.*` when present. */
+/** Normalize status codes for i18n lookup (`Progressing` → `progressing`, `ACTIVE` → `active`). */
+export function statusSlug(value: unknown) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+}
+
+/**
+ * Localized label for status / result codes shown in tables and badges.
+ * Values stored in the DB stay English; only the display label is translated.
+ */
+export function statusLabel(value: unknown, t: Translate, te: TranslateExists) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return '—'
+  const slug = statusSlug(raw)
+  const keys = [
+    `app.statuses.${slug}`,
+    `app.reportCatalog.statuses.${slug}`,
+  ]
+  for (const key of keys) {
+    if (te(key)) return String(t(key))
+  }
+  if (/^[A-Z0-9_]+$/.test(raw)) return codeTitle(raw)
+  return raw
+}
+
+/** Select items for status constants, using `app.statuses.*` when present. */
 export function labeledStatusOptions(
   values: readonly string[],
   t: Translate,
   te: TranslateExists,
 ) {
-  return values.map((value) => {
-    const slug = value.toLowerCase().replaceAll(' ', '_')
-    const key = `app.reportCatalog.statuses.${slug}`
-    return {
-      label: te(key) ? String(t(key)) : value.replaceAll('_', ' '),
-      value,
-    }
-  })
+  return values.map(value => ({
+    label: statusLabel(value, t, te),
+    value,
+  }))
 }
 
 /** Title-cased label for UPPER_SNAKE codes (e.g. `CUSTOMER_INVOICE` → `Customer Invoice`). */

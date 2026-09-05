@@ -9,6 +9,7 @@ import { usePageSeo } from '~/composables/usePageSeo'
 import {
   formatModuleCell,
   moduleStatusBadge,
+  statusLabel,
   useModuleLabel,
   useModuleRoute,
 } from '~/composables/module/useModule'
@@ -30,11 +31,13 @@ import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionL
 import { toIsoZonedOrNow } from '~/utils/api/datetime'
 import type { ExportFieldOption, ExportRequest } from '~/types/rental/export'
 import { useServerExport } from '~/composables/common/useServerExport'
+import { downloadCsv } from '~/utils/export/csv'
+import { buildModuleExportFields } from '~/utils/export/fields'
 
 const { module, route } = useModuleRoute()
 const store = useAppDataStore()
 const auth = useAuthStore()
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { fieldLabel, moduleTitle, moduleSingular } = useModuleLabel()
 const { setTitle, setBreadcrumbs, clear } = useAppHeader()
 const { confirm } = useConfirm()
@@ -97,10 +100,12 @@ const exportResource = computed(() => ({
   auditLogs: 'audit_logs',
 } as Record<string, string>)[current.value?.collection || ''] || '')
 const canExport = computed(() => Boolean(exportResource.value) && auth.canAccessPage(`${permissionPrefix.value}.export`))
-const exportFields = computed<ExportFieldOption[]>(() => (current.value?.columns || []).map(column => ({
-  label: fieldLabel(column),
-  value: column.key,
-})))
+const exportFields = computed<ExportFieldOption[]>(() => current.value
+  ? buildModuleExportFields(
+      { collection: current.value.collection, columns: current.value.columns, fields: current.value.fields },
+      fieldLabel,
+    )
+  : [])
 const deactivationOnly = computed(() => current.value?.group === 'master' || current.value?.collection === 'documentSequences')
 const dateField = computed(() => {
   const fields = current.value?.fields || []
@@ -207,6 +212,16 @@ function cellText(row: Record<string, unknown>, key: string) {
     const code = String(source[key] || '')
     const label = documentSequenceTypeLabel(code)
     return label === code ? code : `${label} (${code})`
+  }
+  if (
+    key === 'status'
+    || key === 'paymentStatus'
+    || key === 'workflowStatus'
+    || key === 'result'
+    || key.toLowerCase().endsWith('status')
+  ) {
+    const raw = source[key] ?? (key === 'status' ? source.workflowStatus : undefined)
+    return statusLabel(raw, t, te)
   }
   return formatModuleCell(
     source[key],
@@ -381,6 +396,7 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => {
   void localization.value.dateFormat
   void localization.value.timeFormat
   void localization.value.timezone
+  void t('app.statuses.active')
   const titleKey = current.value.titleField
   const dataColumns = current.value.columns.map((column, index) => ({
     accessorKey: column.key,
@@ -650,9 +666,47 @@ function refresh() {
   store.reload()
 }
 
+const currentPageRowIds = computed(() => {
+  const start = pagination.value.pageIndex * pagination.value.pageSize
+  return result.value.all.slice(start, start + pagination.value.pageSize)
+    .map(row => String(row.id || '')).filter(Boolean)
+})
+
 async function exportModule(request: ExportRequest) {
-  if (!canExport.value || !exportResource.value) return
-  await requestServerExport(exportResource.value, request)
+  if (!canExport.value || !exportResource.value || !current.value) return
+  if (isHttpMode.value) {
+    // Server export job: scope/filters/fields are applied against the full dataset.
+    const query: Record<string, unknown> = { q: q.value || undefined }
+    for (const [key, value] of Object.entries(filters)) {
+      if (value.length) query[key] = value
+    }
+    if (request.scope === 'current_page') query.ids = currentPageRowIds.value
+    await requestServerExport(exportResource.value, request, undefined, {
+      query,
+      selectedIds: request.scope === 'selected' ? selectedIds.value : undefined,
+    })
+    return
+  }
+  // Mock mode: filter client data by scope/dates/selected fields, then CSV.
+  let exportRows = result.value.all as Array<Record<string, unknown>>
+  if (request.scope === 'current_page') {
+    const start = pagination.value.pageIndex * pagination.value.pageSize
+    exportRows = exportRows.slice(start, start + pagination.value.pageSize)
+  }
+  else if (request.scope === 'selected') {
+    const ids = new Set(selectedIds.value)
+    exportRows = exportRows.filter(row => ids.has(String(row.id || '')))
+  }
+  if (dateField.value) {
+    if (request.startDate) exportRows = exportRows.filter(row => String(row[dateField.value!] || '').slice(0, 10) >= request.startDate!)
+    if (request.endDate) exportRows = exportRows.filter(row => String(row[dateField.value!] || '').slice(0, 10) <= request.endDate!)
+  }
+  const selected = new Set(request.fieldCodes)
+  downloadCsv({
+    filename: `${current.value.collection}-${new Date().toISOString().slice(0, 10)}.csv`,
+    fields: exportFields.value.filter(field => selected.has(field.value)),
+    rows: exportRows,
+  })
 }
 
 async function cancelRental(row: Record<string, unknown>) {
@@ -838,9 +892,13 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
     .map((value) => {
       const label = filter.key === 'documentType'
         ? documentSequenceTypeLabel(value)
-        : filter.key === 'workflowStatus'
-          ? value.replaceAll('_', ' ')
-          : value
+        : (filter.key === 'status'
+          || filter.key === 'workflowStatus'
+          || filter.key === 'paymentStatus'
+          || filter.key === 'result'
+          || filter.key.toLowerCase().endsWith('status'))
+            ? statusLabel(value, t, te)
+            : value
       return { label, value }
     })
 }
@@ -852,6 +910,7 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
       :can-create="canCreate"
       :can-export="canExport"
       :export-fields="exportFields"
+      :selected-count="selectedIds.length"
       :exporting="exportRunning"
       :create-label="t('app.ui.newEntity', { entity: moduleSingular(current) })"
       :refreshing="pending"

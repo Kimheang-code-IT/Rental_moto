@@ -14,7 +14,7 @@ import { normalizeDocumentSequenceType } from '~/utils/document-sequences'
 import { useReferenceOptions } from '~/composables/common/useReferenceOptions'
 import type { ModuleRelated, ModuleTable } from '~/config/modules'
 import type { AppRecord } from '~/config/admin-seed'
-import { asNumber } from '~/composables/module/useModule'
+import { asNumber, statusLabel } from '~/composables/module/useModule'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 import {
@@ -32,12 +32,14 @@ const emit = defineEmits<{
   'update:modelValue': [unknown]
 }>()
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const { loadReferenceOptions } = useReferenceOptions()
 
 const hintOpen = ref(false)
 
 const destinationTypeItems = TELEGRAM_DESTINATION_TYPE_OPTIONS
+
+const km = computed(() => locale.value === 'km')
 
 const stringValue = computed({
   get: () => String(props.modelValue ?? ''),
@@ -317,14 +319,20 @@ const searchRemoteOptions = useDebounceFn(async (search: string) => {
   finally { optionsPending.value = false }
 }, 250)
 
-const selectItems = computed(() =>
-  [...(props.field.options || []), ...remoteOptions.value]
+const selectItems = computed(() => {
+  const translateStatus = props.field.key === 'status'
+    || props.field.key === 'paymentStatus'
+    || props.field.key === 'result'
+    || props.field.key.toLowerCase().endsWith('status')
+  return [...(props.field.options || []), ...remoteOptions.value]
     .filter(o => o.value !== '')
     .map(o => ({
-      label: o.labelKey ? t(o.labelKey) : (o.label || o.value),
+      label: o.labelKey
+        ? t(o.labelKey)
+        : (translateStatus ? statusLabel(o.value, t, te) : (o.label || o.value)),
       value: o.value,
-    })),
-)
+    }))
+})
 
 const creatableSelectItems = computed(() => selectItems.value)
 
@@ -335,7 +343,11 @@ function onCreateSelectItem(item: string) {
 }
 
 const labelText = computed(() => {
-  if (props.field.labelKey && te(props.field.labelKey)) return t(props.field.labelKey)
+  if (props.field.labelKey && te(props.field.labelKey)) return String(t(props.field.labelKey))
+  // Fallback: app.fields.* when module-scoped key was set but missing a leaf.
+  const leafKey = `app.fields.${props.field.key}`
+  if (props.field.labelKey !== leafKey && te(leafKey)) return String(t(leafKey))
+  if (km.value && props.field.labelKm) return props.field.labelKm
   if (props.field.label) return props.field.label
   return props.field.labelKey || ''
 })

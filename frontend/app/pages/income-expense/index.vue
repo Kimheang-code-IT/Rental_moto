@@ -172,7 +172,35 @@ const exportFields = computed<ExportFieldOption[]>(() => [
   { label: tx('rental.ui.description', 'Description'), value: 'description' },
   { label: tx('rental.ui.type', 'Type'), value: 'type' },
   { label: tx('rental.ui.amount', 'Amount'), value: 'amount' },
+  { label: tx('app.fields.currency', 'Currency'), value: 'currency' },
+  { label: tx('rental.ui.rentalNo', 'Rental Number'), value: 'rentalNo' },
+  { label: tx('app.fields.paymentMethod', 'Payment Method'), value: 'paymentMethod' },
+  { label: tx('app.fields.createdBy', 'Created By'), value: 'createdBy' },
 ])
+
+/** Map a transaction row to the full export shape (signed amounts, per type). */
+function exportRow(row: TxRow): Record<string, unknown> {
+  const rentalNo = row.rentalId
+    ? String(store.get('rentals', String(row.rentalId))?.rentalNo || row.rentalId || '')
+    : ''
+  return {
+    date: transactionDate(row).slice(0, 10),
+    reference: String(row.paymentNo || row.expenseNo || ''),
+    description: String(row.customer || row.description || ''),
+    type: row.kind === 'income' ? tx('rental.ui.income', 'Income') : String(row.expenseType || tx('rental.ui.expense', 'Expense')),
+    amount: row.kind === 'income' ? Number(row.amount || 0) : -Number(row.amount || 0),
+    currency: String(row.currency || preferences.currency),
+    rentalNo,
+    paymentMethod: String(row.paymentMethod || ''),
+    createdBy: String(row.createdBy || ''),
+  }
+}
+
+const currentPageRowIds = computed(() => {
+  const start = pagination.value.pageIndex * pagination.value.pageSize
+  return rows.value.slice(start, start + pagination.value.pageSize)
+    .map(row => String(row.id || '')).filter(Boolean)
+})
 
 function refresh() {
   void refreshData()
@@ -181,18 +209,20 @@ function refresh() {
 async function exportCsv(request: ExportRequest) {
   if (store.isHttpMode) {
     // Server export job: bounded polling, then a download URL response.
-    await requestServerExport('expenses', request, `income-expense-${dateFrom.value || 'all'}-${dateTo.value || 'all'}.csv`)
+    // The backend `expenses` resource exports the combined payment + expense ledger.
+    await requestServerExport('expenses', request, `income-expense-${dateFrom.value || 'all'}-${dateTo.value || 'all'}.csv`, {
+      query: request.scope === 'current_page'
+        ? { types: [...typeFilter.value], ids: currentPageRowIds.value }
+        : { types: [...typeFilter.value] },
+      selectedIds: request.scope === 'selected'
+        ? rows.value.map(row => String(row.id || '')).filter(Boolean)
+        : undefined,
+    })
     return
   }
-  let exportRows = rows.value.map(row => ({
-    date: transactionDate(row).slice(0, 10),
-    reference: String(row.paymentNo || row.expenseNo || ''),
-    description: String(row.customer || row.description || ''),
-    type: row.kind === 'income' ? tx('rental.ui.income', 'Income') : String(row.expenseType || tx('rental.ui.expense', 'Expense')),
-    amount: row.kind === 'income' ? Number(row.amount || 0) : -Number(row.amount || 0),
-  }))
-  if (request.startDate) exportRows = exportRows.filter(row => row.date >= request.startDate!)
-  if (request.endDate) exportRows = exportRows.filter(row => row.date <= request.endDate!)
+  let exportRows = rows.value.map(exportRow)
+  if (request.startDate) exportRows = exportRows.filter(row => String(row.date) >= request.startDate!)
+  if (request.endDate) exportRows = exportRows.filter(row => String(row.date) <= request.endDate!)
   if (request.scope === 'current_page') {
     const start = pagination.value.pageIndex * pagination.value.pageSize
     exportRows = exportRows.slice(start, start + pagination.value.pageSize)
