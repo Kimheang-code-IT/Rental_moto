@@ -1,6 +1,4 @@
 import logging
-import re
-from html import escape, unescape
 
 from app.core.database import SessionFactory
 from app.core.redis import get_redis
@@ -14,11 +12,6 @@ from telegram_bot.formatter import Formatter
 logger = logging.getLogger("hollywing.tasks.telegram")
 
 IDEMPOTENCY_PREFIX = "task:telegram:event:"
-
-INVOICE_PDF_EVENTS = frozenset({
-    "rental_created",
-    "rental_completed",
-})
 
 EVENT_TOGGLE_MAP = {
     "rental_created": "notifyNewRental",
@@ -35,10 +28,14 @@ MESSAGE_SEPARATOR = "———————————————————"
 
 
 def _display_value(value) -> str:
+    from html import escape
+
     return escape(str(value)) if value not in (None, "") else "—"
 
 
 def _money(value, currency: str) -> str:
+    from html import escape
+
     try:
         return f"{float(value):,.2f} {escape(str(currency))}"
     except (TypeError, ValueError):
@@ -114,12 +111,17 @@ def _format_message(
 
     start_date = payload.get("start_date") or payload.get("startDate")
     due_date = payload.get("due_date") or payload.get("dueDate")
-    end_date = payload.get("return_date") or payload.get("returnDate") or due_date
-    if start_date or end_date or payload.get("actor") or payload.get("occurred_at"):
+    return_date = payload.get("return_date") or payload.get("returnDate")
+    end_date = return_date or due_date
+    if start_date or due_date or return_date or payload.get("actor") or payload.get("occurred_at"):
         lines.extend(["", MESSAGE_SEPARATOR])
     if start_date:
         lines.append(f"Start Date: {_display_value(fmt.format_datetime(str(start_date)))}")
-    if end_date:
+    if due_date and (event_type == "deadline_approaching" or not return_date):
+        lines.append(f"Due Date: {_display_value(fmt.format_datetime(str(due_date)))}")
+    if return_date:
+        lines.append(f"Return Date: {_display_value(fmt.format_datetime(str(return_date)))}")
+    elif end_date and event_type not in ("deadline_approaching",) and not due_date:
         lines.append(f"End Date: {_display_value(fmt.format_datetime(str(end_date)))}")
     if payload.get("actor"):
         lines.extend(["", f"By: {_display_value(payload['actor'])}"])
@@ -199,32 +201,9 @@ def deliver_event(self, event_id: str, event_type: str, payload: dict) -> dict:
             if not targets:
                 return {"status": "skipped", "reason": "no matching destinations"}
 
-            invoice_content = None
-            invoice_filename = ""
-            invoice_object_name = ""
-            if event_type in INVOICE_PDF_EVENTS:
-                from app.services.invoice_pdf_service import InvoicePdfService
-
-                invoice_content, invoice_filename = await InvoicePdfService(session).render_rental_invoice(
-                    str(enriched.get("rental_no") or ""),
-                    final=event_type == "rental_completed",
-                )
-                if invoice_content:
-                    invoice_object_name = await _archive_invoice(
-                        str(enriched.get("rental_no") or ""),
-                        invoice_filename,
-                        invoice_content,
-                    )
-
             for dest in targets:
                 chat_id = str(dest["chatId"])
-                ok = await _deliver_chat_notification(
-                    service,
-                    chat_id,
-                    message,
-                    invoice_content=invoice_content if event_type in INVOICE_PDF_EVENTS else None,
-                    invoice_filename=invoice_filename,
-                )
+                ok = await service.send_direct(chat_id, message)
                 if ok:
                     sent += 1
                 else:
@@ -251,7 +230,6 @@ def deliver_event(self, event_id: str, event_type: str, payload: dict) -> dict:
                 "event_id": event_id,
                 "sent": sent,
                 "failed": failed,
-                "invoice_object_name": invoice_object_name or None,
             }
 
     return run_async(_run())
@@ -287,35 +265,6 @@ def deliver_password_reset(self, email: str, event_id: str | None = None) -> dic
     return run_async(_run())
 
 
-@celery_app.task(base=BaseTask, bind=True, name="app.tasks.telegram_notifications.send_rental_invoice_pdf")
-def send_rental_invoice_pdf(self, rental_no: str, chat_id: str, final: bool = False) -> dict:
-    async def _run() -> dict:
-        async with SessionFactory() as session:
-            from app.services.invoice_pdf_service import InvoicePdfService
-
-            pdf = InvoicePdfService(session)
-            content, filename = await pdf.render_rental_invoice(rental_no, final=final)
-            if not content:
-                return {"status": "skipped", "reason": "no pdf"}
-            object_name = await _archive_invoice(rental_no, filename, content)
-            caption = f"Final Invoice {rental_no}" if final else f"Invoice {rental_no}"
-            telegram = TelegramNotificationService(session, _safe_redis())
-            ok = await _deliver_chat_notification(
-                telegram,
-                chat_id,
-                caption,
-                invoice_content=content,
-                invoice_filename=filename,
-            )
-            return {
-                "status": "sent" if ok else "failed",
-                "filename": filename,
-                "invoice_object_name": object_name or None,
-            }
-
-    return run_async(_run())
-
-
 @celery_app.task(base=BaseTask, bind=True, name="app.tasks.telegram_notifications.send_test_message")
 def send_test_message(self, chat_id: str, message: str) -> dict:
     async def _run() -> dict:
@@ -332,70 +281,3 @@ def _safe_redis():
         return get_redis()
     except Exception:
         return None
-
-
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
-
-
-def _plain_caption(message: str) -> str:
-    plain = unescape(_HTML_TAG_RE.sub("", message))
-    return f"{plain[:1020]}…" if len(plain) > 1020 else plain
-
-
-def _document_caption(message: str) -> tuple[str, str | None]:
-    """Keep Telegram document captions within the 1024-character limit."""
-    if len(message) <= 1024:
-        return message, "HTML"
-    return _plain_caption(message), None
-
-
-async def _deliver_chat_notification(
-    service: TelegramNotificationService,
-    chat_id: str,
-    message: str,
-    *,
-    invoice_content: bytes | None = None,
-    invoice_filename: str = "",
-) -> bool:
-    """Send invoice PDF and auto text together as one Telegram document caption."""
-    if invoice_content:
-        caption, parse_mode = _document_caption(message)
-        ok = await service.send_document(
-            chat_id,
-            invoice_filename or "Invoice.pdf",
-            invoice_content,
-            caption=caption,
-            parse_mode=parse_mode,
-        )
-        if not ok:
-            ok = await service.send_document(
-                chat_id,
-                invoice_filename or "Invoice.pdf",
-                invoice_content,
-                caption=_plain_caption(message),
-            )
-        if ok:
-            return True
-        logger.warning("Telegram invoice PDF send failed chat_id=%s filename=%s", chat_id, invoice_filename)
-    return await service.send_direct(chat_id, message)
-
-
-async def _archive_invoice(rental_no: str, filename: str, content: bytes) -> str:
-    from app.core.config import settings
-
-    if not settings.minio_enabled:
-        return ""
-    try:
-        from app.services.object_storage_service import ObjectStorageService
-
-        stored = await ObjectStorageService.from_settings().archive_invoice(rental_no, filename, content)
-        logger.info(
-            "Archived invoice PDF to MinIO bucket=%s object=%s size=%s",
-            stored.bucket,
-            stored.object_name,
-            stored.size,
-        )
-        return stored.object_name
-    except Exception as exc:
-        logger.warning("Could not archive invoice PDF to MinIO: %s", exc)
-        return ""

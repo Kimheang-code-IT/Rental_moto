@@ -64,6 +64,7 @@ class RentalUpdateRequest(CamelModel):
     discount: Decimal | None = None
     tax_percent: Decimal | None = None
     note: str | None = None
+    lines: list[RentalLineInput] | None = None
 
 
 class PaymentRecordRequest(CamelModel):
@@ -160,6 +161,24 @@ class ExpenseResponse(CamelModel):
     updated_at: datetime
 
 
+class RentalLineResponse(CamelModel):
+    id: str
+    rental_id: str
+    motorcycle_id: str
+    sort_order: int = 0
+    motorcycle: str
+    plate: str | None = None
+    start_date: datetime
+    due_date: datetime
+    duration_days: int
+    rate_type: str
+    rate_amount: Decimal
+    deposit: Decimal
+    discount: Decimal
+    rental_charge: Decimal
+    note: str | None = None
+
+
 class RentalResponse(CamelModel):
     id: str
     rental_no: str
@@ -198,3 +217,4 @@ class RentalResponse(CamelModel):
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    lines: list[RentalLineResponse] = Field(default_factory=list)

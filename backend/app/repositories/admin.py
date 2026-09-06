@@ -14,7 +14,6 @@ from app.models import (
     OutboxEvent,
     RefreshTokenSession,
     Role,
-    StorageProvider,
     TaskProgress,
     User,
 )
@@ -213,6 +212,13 @@ class DocumentSequenceRepository:
     async def get(self, seq_id: str) -> DocumentSequence | None:
         return await self.session.get(DocumentSequence, seq_id)
 
+    async def get_by_type_for_update(self, document_type: str) -> DocumentSequence | None:
+        """Lock the sequence row so concurrent requests cannot draw the same number."""
+        result = await self.session.execute(
+            select(DocumentSequence).where(DocumentSequence.document_type == document_type).with_for_update()
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_type(self, document_type: str) -> DocumentSequence | None:
         result = await self.session.execute(select(DocumentSequence).where(DocumentSequence.document_type == document_type))
         return result.scalar_one_or_none()
@@ -234,7 +240,9 @@ class DocumentSequenceRepository:
         await self.session.delete(seq)
 
     async def next_value(self, document_type: str, prefix: str, padding: int, year: int | None) -> str:
-        seq = await self.get_by_type(document_type)
+        # Row lock serializes number allocation; the unique *_no columns are the
+        # last line of defense if two transactions race on a brand-new sequence.
+        seq = await self.get_by_type_for_update(document_type)
         if seq is None:
             seq = DocumentSequence(
                 id=f"ds-{document_type.lower().replace('_', '-')}",
@@ -269,33 +277,6 @@ class SettingRepository:
             row.value = value
             row.updated_by_user_id = updated_by
         await self.session.flush()
-
-
-class StorageProviderRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self.session = session
-
-    async def get(self, provider_id: str) -> StorageProvider | None:
-        return await self.session.get(StorageProvider, provider_id)
-
-    async def list(self) -> list[StorageProvider]:
-        rows = await self.session.execute(select(StorageProvider).order_by(StorageProvider.name))
-        return list(rows.scalars().all())
-
-    async def add(self, provider: StorageProvider) -> StorageProvider:
-        self.session.add(provider)
-        await self.session.flush()
-        return provider
-
-    async def delete(self, provider: StorageProvider) -> None:
-        await self.session.delete(provider)
-
-    async def unset_default(self, except_id: str) -> None:
-        await self.session.execute(
-            update(StorageProvider)
-            .where(StorageProvider.is_default.is_(True), StorageProvider.id != except_id)
-            .values(is_default=False)
-        )
 
 
 class ExportRepository:

@@ -91,6 +91,85 @@ async def test_reset_data_permission_boundary(client):
     assert denied.status_code == 403
 
 
+async def test_reset_data_keeps_users_roles_sequences_and_settings(client, admin_headers):
+    from tests.conftest import TEST_ADMIN_EMAIL
+
+    app_name = f"Keep Settings {uuid.uuid4().hex[:6]}"
+    patched_info = await client.patch(
+        "/api/v2/settings/app-info",
+        headers=admin_headers,
+        json={"applicationName": app_name},
+    )
+    assert patched_info.status_code == 200, patched_info.text
+
+    sequences = await client.get("/api/v2/document-sequences", headers=admin_headers)
+    assert sequences.status_code == 200
+    assert sequences.json()["data"]
+    first_seq = sequences.json()["data"][0]
+    seq_id = first_seq["id"]
+    original_last_value = int(first_seq.get("lastValue") or 0)
+    kept_last_value = original_last_value + 7
+    updated_seq = await client.put(
+        f"/api/v2/document-sequences/{seq_id}",
+        headers=admin_headers,
+        json={"lastValue": kept_last_value},
+    )
+    assert updated_seq.status_code == 200, updated_seq.text
+
+    moto = await client.post(
+        "/api/v2/motorcycles",
+        headers=admin_headers,
+        json={
+            "code": f"RST-{uuid.uuid4().hex[:6].upper()}",
+            "model": "Reset Target",
+            "brand": "Honda",
+            "year": 2024,
+            "plate": f"RST-{uuid.uuid4().hex[:4].upper()}",
+            "dailyRate": 10,
+        },
+    )
+    assert moto.status_code == 201, moto.text
+    moto_id = moto.json()["data"]["id"]
+
+    response = await client.post("/api/v2/settings/reset-data", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    payload = response.json()["data"]
+    assert payload["requiresReauth"] is False
+    assert payload["requiresSetup"] is False
+
+    setup_status = await client.get("/api/v2/auth/setup-status")
+    assert setup_status.status_code == 200
+    assert setup_status.json()["data"]["needsSetup"] is False
+
+    still_authed = await client.get("/api/v2/settings/app-info", headers=admin_headers)
+    assert still_authed.status_code == 200
+    assert still_authed.json()["data"]["applicationName"] == app_name
+
+    users = await client.get("/api/v2/users", headers=admin_headers)
+    assert users.status_code == 200
+    emails = {item["email"] for item in users.json()["data"]}
+    assert TEST_ADMIN_EMAIL in emails
+
+    roles = await client.get("/api/v2/roles", headers=admin_headers)
+    assert roles.status_code == 200
+    role_names = {item["name"] for item in roles.json()["data"]}
+    assert "Rental Staff" in role_names
+
+    kept_seq = await client.get(f"/api/v2/document-sequences/{seq_id}", headers=admin_headers)
+    assert kept_seq.status_code == 200
+    assert kept_seq.json()["data"]["lastValue"] == kept_last_value
+
+    missing = await client.get(f"/api/v2/motorcycles/{moto_id}", headers=admin_headers)
+    assert missing.status_code == 404
+
+    await client.put(
+        f"/api/v2/document-sequences/{seq_id}",
+        headers=admin_headers,
+        json={"lastValue": original_last_value},
+    )
+    await client.post("/api/v2/settings/app-info/reset", headers=admin_headers)
+
+
 async def test_app_config_permission_boundary(client):
     login = await client.post("/api/v2/auth/login", json={"email": TEST_VIEWER_EMAIL, "password": TEST_VIEWER_PASSWORD})
     viewer_headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}
@@ -103,37 +182,6 @@ async def test_app_config_permission_boundary(client):
         json={"general": {"defaultPageSize": 50}},
     )
     assert denied.status_code == 403
-
-
-async def test_storage_provider_crud(client, admin_headers):
-    created = await client.post(
-        "/api/v2/settings/storage",
-        headers=admin_headers,
-        json={"name": "Test S3", "type": "amazon_s3", "bucket": "test-bucket", "region": "ap-southeast-1", "maxFileSizeMb": 5},
-    )
-    assert created.status_code == 201, created.text
-    provider = created.json()["data"]
-
-    fetched = await client.get(f"/api/v2/settings/storage/{provider['id']}", headers=admin_headers)
-    assert fetched.status_code == 200
-
-    updated = await client.put(
-        f"/api/v2/settings/storage/{provider['id']}",
-        headers=admin_headers,
-        json={"name": "Renamed Storage"},
-    )
-    assert updated.json()["data"]["name"] == "Renamed Storage"
-
-    test = await client.post(f"/api/v2/settings/storage/{provider['id']}/test-connection", headers=admin_headers)
-    assert test.status_code == 200
-    assert test.json()["data"]["status"] == "connected"
-
-    listing = await client.get("/api/v2/settings/storage", headers=admin_headers)
-    assert listing.status_code == 200
-    assert listing.json()["meta"]["total"] >= 1
-
-    deleted = await client.delete(f"/api/v2/settings/storage/{provider['id']}", headers=admin_headers)
-    assert deleted.status_code == 200
 
 
 async def test_document_sequences_crud(client, admin_headers):

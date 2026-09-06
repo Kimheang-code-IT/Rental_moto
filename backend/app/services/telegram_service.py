@@ -41,41 +41,6 @@ class TelegramNotificationService:
             logger.warning("Telegram send failed: %s", exc)
             return False
 
-    async def send_document(
-        self,
-        chat_id: str | None,
-        filename: str,
-        content: bytes,
-        caption: str | None = None,
-        parse_mode: str | None = None,
-    ) -> bool:
-        token = settings.telegram_bot_token
-        if not token:
-            token = await self._configured_bot_token()
-        if not token or not chat_id:
-            return False
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                data = {"chat_id": chat_id}
-                if caption:
-                    # Telegram document captions are limited to 1024 characters.
-                    data["caption"] = caption if len(caption) <= 1024 else f"{caption[:1020]}…"
-                if parse_mode:
-                    data["parse_mode"] = parse_mode
-                files = {"document": (filename, content, "application/pdf")}
-                response = await client.post(
-                    f"{TELEGRAM_API_BASE}/bot{token}/sendDocument",
-                    data=data,
-                    files=files,
-                )
-                if response.status_code != 200:
-                    logger.warning("Telegram sendDocument failed status=%s body=%s", response.status_code, response.text[:500])
-                    return False
-                return True
-        except Exception as exc:
-            logger.warning("Telegram document send failed: %s", exc)
-            return False
-
     async def _configured_bot_token(self) -> str | None:
         try:
             settings_service = SettingService(self.session)

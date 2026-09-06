@@ -3,11 +3,8 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.core.database import SessionFactory
 from app.core.security import utcnow
 from app.models import OutboxEvent, Rental
-from app.tasks.base import BaseTask, run_async
-from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger("hollywing.tasks.deadline")
 
@@ -42,6 +39,7 @@ def reminder_label(value: int, unit: str) -> str:
 
 
 async def enqueue_deadline_alerts(session, batch_limit: int = 100) -> dict:
+    """Mark due-soon Active rentals once via deadline_alerted_at, then enqueue outbox."""
     now = utcnow()
     from app.services.admin_service import SettingService
 
@@ -91,12 +89,3 @@ async def enqueue_deadline_alerts(session, batch_limit: int = 100) -> dict:
         alerted += 1
     await session.commit()
     return {"alerted": alerted}
-
-
-@celery_app.task(base=BaseTask, bind=True, name="app.tasks.deadline_alerts.scan_deadline_alerts")
-def scan_deadline_alerts(self, batch_limit: int = 100) -> dict:
-    async def _run() -> dict:
-        async with SessionFactory() as session:
-            return await enqueue_deadline_alerts(session, batch_limit)
-
-    return run_async(_run())

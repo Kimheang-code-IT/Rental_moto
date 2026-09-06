@@ -227,13 +227,12 @@ describe('http entity repository', () => {
 })
 
 describe('http rental command payloads', () => {
-  it('sends one atomic POST /rentals with lines and returns the created rentals', async () => {
+  it('sends one atomic POST /rentals with lines and returns the created rental', async () => {
     const captured = withFakeApi(() => ({
       data: [
         { id: 'rt-001', rentalNo: 'RNT-2026-000001', status: 'Active' },
-        { id: 'rt-002', rentalNo: 'RNT-2026-000002', status: 'Active' },
       ],
-      meta: { page: 1, limit: 2, total: 2 },
+      meta: { page: 1, limit: 1, total: 1 },
     }))
     const repository = createHttpRentalCommandRepository()
     const created = await repository.create({
@@ -257,7 +256,7 @@ describe('http rental command payloads', () => {
     expect(Array.isArray(body.lines)).toBe(true)
     expect((body.lines as unknown[]).length).toBe(2)
     expect((body.paidAmount)).toBe(20)
-    expect(created).toHaveLength(2)
+    expect(created).toHaveLength(1)
     expect(created[0]?.rentalNo).toBe('RNT-2026-000001')
   })
 

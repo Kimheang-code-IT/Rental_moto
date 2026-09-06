@@ -2,14 +2,18 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://rental:rental@localhost:55432/rental_moto_test")
 os.environ.setdefault("REDIS_URL", "redis://localhost:56379/5")
-os.environ.setdefault("CELERY_BROKER_URL", "amqp://rental:rental@localhost:55672/rental")
-os.environ.setdefault("RABBITMQ_URL", "amqp://rental:rental@localhost:55672/rental")
+os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:56379/3")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:56379/2")
 os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "false")
 os.environ.setdefault("RATE_LIMIT_LOGIN_PER_MINUTE", "1000")
 os.environ.setdefault("RATE_LIMIT_REFRESH_PER_MINUTE", "1000")
 os.environ.setdefault("RATE_LIMIT_RESET_PER_HOUR", "1000")
 os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("DEBUG", "true")
+# Pin service credentials so a developer's local backend/.env (Settings reads
+# it when the variable is not in the process env) cannot break hermetic tests.
+os.environ.setdefault("TELEGRAM_BOT_CLIENT_ID", "rental-telegram-bot")
+os.environ.setdefault("TELEGRAM_BOT_CLIENT_SECRET", "dev-only-telegram-secret-change-me-0123456789abcdef")
 
 import asyncio
 from typing import AsyncIterator
@@ -54,6 +58,7 @@ VIEWER_PERMISSIONS = [
     "rental.rentals.view", "rental.rentals.print",
     "rental.finance.view",
     "reports.view", "reports.print",
+    "settings.app_config.view",
 ]
 
 

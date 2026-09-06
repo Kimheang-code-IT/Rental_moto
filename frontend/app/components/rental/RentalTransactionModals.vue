@@ -4,6 +4,7 @@ import { formatMoney } from '~/composables/module/useModule'
 import { PAYMENT_METHODS, RENTAL_CHARGE_TYPES } from '~/config/rental-options'
 import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
 import { toIsoZonedOrNow } from '~/utils/api/datetime'
+import { rentalReturnBalance } from '~/utils/rental/pricing'
 import { useRentalCommands } from '~/repositories/index'
 
 const props = defineProps<{
@@ -18,16 +19,12 @@ const emit = defineEmits<{
 }>()
 
 const { t, te } = useI18n()
-const auth = useAuthStore()
 const store = useAppDataStore()
 const toast = useToast()
 const preferences = usePreferencesStore()
 const rentalCommands = useRentalCommands()
 const { confirm } = useConfirm()
 
-function staffName() {
-  return auth.user?.name || 'Staff'
-}
 
 const isOpen = computed({
   get: () => open.value,
@@ -70,24 +67,16 @@ const returnChargesTotal = computed(() =>
   returnCharges.value.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0),
 )
 
-const balanceDueBeforePay = computed(() =>
-  Math.max(Number(props.rental.outstanding || 0) + returnChargesTotal.value, 0),
+const closeBalance = computed(() =>
+  rentalReturnBalance(props.rental, returnChargesTotal.value, returnPaidAmount.value),
 )
 
-const projectedOutstanding = computed(() => {
-  const base = Number(props.rental.outstanding || 0)
-  return Math.max(base + returnChargesTotal.value - returnPaidAmount.value, 0)
-})
+const balanceDueBeforePay = computed(() => closeBalance.value.balanceDue)
+const projectedOutstanding = computed(() => closeBalance.value.outstandingAfterPay)
+const projectedTotalDue = computed(() => closeBalance.value.totalDue)
+const alreadyPaid = computed(() => closeBalance.value.alreadyPaid)
 
-const projectedTotalDue = computed(() => {
-  const rentalCharge = Number(props.rental.rentalCharge || 0)
-  const lateFee = Number(props.rental.lateFee || 0)
-  const additional = Number(props.rental.additionalCharges || 0) + returnChargesTotal.value
-  const discount = Number(props.rental.discount || 0)
-  return Math.max(rentalCharge + lateFee + additional - discount, 0)
-})
-
-/** Keep return payment amount = outstanding + all charge lines. */
+/** Keep return payment amount = remaining balance (total due − paid + new charges). */
 watch(balanceDueBeforePay, (due) => {
   returnPaidAmount.value = Number(due.toFixed(2))
 }, { immediate: true })
@@ -107,26 +96,13 @@ function resetForm() {
   returnPaymentMethod.value = PAYMENT_METHODS[0]
   returnCharges.value = []
   chargeSeq = 1
-  returnPaidAmount.value = Number((Number(props.rental.outstanding || 0)).toFixed(2))
+  returnPaidAmount.value = rentalReturnBalance(props.rental, 0, 0).suggestedPayment
 }
 
 watch(open, (isOpenNow) => {
   if (isOpenNow) resetForm()
 }, { immediate: true })
 
-function recomputeRental(rental: Record<string, unknown>, paidDelta = 0, chargeDelta = 0) {
-  const paid = Number(rental.paid || 0) + paidDelta
-  const additional = Number(rental.additionalCharges || 0) + chargeDelta
-  const totalDue = Number(rental.rentalCharge || 0) + Number(rental.lateFee || 0) + additional - Number(rental.discount || 0)
-  return {
-    ...rental,
-    id: String(rental.id),
-    paid,
-    additionalCharges: additional,
-    totalDue,
-    outstanding: Math.max(totalDue - paid, 0),
-  }
-}
 
 function addReturnChargeLine() {
   returnCharges.value.push({
@@ -223,12 +199,12 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
           </div>
           <div>
             <p class="text-xs text-muted">{{ tx('rental.ui.alreadyPaid', 'Already Paid') }}</p>
-            <p class="font-semibold">{{ money(Number(rental.paid || 0) + returnPaidAmount) }}</p>
+            <p class="font-semibold">{{ money(alreadyPaid) }}</p>
           </div>
           <div>
             <p class="text-xs text-muted">{{ tx('rental.ui.outstanding', 'Outstanding') }}</p>
-            <p class="font-semibold" :class="projectedOutstanding > 0 ? 'text-warning' : 'text-success'">
-              {{ money(projectedOutstanding) }}
+            <p class="font-semibold" :class="balanceDueBeforePay > 0 ? 'text-warning' : 'text-success'">
+              {{ money(balanceDueBeforePay) }}
             </p>
           </div>
         </div>
@@ -321,7 +297,7 @@ icon="i-lucide-trash-2"
           </UFormField>
           <UFormField
             :label="tx('rental.ui.amount', 'Amount')"
-            :help="help('returnPaidAmountAuto', 'Auto-sums outstanding balance plus all return charges.')"
+            :help="help('returnPaidAmountAuto', 'Auto-fills remaining balance (total due minus already paid), including any return charges.')"
           >
             <UInput
               :model-value="returnPaidAmount"

@@ -20,11 +20,18 @@ describe('token storage (server-side memory mirror)', () => {
     expect(hasTokens()).toBe(true)
   })
 
-  it('rotates only the access token', () => {
+  it('can replace the access token without dropping the refresh token', () => {
     setTokens('access-1', 'refresh-1')
     setAccessToken('access-2')
     expect(getAccessToken()).toBe('access-2')
     expect(getRefreshToken()).toBe('refresh-1')
+  })
+
+  it('stores a rotated token pair together', () => {
+    setTokens('access-1', 'refresh-1')
+    setTokens('access-2', 'refresh-2')
+    expect(getAccessToken()).toBe('access-2')
+    expect(getRefreshToken()).toBe('refresh-2')
   })
 
   it('clears both tokens', () => {

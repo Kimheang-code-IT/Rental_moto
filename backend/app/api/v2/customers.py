@@ -32,7 +32,7 @@ async def get_customer(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     customer = await CustomerRepository(session).get(customer_id)
-    if customer is None:
+    if customer is None or customer.status == "Deleted":
         raise NotFoundError("Customer not found")
     return envelope(_to_dict(customer))
 

@@ -6,7 +6,6 @@ clears users (with their refresh sessions) and restores the test bootstrap
 users afterwards so other API tests keep working regardless of file order.
 """
 
-import pytest
 import pytest_asyncio
 from sqlalchemy import text
 
@@ -31,7 +30,6 @@ async def no_users(db_session):
 
 async def test_seed_creates_no_default_admin(client, db_session):
     """Boot/seed must not create a user from admin@gmail.com / 123456 or any fixed pair."""
-    from app.core.security import verify_password
 
     result = await db_session.execute(
         text("SELECT email, password_hash FROM users WHERE email = 'admin@gmail.com'")

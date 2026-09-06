@@ -1,12 +1,13 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
-from app.core.money import allocate_payment, distribute_document_discount, money
+from app.core.money import distribute_document_discount, money
 from app.core.pricing import (
     duration_days,
     line_charge,
@@ -20,6 +21,7 @@ from app.models import (
     Rental,
     RentalCharge,
     RentalExpense,
+    RentalLine,
     RentalPayment,
     User,
 )
@@ -79,6 +81,77 @@ async def _get_motorcycles_locked(session: AsyncSession, ids: list[str]) -> list
     return rows
 
 
+def _join_display(parts: list[str | None], limit: int) -> str:
+    text = ", ".join(str(part).strip() for part in parts if part and str(part).strip())
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 3)].rstrip() + "..."
+
+
+def _price_line_rows(moto_map: dict[str, Motorcycle], lines) -> list[dict]:
+    priced: list[dict] = []
+    for line in lines:
+        moto = moto_map[line.motorcycle_id]
+        if line.due_date <= line.start_date:
+            raise ValidationError("Due date must be after start date")
+        days = duration_days(line.start_date, line.due_date)
+        rates = resolve_motorcycle_rates(moto.daily_rate, moto.three_day_rate, moto.weekly_rate, moto.monthly_rate)
+        charge = line_charge(rates, days, line.start_date, line.due_date)
+        if charge <= 0:
+            raise ValidationError(f"Cannot compute charge for motorcycle {moto.code}")
+        priced.append(
+            {
+                "moto": moto,
+                "start_date": line.start_date,
+                "due_date": line.due_date,
+                "days": days,
+                "charge": charge,
+                "line_discount": max(money(getattr(line, "discount", 0)), Decimal("0")),
+                "deposit": money(getattr(line, "deposit", 0)),
+                "note": getattr(line, "note", None),
+            }
+        )
+    return priced
+
+
+def _apply_line_discounts(priced: list[dict], doc_discount) -> list[dict]:
+    charges = [row["charge"] for row in priced]
+    shares = distribute_document_discount(charges, doc_discount)
+    built: list[dict] = []
+    for index, row in enumerate(priced):
+        discount = money(min(row["line_discount"] + shares[index], row["charge"]))
+        built.append({**row, "discount": discount, "rental_charge": money(row["charge"] - discount)})
+    return built
+
+
+def _apply_rental_header(rental: Rental, customer, built: list[dict], tax_percent, deposit: Decimal | None = None) -> None:
+    first = built[0]
+    start_date = min(row["start_date"] for row in built)
+    due_date = max(row["due_date"] for row in built)
+    duration = duration_days(start_date, due_date)
+    rental_charge = money(sum((row["rental_charge"] for row in built), Decimal("0")))
+    tax = money(rental_charge * money(tax_percent) / Decimal("100"))
+    rate_types = {rate_type_for(row["days"], row["start_date"], row["due_date"]) for row in built}
+    rental.customer_id = customer.id
+    rental.customer = customer.full_name
+    rental.phone = customer.phone
+    rental.motorcycle_id = first["moto"].id
+    rental.motorcycle = _join_display([row["moto"].model for row in built], 500)
+    rental.plate = _join_display([row["moto"].plate for row in built], 200) or None
+    rental.start_date = start_date
+    rental.due_date = due_date
+    rental.duration_days = duration
+    rental.rate_type = rate_types.pop() if len(rate_types) == 1 else rate_type_for(duration, start_date, due_date)
+    rental.rate_amount = money(sum((row["charge"] for row in built), Decimal("0")))
+    rental.deposit = money(deposit) if deposit is not None else money(sum((row["deposit"] for row in built), Decimal("0")))
+    rental.discount = money(sum((row["discount"] for row in built), Decimal("0")))
+    rental.tax_percent = money(tax_percent)
+    rental.tax = tax
+    rental.rental_charge = rental_charge
+    rental.total_due = money(rental_charge + tax + rental.late_fee + rental.additional_charges)
+    rental.outstanding = money(max(rental.total_due - money(rental.paid), Decimal("0")))
+
+
 class RentalService:
     def __init__(self, session: AsyncSession, actor: User | None = None) -> None:
         self.session = session
@@ -91,6 +164,43 @@ class RentalService:
         self.expenses = ExpenseRepository(session)
         self.audit = AuditRepository(session)
         self.sequences = DocumentSequenceRepository(session)
+
+    async def _line_motorcycle_ids(self, rental: Rental) -> list[str]:
+        result = await self.session.execute(
+            select(RentalLine.motorcycle_id)
+            .where(RentalLine.rental_id == rental.id)
+            .order_by(RentalLine.sort_order)
+        )
+        ids = [row[0] for row in result.all()]
+        if ids:
+            return list(dict.fromkeys(ids))
+        return [rental.motorcycle_id]
+
+    async def _replace_rental_lines(self, rental: Rental, built: list[dict]) -> None:
+        await self.session.execute(delete(RentalLine).where(RentalLine.rental_id == rental.id))
+        await self.session.flush()
+        for index, row in enumerate(built):
+            line_id = await self._next_entity_id("rl", RentalLine)
+            self.session.add(
+                RentalLine(
+                    id=line_id,
+                    rental_id=rental.id,
+                    motorcycle_id=row["moto"].id,
+                    sort_order=index,
+                    motorcycle=row["moto"].model,
+                    plate=row["moto"].plate,
+                    start_date=row["start_date"],
+                    due_date=row["due_date"],
+                    duration_days=row["days"],
+                    rate_type=rate_type_for(row["days"], row["start_date"], row["due_date"]),
+                    rate_amount=money(row["charge"]),
+                    deposit=money(row["deposit"]),
+                    discount=money(row["discount"]),
+                    rental_charge=money(row["rental_charge"]),
+                    note=row["note"],
+                )
+            )
+        self.session.expire(rental, ["lines"])
 
     async def create_rentals(self, request) -> list[Rental]:
         now = datetime.now(timezone.utc)
@@ -109,136 +219,98 @@ class RentalService:
         if not_available:
             raise ConflictError(f"Motorcycles not Available: {', '.join(not_available)}")
 
-        line_charges: list[Decimal] = []
-        line_infos: list[dict] = []
-        for line in request.lines:
-            moto = moto_map[line.motorcycle_id]
-            if line.due_date <= line.start_date:
-                raise ValidationError("Due date must be after start date")
-            days = duration_days(line.start_date, line.due_date)
-            rates = resolve_motorcycle_rates(moto.daily_rate, moto.three_day_rate, moto.weekly_rate, moto.monthly_rate)
-            charge = line_charge(rates, days, line.start_date, line.due_date)
-            if charge <= 0:
-                raise ValidationError(f"Cannot compute charge for motorcycle {moto.code}")
-            line_charges.append(charge)
-            line_infos.append({"line": line, "moto": moto, "days": days, "charge": charge})
-
-        doc_discount = max(money(request.discount), Decimal("0"))
-        discount_shares = distribute_document_discount(line_charges, doc_discount)
-        paid_shares = allocate_payment(line_charges, request.paid_amount)
+        built = _apply_line_discounts(
+            _price_line_rows(moto_map, request.lines),
+            max(money(request.discount), Decimal("0")),
+        )
+        paid = money(request.paid_amount)
         initial_payment_method = (
-            normalize_payment_method(request.payment_method or "Cash")
-            if money(request.paid_amount) > 0
-            else None
+            normalize_payment_method(request.payment_method or "Cash") if paid > 0 else None
         )
 
-        rentals: list[Rental] = []
         year = now.year
-        for index, info in enumerate(line_infos):
-            line = info["line"]
-            moto = info["moto"]
-            days = info["days"]
-            charge = info["charge"]
-            discount = money(min(max(money(line.discount), Decimal("0")) + discount_shares[index], charge))
-            rental_charge = money(charge - discount)
-            tax = money(rental_charge * request.tax_percent / Decimal("100"))
-            total_due = money(rental_charge + tax)
-            paid = paid_shares[index]
-            outstanding = money(total_due - paid)
+        rental_no = await self.sequences.next_value("RENTAL", f"RNT-{year}-", 6, year)
+        rental_id = await self._next_entity_id("rt", Rental)
+        rental = Rental(
+            id=rental_id,
+            rental_no=rental_no,
+            currency=request.currency,
+            late_fee=Decimal("0.00"),
+            additional_charges=Decimal("0.00"),
+            paid=Decimal("0.00"),
+            payment_method=initial_payment_method,
+            payment_status=None,
+            note=request.note or next((row["note"] for row in built if row["note"]), None),
+            created_by=_actor_label(self.actor),
+            created_by_user_id=self.actor.id if self.actor else None,
+            status="Active",
+        )
+        _apply_rental_header(rental, customer, built, request.tax_percent)
+        rental.paid = min(paid, money(rental.total_due))
+        rental.outstanding = money(max(rental.total_due - rental.paid, Decimal("0")))
+        self.session.add(rental)
+        await self.session.flush()
+        await self._replace_rental_lines(rental, built)
 
-            rental_no = await self.sequences.next_value("RENTAL", f"RNT-{year}-", 6, year)
-            rental_id = await self._next_entity_id("rt", Rental)
-            rental = Rental(
-                id=rental_id,
-                rental_no=rental_no,
-                customer_id=customer.id,
-                motorcycle_id=moto.id,
-                customer=customer.full_name,
-                phone=customer.phone,
-                motorcycle=moto.model,
-                plate=moto.plate,
-                start_date=line.start_date,
-                due_date=line.due_date,
-                duration_days=days,
-                rate_type=rate_type_for(days, line.start_date, line.due_date),
-                rate_amount=money(charge),
-                deposit=money(line.deposit),
-                discount=discount,
-                tax_percent=money(request.tax_percent),
-                tax=tax,
-                currency=request.currency,
-                rental_charge=rental_charge,
-                late_fee=Decimal("0.00"),
-                additional_charges=Decimal("0.00"),
-                total_due=total_due,
-                paid=paid,
-                outstanding=outstanding,
-                payment_method=initial_payment_method,
-                payment_status=None,
-                note=line.note or request.note,
-                created_by=_actor_label(self.actor),
-                created_by_user_id=self.actor.id if self.actor else None,
-                status="Active",
-            )
-            rentals.append(rental)
-            self.session.add(rental)
-
-            if paid > 0:
-                payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
-                payment_id = await self._next_entity_id("rp", RentalPayment)
-                self.session.add(
-                    RentalPayment(
-                        id=payment_id,
-                        payment_no=payment_no,
-                        rental_id=rental.id,
-                        amount=paid,
-                        currency=request.currency,
-                        payment_method=initial_payment_method or "Cash",
-                        paid_at=now,
-                        note="Initial payment",
-                        created_by=_actor_label(self.actor),
-                        created_by_user_id=self.actor.id if self.actor else None,
-                    )
+        if rental.paid > 0:
+            payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
+            payment_id = await self._next_entity_id("rp", RentalPayment)
+            self.session.add(
+                RentalPayment(
+                    id=payment_id,
+                    payment_no=payment_no,
+                    rental_id=rental.id,
+                    amount=rental.paid,
+                    currency=request.currency,
+                    payment_method=initial_payment_method or "Cash",
+                    paid_at=now,
+                    note="Initial payment",
+                    created_by=_actor_label(self.actor),
+                    created_by_user_id=self.actor.id if self.actor else None,
                 )
+            )
 
         for moto in motorcycles:
             moto.status = "Progressing"
 
-        for index, rental in enumerate(rentals):
-            await self.audit.add(
-                AuditLog(
-                    user_id=self.actor.id if self.actor else None,
-                    user_name=_actor_label(self.actor),
-                    action="rental_created",
-                    entity_type="rental",
-                    entity_id=rental.id,
-                    entity_label=rental.rental_no,
-                    details={"customer": rental.customer, "motorcycle": rental.motorcycle, "totalDue": float(rental.total_due)},
-                )
+        await self.audit.add(
+            AuditLog(
+                user_id=self.actor.id if self.actor else None,
+                user_name=_actor_label(self.actor),
+                action="rental_created",
+                entity_type="rental",
+                entity_id=rental.id,
+                entity_label=rental.rental_no,
+                details={
+                    "customer": rental.customer,
+                    "motorcycle": rental.motorcycle,
+                    "motorcycles": len(built),
+                    "totalDue": float(rental.total_due),
+                },
             )
-            self.session.add(
-                _outbox(
-                    "rental_created",
-                    {
-                        "rental_no": rental.rental_no,
-                        "customer": rental.customer,
-                        "motorcycle": rental.motorcycle,
-                        "plate": rental.plate,
-                        "amount": float(rental.total_due),
-                        "paid": float(rental.paid),
-                        "currency": rental.currency,
-                        "status": rental.status,
-                        "start_date": rental.start_date.isoformat(),
-                        "due_date": rental.due_date.isoformat(),
-                        "actor": _actor_label(self.actor),
-                        "occurred_at": now.isoformat(),
-                    },
-                )
+        )
+        self.session.add(
+            _outbox(
+                "rental_created",
+                {
+                    "rental_no": rental.rental_no,
+                    "customer": rental.customer,
+                    "motorcycle": rental.motorcycle,
+                    "plate": rental.plate,
+                    "amount": float(rental.total_due),
+                    "paid": float(rental.paid),
+                    "currency": rental.currency,
+                    "status": rental.status,
+                    "start_date": rental.start_date.isoformat(),
+                    "due_date": rental.due_date.isoformat(),
+                    "actor": _actor_label(self.actor),
+                    "occurred_at": now.isoformat(),
+                },
             )
+        )
         await self.session.commit()
-        for rental in rentals:
-            await self.session.refresh(rental)
-        return rentals
+        loaded = await self.rentals.get(rental.id)
+        return [loaded] if loaded is not None else [rental]
 
     async def update_rental(self, rental_id: str, request) -> Rental:
         rental = await self.rentals.for_update(rental_id)
@@ -254,72 +326,77 @@ class RentalService:
         if customer.status != "Active":
             raise ValidationError("Customer must be Active to update a rental")
 
-        motorcycle_id = request.motorcycle_id or rental.motorcycle_id
-        start_date = request.start_date or rental.start_date
-        due_date = request.due_date or rental.due_date
-        if due_date <= start_date:
-            raise ValidationError("Due date must be after start date")
-
-        old_moto = None
-        if motorcycle_id != rental.motorcycle_id:
-            motorcycles = await _get_motorcycles_locked(self.session, [rental.motorcycle_id, motorcycle_id])
-            moto_map = {m.id: m for m in motorcycles}
-            old_moto = moto_map.get(rental.motorcycle_id)
-            new_moto = moto_map.get(motorcycle_id)
-            if new_moto is None:
-                raise NotFoundError("Motorcycle not found")
-            if new_moto.status != "Available":
-                raise ConflictError(f"Motorcycle {new_moto.code} is not Available")
-            if old_moto is not None:
-                old_moto.status = "Available"
-            new_moto.status = "Progressing"
-            moto = new_moto
-        else:
-            result = await self.session.execute(
-                select(Motorcycle).where(Motorcycle.id == motorcycle_id).with_for_update()
+        previous_due = rental.due_date
+        previous_ids = await self._line_motorcycle_ids(rental)
+        line_inputs = list(request.lines or [])
+        if not line_inputs:
+            existing_result = await self.session.execute(
+                select(RentalLine).where(RentalLine.rental_id == rental.id).order_by(RentalLine.sort_order)
             )
-            moto = result.scalar_one_or_none()
-            if moto is None:
-                raise NotFoundError("Motorcycle not found")
+            existing = list(existing_result.scalars().all())
+            if not existing:
+                existing = [
+                    SimpleNamespace(
+                        motorcycle_id=rental.motorcycle_id,
+                        start_date=rental.start_date,
+                        due_date=rental.due_date,
+                        deposit=rental.deposit,
+                        discount=rental.discount,
+                        note=rental.note,
+                    )
+                ]
+            if request.motorcycle_id and request.motorcycle_id != rental.motorcycle_id and len(existing) > 1:
+                raise ValidationError("Send lines to change motorcycles on a multi-bike rental")
+            start_date = request.start_date or rental.start_date
+            due_date = request.due_date or rental.due_date
+            single_discount = request.discount if request.discount is not None and len(existing) == 1 else None
+            line_inputs = [
+                SimpleNamespace(
+                    motorcycle_id=(request.motorcycle_id or line.motorcycle_id) if index == 0 else line.motorcycle_id,
+                    start_date=start_date,
+                    due_date=due_date,
+                    deposit=line.deposit,
+                    discount=single_discount if single_discount is not None else line.discount,
+                    note=line.note,
+                )
+                for index, line in enumerate(existing)
+            ]
 
-        days = duration_days(start_date, due_date)
-        rates = resolve_motorcycle_rates(moto.daily_rate, moto.three_day_rate, moto.weekly_rate, moto.monthly_rate)
-        charge = line_charge(rates, days, start_date, due_date)
-        if charge <= 0:
-            raise ValidationError(f"Cannot compute charge for motorcycle {moto.code}")
+        moto_ids = [line.motorcycle_id for line in line_inputs]
+        if len(set(moto_ids)) != len(moto_ids):
+            raise ValidationError("Duplicate motorcycles in rental lines")
 
-        discount = max(money(request.discount if request.discount is not None else rental.discount), Decimal("0"))
-        rental_charge = money(charge - discount)
-        tax_percent = money(request.tax_percent if request.tax_percent is not None else rental.tax_percent)
-        tax = money(rental_charge * tax_percent / Decimal("100"))
-        total_due = money(rental_charge + tax + rental.late_fee + rental.additional_charges)
-        paid = money(rental.paid)
-        outstanding = money(total_due - paid)
+        lock_ids = list(dict.fromkeys([*previous_ids, *moto_ids]))
+        motorcycles = await _get_motorcycles_locked(self.session, lock_ids)
+        moto_map = {m.id: m for m in motorcycles}
+        added_ids = set(moto_ids) - set(previous_ids)
+        not_available = [moto_id for moto_id in added_ids if moto_map[moto_id].status != "Available"]
+        if not_available:
+            raise ConflictError(f"Motorcycles not Available: {', '.join(not_available)}")
 
-        rental.customer_id = customer.id
-        rental.motorcycle_id = moto.id
-        rental.customer = customer.full_name
-        rental.phone = customer.phone
-        rental.motorcycle = moto.model
-        rental.plate = moto.plate
-        due_date_changed = due_date != rental.due_date
-        rental.start_date = start_date
-        rental.due_date = due_date
-        if due_date_changed:
+        doc_discount = (
+            Decimal("0")
+            if not request.lines and request.discount is not None and len(line_inputs) == 1
+            else max(money(request.discount if request.discount is not None else 0), Decimal("0"))
+        )
+        if request.lines is None and request.discount is None:
+            doc_discount = Decimal("0")
+        built = _apply_line_discounts(_price_line_rows(moto_map, line_inputs), doc_discount)
+        tax_percent = request.tax_percent if request.tax_percent is not None else rental.tax_percent
+        deposit = request.deposit if request.deposit is not None else rental.deposit
+        _apply_rental_header(rental, customer, built, tax_percent, deposit)
+        await self._replace_rental_lines(rental, built)
+
+        for moto_id in set(previous_ids) - set(moto_ids):
+            moto_map[moto_id].status = "Available"
+        for moto_id in added_ids:
+            moto_map[moto_id].status = "Progressing"
+
+        if rental.due_date != previous_due:
             rental.deadline_alerted_at = None
-        rental.duration_days = days
-        rental.rate_type = rate_type_for(days, start_date, due_date)
-        rental.rate_amount = money(charge)
-        rental.deposit = money(request.deposit if request.deposit is not None else rental.deposit)
-        rental.discount = discount
-        rental.tax_percent = tax_percent
-        rental.tax = tax
-        rental.rental_charge = rental_charge
-        rental.total_due = total_due
-        rental.outstanding = outstanding
         if request.note is not None:
             rental.note = request.note
-        if rental.status == "Overdue" and due_date > datetime.now(timezone.utc):
+        if rental.status == "Overdue" and rental.due_date > datetime.now(timezone.utc):
             rental.status = "Active"
 
         await self.audit.add(
@@ -334,8 +411,8 @@ class RentalService:
             )
         )
         await self.session.commit()
-        await self.session.refresh(rental)
-        return rental
+        loaded = await self.rentals.get(rental.id)
+        return loaded if loaded is not None else rental
 
     async def close_rental(self, rental_id: str, request) -> Rental:
         rental = await self.rentals.for_update(rental_id)
@@ -346,8 +423,7 @@ class RentalService:
         if rental.status == "Cancelled":
             raise ConflictError("Rental is cancelled and cannot be completed")
 
-        result = await self.session.execute(select(Motorcycle).where(Motorcycle.id == rental.motorcycle_id).with_for_update())
-        moto = result.scalar_one_or_none()
+        motorcycles = await _get_motorcycles_locked(self.session, await self._line_motorcycle_ids(rental))
 
         now = datetime.now(timezone.utc)
         return_date = request.return_date or now
@@ -413,11 +489,12 @@ class RentalService:
         rental.status = "Completed"
         rental.completed_at = now
 
-        if moto is not None:
+        if motorcycles:
             target = request.motorcycle_status or "Available"
             if target not in ("Available", "Maintenance"):
                 raise ValidationError("Return motorcycle status must be Available or Maintenance")
-            moto.status = target
+            for moto in motorcycles:
+                moto.status = target
 
         await self.audit.add(
             AuditLog(
@@ -453,8 +530,8 @@ class RentalService:
             )
         )
         await self.session.commit()
-        await self.session.refresh(rental)
-        return rental
+        loaded = await self.rentals.get(rental.id)
+        return loaded if loaded is not None else rental
 
     async def cancel_rental(self, rental_id: str, reason: str | None) -> Rental:
         rental = await self.rentals.for_update(rental_id)
@@ -463,14 +540,13 @@ class RentalService:
         if rental.status not in ("Active", "Overdue"):
             raise ConflictError(f"Rental in status {rental.status} cannot be cancelled")
 
-        result = await self.session.execute(select(Motorcycle).where(Motorcycle.id == rental.motorcycle_id).with_for_update())
-        moto = result.scalar_one_or_none()
+        motorcycles = await _get_motorcycles_locked(self.session, await self._line_motorcycle_ids(rental))
         now = datetime.now(timezone.utc)
         rental.status = "Cancelled"
         rental.cancelled_at = now
         rental.cancel_reason = reason
         rental.outstanding = Decimal("0.00")
-        if moto is not None:
+        for moto in motorcycles:
             moto.status = "Available"
 
         await self.audit.add(
@@ -502,8 +578,8 @@ class RentalService:
             )
         )
         await self.session.commit()
-        await self.session.refresh(rental)
-        return rental
+        loaded = await self.rentals.get(rental.id)
+        return loaded if loaded is not None else rental
 
     async def detect_overdue(self, now: datetime | None = None, notify: bool = True) -> list[str]:
         now = now or datetime.now(timezone.utc)

@@ -64,8 +64,19 @@ async def _localization(api: ApiClient) -> dict:
 
 
 async def _access(api: ApiClient, update: Update) -> dict:
-    response = await api.get("/api/v2/telegram/access", **_api_ctx(api, update))
-    return response.get("data", {})
+    try:
+        response = await api.get("/api/v2/telegram/access", **_api_ctx(api, update))
+        return response.get("data", {})
+    except Exception:
+        logger.exception("telegram access lookup failed")
+        chat = update.effective_chat
+        private = bool(chat and chat.type == "private")
+        return {
+            "mode": "private" if private else "group",
+            "linked": False,
+            "modules": {},
+            "accountHelp": private,
+        }
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE, api: ApiClient, state: BotState) -> None:
@@ -74,9 +85,40 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE, api: Api
     access = await _access(api, update)
     modules = access.get("modules") or {}
     private = access.get("mode") == "private"
+    welcome = "Welcome to HollyWing Motor bot.\nសូមស្វាគមន៍មកកាន់ HollyWing Motor"
+    reason = access.get("reason")
+    if reason:
+        welcome = f"{welcome}\n\n{reason}"
     await update.message.reply_text(
-        "Welcome to HollyWing Motor bot.\nសូមស្វាគមន៍មកកាន់ HollyWing Motor",
+        welcome,
         reply_markup=kb.main_menu(modules, private, selective=is_group),
+        reply_to_message_id=update.message.message_id if is_group else None,
+    )
+
+
+async def cmd_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    user = update.effective_user
+    if not chat or not update.message:
+        return
+    is_group = chat.type in ("group", "supergroup")
+    title = chat.title or chat.username or "this chat"
+    lines = [
+        f"Chat ID: {chat.id}",
+        f"Type: {chat.type}",
+        f"Title: {title}",
+    ]
+    if user:
+        lines.append(f"Your user ID: {user.id}")
+    lines.extend(
+        [
+            "",
+            "Paste Chat ID into Settings → Telegram → Chat / Group ID.",
+            "បិទ Chat ID ក្នុង Settings → Telegram → Chat / Group ID។",
+        ]
+    )
+    await update.message.reply_text(
+        "\n".join(lines),
         reply_to_message_id=update.message.message_id if is_group else None,
     )
 

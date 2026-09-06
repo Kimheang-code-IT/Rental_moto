@@ -12,7 +12,10 @@ router = APIRouter(prefix="/rentals", tags=["rentals"])
 
 
 def _to_dict(rental) -> dict:
-    return RentalResponse.model_validate(rental).model_dump(by_alias=True)
+    loaded_lines = rental.__dict__.get("lines")
+    values = {name: getattr(rental, name) for name in RentalResponse.model_fields if name != "lines"}
+    values["lines"] = list(loaded_lines or [])
+    return RentalResponse.model_validate(values).model_dump(by_alias=True)
 
 
 @router.get("")

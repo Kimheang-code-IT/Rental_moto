@@ -24,7 +24,7 @@ Tags published: `latest` (main), `sha-<short>`, and semver when you push a `v*` 
 ## 2. Secrets and environment
 
 1. Copy `.env.production.example` to `.env` on the production host.
-2. Replace every `CHANGE_ME_*` value. The API **refuses to start** in production if JWT, Telegram client secret, or MinIO secret are still placeholders.
+2. Replace every `CHANGE_ME_*` value. The API **refuses to start** in production if JWT or Telegram client secret are still placeholders.
 3. Do not set any `SEED_ADMIN_*` variables; they no longer exist. The first administrator registers through the public `/auth/setup` page (email + password) immediately after the first deploy, while the users table is empty.
 4. Set `CORS_ORIGINS` to your real HTTPS origin(s), for example `https://app.your-domain.com`.
 5. Set `CORS_ALLOW_PRIVATE_NETWORKS=false` and `DEBUG=false`.
@@ -47,7 +47,7 @@ openssl rand -base64 48
 
 ## 3. Start production stack (pull, do not build)
 
-The production host only needs this git repo (for compose files and `backend/rabbitmq.conf`) plus Docker. Application images come from GHCR.
+The production host only needs this git repo (for compose files) plus Docker. Application images come from GHCR.
 
 ```powershell
 docker login ghcr.io
@@ -69,7 +69,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-This keeps DB / Redis / RabbitMQ / MinIO / API off the public host ports, sets `ENVIRONMENT=production`, and **does not rebuild images**. `/docs` and `/openapi.json` are disabled in production.
+This keeps DB / Redis / API off the public host ports, sets `ENVIRONMENT=production`, and **does not rebuild images**. `/docs` and `/openapi.json` are disabled in production.
 
 To pin a version: set `IMAGE_TAG=sha-abc1234` (or `v1.0.0`) in `.env`.
 
@@ -78,15 +78,15 @@ To pin a version: set `IMAGE_TAG=sha-abc1234` (or `v1.0.0`) in `.env`.
 Only if this host previously ran the development stack:
 
 ```powershell
-# Wipe business data; keep only admin, roles, document sequences
+# Wipe business data; keep users, roles, document sequences, and settings
 docker compose -f docker-compose.yml -f docker-compose.prod.yml exec api python scripts/reset_db.py
 
-# Optional: wipe Docker volumes completely (database + MinIO + Redis + RabbitMQ)
+# Optional: wipe Docker volumes completely (database + local files + Redis + RabbitMQ)
 # docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 # docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
-After reset, no users exist; the app shows the first-run `/auth/setup` page.
+After reset, users, roles, document sequences, and settings remain; you stay signed in. A full `down -v` volume wipe is the only path that returns the app to `/auth/setup`.
 
 ## 5. Post-deploy checks
 
@@ -95,19 +95,19 @@ After reset, no users exist; the app shows the first-run `/auth/setup` page.
 - [ ] Create real staff users and roles
 - [ ] Configure System Settings → Localization, Telegram destinations, company info
 - [ ] Create motorcycles and customers
-- [ ] Create one test rental and confirm Telegram invoice + MinIO archive
+- [ ] Create one test rental and confirm Telegram **text** notification (no PDF attachment)
 - [ ] Confirm `/docs` returns 404 (Swagger is off in production)
-- [ ] Confirm host ports 5432 / 6379 / 5672 / 8000 / 9000 are not published
-- [ ] Back up PostgreSQL and MinIO regularly
+- [ ] Confirm host ports 5432 / 6379 / 5672 / 8000 are not published
+- [ ] Back up PostgreSQL and the `appdata` volume (exports) regularly
 
 ## 6. What stays after a clean reset
 
 | Kept | Removed |
 |------|---------|
-| SuperAdmin role + admin user | Rentals, payments, charges, expenses |
-| Rental Staff / Report Viewer roles (empty) | Customers, motorcycles |
-| Document sequences | Audit logs, export jobs, outbox |
-| App info / MinIO provider settings | Uploaded invoice PDFs in MinIO (clear separately if needed) |
+| All users and roles | Rentals, payments, charges, expenses |
+| Document sequences (including last values) | Customers, motorcycles |
+| App settings / storage providers | Audit logs, export jobs, outbox |
+| Refresh-token sessions | Export files on disk (clear `/srv/data/exports` separately if needed) |
 
 ## 7. Local cleanup helpers
 
@@ -115,4 +115,4 @@ After reset, no users exist; the app shows the first-run `/auth/setup` page.
 .\scripts\prepare-production.ps1
 ```
 
-That script resets the database, clears MinIO objects, and removes local caches. It does **not** publish images; use GitHub Actions for that.
+That script resets the database, clears local archived files, and removes local caches. It does **not** publish images; use GitHub Actions for that.

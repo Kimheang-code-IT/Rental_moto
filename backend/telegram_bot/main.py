@@ -4,6 +4,7 @@ import os
 
 from redis import asyncio as aioredis
 from telegram import Update
+from telegram.error import Conflict
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -42,14 +43,35 @@ def build_application() -> Application:
     async def link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await h.cmd_link(update, context, api)
 
+    async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await h.cmd_id(update, context)
+
     async def message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await h.handle_message(update, context, api, state)
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
+    application.add_handler(CommandHandler("id", chat_id))
+    application.add_handler(CommandHandler("chatid", chat_id))
     application.add_handler(CommandHandler("link", link))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message))
 
+    async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        err = context.error
+        if isinstance(err, Conflict):
+            logger.error(
+                "Telegram polling conflict: another process is already calling getUpdates "
+                "with this bot token. Stop duplicate telegram-bot containers or other pollers."
+            )
+            return
+        logger.exception("Telegram handler error: %s", err)
+        if isinstance(update, Update) and update.effective_message:
+            try:
+                await update.effective_message.reply_text("Something went wrong. Please try /start again.")
+            except Exception:
+                pass
+
+    application.add_error_handler(on_error)
     application.bot_data["api"] = api
     application.bot_data["state"] = state
     return application
@@ -64,8 +86,9 @@ async def main() -> None:
             await asyncio.sleep(3600)
     application = build_application()
     async with application:
+        await application.bot.delete_webhook(drop_pending_updates=False)
         await application.start()
-        await application.updater.start_polling()
+        await application.updater.start_polling(drop_pending_updates=False)
         logger.info("Telegram bot started in %s mode", mode)
         try:
             while True:

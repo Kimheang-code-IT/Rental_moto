@@ -1,6 +1,5 @@
 import type { DocumentTabSchema } from '~/types/rental/common'
 import {
-  AWS_REGION_OPTIONS,
   CURRENCY_OPTIONS,
   DATE_FORMAT_OPTIONS,
   LANDING_PAGE_OPTIONS,
@@ -8,7 +7,6 @@ import {
   LOCALE_OPTIONS,
   NUMBER_FORMAT_OPTIONS,
   PAGE_SIZE_OPTIONS,
-  SYNC_SCHEDULE_OPTIONS,
   TIME_FORMAT_OPTIONS,
   TIMEZONE_OPTIONS,
 } from '~/utils/constants/select-options'
@@ -179,13 +177,66 @@ export const appConfigTabs: DocumentTabSchema[] = [
     labelKey: 'core.settings.tabs.telegram',
     sections: [
       {
-        id: 'telegram',
-        titleKey: 'core.settings.tabs.telegram',
+        id: 'telegram-connection',
+        titleKey: 'core.settings.connectionSettings',
         fields: [
           { key: 'telegram.enabled', labelKey: 'core.settings.enableTelegram', type: 'boolean' },
           { key: 'telegram.botToken', labelKey: 'core.settings.botToken', type: 'secret' },
-          { key: 'telegram.chatId', labelKey: 'rental.settings.groupId', type: 'text' },
+          { key: 'telegram.botDisplayName', labelKey: 'rental.settings.botDisplayName', type: 'text' },
+          {
+            key: 'telegram.chatId',
+            labelKey: 'rental.settings.groupId',
+            type: 'text',
+            colSpan: 2,
+            helpKey: 'rental.settings.groupIdHelp',
+            placeholderKey: 'rental.settings.groupIdPlaceholder',
+          },
           { key: '__telegramConnection', labelKey: 'core.connection.title', type: 'connection-status', colSpan: 2 },
+        ],
+      },
+      {
+        id: 'telegram-chatbot',
+        titleKey: 'rental.settings.chatbotSection',
+        fields: [
+          { key: 'telegram.inlineKeyboardEnabled', labelKey: 'rental.settings.inlineKeyboardEnabled', type: 'boolean' },
+          { key: 'telegram.showTransactionsButton', labelKey: 'rental.settings.showTransactionsButton', type: 'boolean' },
+          { key: 'telegram.showMotorcycleStatusButton', labelKey: 'rental.settings.showMotorcycleStatusButton', type: 'boolean' },
+          { key: 'telegram.showFinanceSummaryButton', labelKey: 'rental.settings.showFinanceSummaryButton', type: 'boolean' },
+          {
+            key: 'telegram.defaultReportPeriod',
+            labelKey: 'rental.settings.defaultReportPeriod',
+            type: 'select',
+            options: [
+              { label: 'Today', labelKey: 'rental.settings.today', value: 'today' },
+              { label: 'Last 3 days', labelKey: 'rental.settings.last3Days', value: '3_days' },
+              { label: 'Last 7 days', labelKey: 'rental.settings.last7Days', value: '7_days' },
+              { label: 'Last month', labelKey: 'rental.settings.lastMonth', value: '1_month' },
+            ],
+          },
+          {
+            key: 'telegram.messageLanguage',
+            labelKey: 'rental.settings.messageLanguage',
+            type: 'select',
+            options: [
+              { label: 'English', labelKey: 'common.options.langEn', value: 'en' },
+              { label: 'Khmer', labelKey: 'common.options.langKm', value: 'km' },
+            ],
+          },
+          { key: 'telegram.allowedModules.motorcycles', labelKey: 'rental.settings.allowedModuleMotorcycles', type: 'boolean' },
+          { key: 'telegram.allowedModules.rentals', labelKey: 'rental.settings.allowedModuleRentals', type: 'boolean' },
+          { key: 'telegram.allowedModules.customers', labelKey: 'rental.settings.allowedModuleCustomers', type: 'boolean' },
+          { key: 'telegram.allowedModules.finance', labelKey: 'rental.settings.allowedModuleFinance', type: 'boolean' },
+          { key: 'telegram.sensitiveFields.customerName', labelKey: 'rental.settings.sensitiveCustomerName', type: 'boolean' },
+          { key: 'telegram.sensitiveFields.customerPhone', labelKey: 'rental.settings.sensitiveCustomerPhone', type: 'boolean' },
+          { key: 'telegram.sensitiveFields.financialTotals', labelKey: 'rental.settings.sensitiveFinancialTotals', type: 'boolean' },
+          { key: 'telegram.sensitiveFields.rentalBalances', labelKey: 'rental.settings.sensitiveRentalBalances', type: 'boolean' },
+          { key: 'telegram.userAccess', labelKey: 'rental.settings.telegramUserAccess', type: 'telegram-user-access', colSpan: 2, helpKey: 'rental.settings.telegramUserAccessHelp' },
+        ],
+      },
+      {
+        id: 'telegram-notifications',
+        titleKey: 'core.settings.tabs.notifications',
+        fields: [
           { key: 'telegram.notifyNewRental', labelKey: 'rental.settings.notifyNewRental', type: 'boolean', helpKey: 'rental.settings.notifyNewRentalHelp' },
           { key: 'telegram.notifyRentalCompleted', labelKey: 'rental.settings.notifyRentalCompleted', type: 'boolean' },
           { key: 'telegram.notifyOverdueRental', labelKey: 'rental.settings.notifyOverdueRental', type: 'boolean' },
@@ -207,7 +258,6 @@ export const appConfigTabs: DocumentTabSchema[] = [
           },
           { key: 'telegram.dailySummaryEnabled', labelKey: 'rental.settings.dailySummaryEnabled', type: 'boolean' },
           { key: 'telegram.monthlySummaryEnabled', labelKey: 'rental.settings.monthlySummaryEnabled', type: 'boolean' },
-          { key: 'telegram.userAccess', labelKey: 'rental.settings.telegramUserAccess', type: 'telegram-user-access', colSpan: 2, helpKey: 'rental.settings.telegramUserAccessHelp' },
         ],
       },
     ],
@@ -304,7 +354,7 @@ const SETTINGS_FIELD_HELP: Record<string, string> = {
   'telegram.enabled': 'core.fieldHelp.enableTelegram',
 }
 
-/** Administration system settings — Localization, Email, Telegram, Security only. */
+/** Administration system settings — Localization, Telegram, Security only. */
 export const systemSettingsTabs: DocumentTabSchema[] = appConfigTabs
   .filter(tab => SYSTEM_SETTINGS_TAB_IDS.has(tab.id))
   .map(tab => ({
@@ -317,97 +367,4 @@ export const systemSettingsTabs: DocumentTabSchema[] = appConfigTabs
       })),
     })),
   }))
-
-const storageCommonFields = [
-  { key: 'name', labelKey: 'core.fields.name', type: 'text' as const, required: true },
-  { key: 'active', labelKey: 'core.status.active', type: 'boolean' as const },
-  {
-    key: 'accessMode',
-    labelKey: 'core.settings.accessMode',
-    type: 'select' as const,
-    options: [
-      { label: 'Private', labelKey: 'common.options.private', value: 'private' },
-      { label: 'Public', labelKey: 'common.options.public', value: 'public' },
-    ],
-  },
-  { key: 'maxFileSizeMb', labelKey: 'core.config.maxFileSizeMb', type: 'number' as const },
-  { key: 'allowedFileTypes', labelKey: 'core.config.allowedExtensions', type: 'csv-list' as const, colSpan: 2 as const },
-  { key: 'uploadPathPattern', labelKey: 'core.settings.uploadPathPattern', type: 'text' as const, colSpan: 2 as const },
-]
-
-const storageConnectionField = {
-  key: '__storageConnection',
-  labelKey: 'core.connection.title',
-  type: 'connection-status' as const,
-  colSpan: 2 as const,
-}
-
-/** Storage settings — S3 and Google Drive only. */
-export const storageSettingsTabs: DocumentTabSchema[] = [
-  {
-    id: 'amazon_s3',
-    labelKey: 'core.settings.storageTabs.amazonS3',
-    sections: [
-      {
-        id: 's3-connection',
-        titleKey: 'core.settings.connectionSettings',
-        fields: [
-          {
-            key: 'region',
-            labelKey: 'core.settings.region',
-            type: 'select',
-            required: true,
-            options: AWS_REGION_OPTIONS,
-          },
-          { key: 'bucket', labelKey: 'core.settings.bucket', type: 'text', required: true },
-          { key: 'endpoint', labelKey: 'core.settings.endpoint', type: 'text', colSpan: 2 },
-          { key: 'publicUrl', labelKey: 'core.settings.publicUrl', type: 'url', colSpan: 2 },
-          { key: 'accessKey', labelKey: 'core.settings.accessKey', type: 'text', required: true },
-          { key: 'secretKey', labelKey: 'core.settings.secretKey', type: 'secret', required: true },
-        ],
-      },
-      {
-        id: 's3-options',
-        titleKey: 'core.settings.tabs.general',
-        fields: [...storageCommonFields],
-      },
-      {
-        id: 's3-status',
-        titleKey: 'core.connection.title',
-        fields: [storageConnectionField],
-      },
-    ],
-  },
-  {
-    id: 'google_drive',
-    labelKey: 'core.settings.storageTabs.googleDrive',
-    sections: [
-      {
-        id: 'drive-connection',
-        titleKey: 'core.settings.connectionSettings',
-        fields: [
-          { key: 'clientId', labelKey: 'core.settings.clientId', type: 'text', required: true, colSpan: 2 },
-          { key: 'clientSecret', labelKey: 'core.settings.clientSecret', type: 'secret', required: true, colSpan: 2 },
-          { key: 'folderId', labelKey: 'core.settings.folderId', type: 'text', required: true },
-          {
-            key: 'syncSchedule',
-            labelKey: 'core.settings.syncSchedule',
-            type: 'select',
-            options: SYNC_SCHEDULE_OPTIONS,
-          },
-        ],
-      },
-      {
-        id: 'drive-options',
-        titleKey: 'core.settings.tabs.general',
-        fields: [...storageCommonFields],
-      },
-      {
-        id: 'drive-status',
-        titleKey: 'core.connection.title',
-        fields: [storageConnectionField],
-      },
-    ],
-  },
-]
 

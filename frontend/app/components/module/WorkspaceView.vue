@@ -28,6 +28,7 @@ import { latestRentalPaymentMethods } from '~/utils/rental/payments'
 import { useRentalCommands } from '~/repositories/index'
 import { PAYMENT_METHODS, RENTAL_CHARGE_TYPES } from '~/config/rental-options'
 import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
+import { normalizeApiError } from '~/utils/api/errors'
 import { toIsoZonedOrNow } from '~/utils/api/datetime'
 import type { ExportFieldOption, ExportRequest } from '~/types/rental/export'
 import { useServerExport } from '~/composables/common/useServerExport'
@@ -342,7 +343,7 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
         onSelect: () => setCustomerStatus(row, 'Active'),
       })
     }
-    if (canDelete.value && status === 'Inactive') {
+    if (canDelete.value && !customerHasOpenRentals(String(row.id))) {
       items.push({
         label: t('app.ui.delete'),
         icon: 'i-lucide-trash-2',
@@ -575,13 +576,13 @@ async function deleteIds(ids: string[]) {
     }
   }
   if (current.value.collection === 'rentalCustomers') {
-    targetIds = ids.filter((id) => {
-      const row = store.get('rentalCustomers', id)
-      return String(row?.status || '') === 'Inactive' && !customerHasOpenRentals(id)
-    })
+    targetIds = ids.filter(id => !customerHasOpenRentals(id))
     if (!targetIds.length) {
       toast.add({
-        title: t('rental.ui.cannotDeleteActiveCustomer', 'Only Inactive customers without open rentals can be deleted'),
+        title: t(
+          'rental.ui.cannotDeleteCustomerActiveRentals',
+          'Cannot delete a customer who still has active or overdue rentals',
+        ),
         color: 'warning',
       })
       return
@@ -609,9 +610,14 @@ async function deleteIds(ids: string[]) {
     toast.add({ title: t('core.actions.deletedItems', { n: targetIds.length }), color: 'success' })
   }
   catch (error: unknown) {
+    const fetchError = error as { statusCode?: number, data?: unknown, message?: string }
+    const normalized = normalizeApiError(fetchError.data, fetchError.statusCode || 400)
+    const isConflict = normalized.statusCode === 409 || fetchError.statusCode === 409
     toast.add({
-      title: t('api.errorTitle', { status: (error as { statusCode?: number })?.statusCode || 400 }),
-      description: error instanceof Error ? error.message : String(error),
+      title: isConflict
+        ? t('rental.ui.deleteBlocked', 'Cannot delete')
+        : t('api.errorTitle', { status: normalized.statusCode || 400 }),
+      description: normalized.message || t('api.somethingWentWrong'),
       color: 'error',
     })
   }

@@ -24,7 +24,6 @@ Or on Windows PowerShell:
 |-----|---------|
 | http://localhost (port 80) | Nuxt frontend behind **nginx** |
 | http://localhost:8000/docs | FastAPI API (Swagger) |
-| http://localhost:9001 | MinIO file-management console |
 | http://\<lan-ip\> | Frontend from phones on the same Wi‑Fi |
 
 Set `FRONTEND_PORT=3000` in the repository-root `.env` if port 80 is already in use.
@@ -59,9 +58,10 @@ Run the API with `--host 0.0.0.0` so it listens on your LAN IP (Docker Compose
 already does this). Then open the dev server from another device using your PC's
 Wi‑Fi IP on port 3000.
 
-## Reset database (delete all data)
+## Reset database (delete operational data)
 
-To wipe all business data and keep only bootstrap (admin user, roles, sequences):
+To wipe rentals, customers, motorcycles, payments, and related operational
+data while keeping users, roles, document sequences, and settings:
 
 ```bash
 docker compose exec api python scripts/reset_db.py
@@ -74,7 +74,7 @@ docker compose down -v
 docker compose up -d --build
 ```
 
-After reset, no users exist. Open the app and register the first
+After a full volume wipe, no users exist. Open the app and register the first
 administrator through the public `/auth/setup` page (email + password).
 There are no `SEED_ADMIN_*` variables and no default admin credentials.
 
@@ -111,34 +111,19 @@ passwords anywhere in the application or seed.
 
 | Service | Purpose |
 |---------|---------|
-| `api` | FastAPI on :8000, migrations + seed on boot |
+| `api` | FastAPI on :8000; migrations + seed; in-process CSV/XLSX exports; APScheduler for deadlines/outbox/maintenance |
 | `frontend` | Static Nuxt client served by nginx (host port from `FRONTEND_PORT`, default 80) |
 | `db` | PostgreSQL 16 on :5432 (authoritative store) |
-| `redis` | Redis 7 on :6379 — cache, denylist, rate limits, bot state |
-| `rabbitmq` | RabbitMQ 4 on :5672, management UI on :15672 (local only) |
-| `minio` | Private S3-compatible invoice/file storage on :9000, console on :9001 |
-| `minio-init` | Idempotently creates the private `rental-files` bucket |
-| `worker-default` | Celery worker for `reports` + `maintenance` queues |
-| `worker-telegram` | Celery worker for `critical` + `telegram` queues |
-| `worker-export` | Celery worker for `exports` queue |
-| `scheduler` | Celery Beat (overdue scans, outbox dispatch, summaries, cleanup) |
+| `redis` | Redis 7 — cache `/0`, telegram-bot `/1`, Celery results `/2`, Celery broker `/3` |
+| `worker-telegram` | Celery worker for `critical` + `telegram` queues (text notifications only) |
 | `telegram-bot` | Telegram bot (polling), talks to the API with service JWTs only |
 
-### MinIO invoice archive
+### Local file storage
 
-Open the management console at http://localhost:9001 and sign in with
-`MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from the repository-root `.env`.
-New-rental and final-return invoice PDFs are stored in the private bucket under:
-
-```text
-rental-files/invoices/YYYY/MM/RNT-.../Invoice-....pdf
-```
-
-The PDF is archived to MinIO, then Telegram receives one message: the invoice
-document with the auto-generated notification text as the caption.
-If MinIO is temporarily unavailable, Telegram delivery continues and the worker
-records a warning without logging credentials. If PDF generation fails, the
-text notification is still sent as a normal message.
+CSV/XLSX export files are stored on the shared Docker volume (`appdata`) under
+`/srv/data/exports`. Telegram notifications are **text only** — they do not
+generate, archive, or send invoice PDFs. Browser invoice printing remains in
+the Nuxt frontend (`RentalInvoicePreview` / print flow).
 
 ## Architecture
 
@@ -150,7 +135,8 @@ app/
 ├── schemas/       Pydantic v2 request/response contracts (camelCase aliases)
 ├── repositories/  SQLAlchemy query composition only (no commits, no Telegram)
 ├── services/      business transactions, authorization, cache invalidation
-├── tasks/         Celery app, queues, routing, beat schedule, tasks
+├── tasks/         Celery Telegram workers + outbox/deadline helpers
+├── scheduler.py   APScheduler jobs hosted by the API process
 ├── utils/         date period parsing helpers
 └── seed.py        idempotent development seed
 telegram_bot/      separate bot process (service JWT, Redis conversation state)
@@ -183,7 +169,7 @@ FastAPI's `detail` field. All request/response bodies use camelCase JSON.
 - **Cancellation** (`POST /api/v2/rentals/{id}/cancel`): only from
   Active/Overdue; frees the motorcycle.
 - **Overdue detection**: `Active` rentals past `due_date` become `Overdue` on
-  list reads and via the Celery Beat scan; each newly overdue rental emits one
+  list reads and via the API APScheduler scan; each newly overdue rental emits one
   notification event.
 
 Money is stored as PostgreSQL `Numeric(14,2)` and computed with Python
@@ -208,33 +194,38 @@ Money is stored as PostgreSQL `Numeric(14,2)` and computed with Python
 
 Dashboard/report/settings caches (invalidated after mutations), refresh-token
 denylist, auth rate limits, password-recovery challenges, Telegram link codes
-and conversation state, Celery result backend, task idempotency keys, export
-progress. PostgreSQL remains authoritative; reads fall back to the database
-when Redis is unavailable.
+and conversation state, **Celery broker (DB `/3`)**, Celery result backend
+(DB `/2`), task idempotency keys, export progress. PostgreSQL remains
+authoritative; reads fall back to the database when Redis is unavailable.
 
-### RabbitMQ / Celery / outbox
+### Celery / outbox / APScheduler
 
-Durable topic exchange `rental.tasks` with queues `critical`, `telegram`,
-`exports`, `reports`, `maintenance` plus per-queue DLQs. Business mutations
-write `outbox_events` rows in the same PostgreSQL transaction; the dispatcher
-publishes them with publisher confirms and marks them published. Telegram
-delivery is idempotent per event id (Redis `SET NX`), retried with exponential
-backoff, and dead-letters after bounded retries. Beat schedules: overdue scan
-(5 min), outbox dispatch (30 s), daily summary, cleanup (6 h), dashboard
-precompute (2 min).
+Celery uses Redis as broker and result backend with simple queues `critical`
+and `telegram` (text notifications and password-reset delivery only). Business
+mutations write `outbox_events` in the same PostgreSQL transaction; the API
+APScheduler dispatches them every 30s onto Redis/Celery. Telegram delivery is
+idempotent per event id (Redis `SET NX`).
+
+APScheduler (single API process) also runs:
+
+- deadline alerts (60s) — uses `rentals.deadline_alerted_at` to prevent duplicates
+- overdue scan (5 min)
+- dashboard precompute (2 min)
+- cleanup (6 h)
+- daily Telegram summary (24 h)
 
 ### Exports
 
 `POST /api/v2/exports` validates the request, persists an `export_jobs` row +
-task-progress record, enqueues to the `exports` queue, and returns `202` with a
-task id. `GET /api/v2/tasks/{taskId}` exposes safe progress; downloads are
+task-progress record, generates the file in the API process, and returns `202`
+with a task id. `GET /api/v2/tasks/{taskId}` exposes safe progress; downloads are
 available until expiry from `GET /api/v2/exports/{id}/download`.
 
 ## Commands
 
 ```bash
-# all tests (requires Postgres/Redis/RabbitMQ reachable; see tests/conftest.py)
-docker compose exec api pytest
+# all tests (requires Postgres/Redis reachable; see tests/conftest.py)
+docker compose exec api sh -c "pip install -q -r requirements-dev.txt && python -m pytest"
 
 # migrations
 docker compose exec api alembic upgrade head
@@ -249,9 +240,8 @@ Local test run against temporary services:
 ```bash
 docker run -d --name pg -e POSTGRES_USER=rental -e POSTGRES_PASSWORD=rental -e POSTGRES_DB=rental_moto -p 55432:5432 postgres:16-alpine
 docker run -d --name redis -p 56379:6379 redis:7-alpine
-docker run -d --name rmq -e RABBITMQ_DEFAULT_USER=rental -e RABBITMQ_DEFAULT_PASS=rental -e RABBITMQ_DEFAULT_VHOST=rental -p 55672:5672 rabbitmq:4-management-alpine
 pip install -r requirements.txt -r requirements-dev.txt
-pytest   # conftest defaults to the ports above
+pytest   # conftest defaults to the ports above (Redis broker on /3)
 ```
 
 ## Telegram bot
@@ -262,6 +252,7 @@ JWT (`POST /api/v2/auth/service-token`) and never touches PostgreSQL. It uses
 **Reply Keyboard only** navigation (finance, motorcycles, customers, rentals,
 account help in private chats), period presets (all / today / 3 days / 1 week /
 1 month / custom range), Redis-backed per-user navigation state, pagination,
+`/id` (or `/chatid`) to print the current chat/group ID for Settings,
 and `/link CODE` account linking. Report calls send `X-Telegram-User-Id`,
 `X-Telegram-Chat-Id`, and `X-Telegram-Chat-Type` headers so the API can apply
 linked-user RBAC in private chats or group module policy in one configured

@@ -217,6 +217,136 @@ async def test_rental_delete_only_when_cancelled(client, admin_headers):
     assert deleted.status_code == 200
 
 
+async def test_create_rental_multiple_motorcycles_one_row(client, admin_headers):
+    moto_a, customer = await _setup(client, admin_headers)
+    moto_b = (
+        await client.post(
+            "/api/v2/motorcycles",
+            headers=admin_headers,
+            json={
+                "code": f"MC-R{uuid.uuid4().hex[:6].upper()}",
+                "model": "Second Test Bike",
+                "plate": "PP-TEST-002",
+                "dailyRate": 10,
+                "threeDayRate": 27,
+                "weeklyRate": 60,
+                "monthlyRate": 200,
+            },
+        )
+    ).json()["data"]
+    now = datetime.now(timezone.utc)
+    payload = {
+        "customerId": customer["id"],
+        "lines": [
+            {
+                "motorcycleId": moto_a["id"],
+                "startDate": now.isoformat(),
+                "dueDate": (now + timedelta(days=3)).isoformat(),
+                "deposit": 50,
+                "discount": 2,
+            },
+            {
+                "motorcycleId": moto_b["id"],
+                "startDate": now.isoformat(),
+                "dueDate": (now + timedelta(days=3)).isoformat(),
+                "deposit": 25,
+            },
+        ],
+        "discount": 4,
+        "paidAmount": 20,
+        "paymentMethod": "Cash",
+    }
+    response = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
+    assert response.status_code == 201, response.text
+    rentals = response.json()["data"]
+    assert len(rentals) == 1
+    rental = rentals[0]
+    assert rental["rentalNo"].startswith("RNT-2026-")
+    assert len(rental["lines"]) == 2
+    assert {line["motorcycleId"] for line in rental["lines"]} == {moto_a["id"], moto_b["id"]}
+    # 27 + 27 gross, line discount 2 + document 4 = 6, charge 48, paid 20
+    assert rental["rateAmount"] == "54.00"
+    assert rental["discount"] == "6.00"
+    assert rental["rentalCharge"] == "48.00"
+    assert rental["paid"] == "20.00"
+    assert rental["outstanding"] == "28.00"
+    assert rental["deposit"] == "75.00"
+    assert "Second Test Bike" in rental["motorcycle"]
+    assert "PP-TEST-002" in (rental["plate"] or "")
+
+    listing = await client.get(
+        "/api/v2/rentals", headers=admin_headers, params={"motorcycleId": moto_b["id"], "limit": 50}
+    )
+    assert listing.status_code == 200
+    assert any(item["id"] == rental["id"] for item in listing.json()["data"])
+
+    for moto_id in (moto_a["id"], moto_b["id"]):
+        moto_after = await client.get(f"/api/v2/motorcycles/{moto_id}", headers=admin_headers)
+        assert moto_after.json()["data"]["status"] == "Progressing"
+
+    closed = await client.post(
+        f"/api/v2/rentals/{rental['id']}/close",
+        headers=admin_headers,
+        json={"condition": "Good", "finalPayment": {"amount": 28, "paymentMethod": "Cash"}},
+    )
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["data"]["status"] == "Completed"
+    assert len(closed.json()["data"]["lines"]) == 2
+    for moto_id in (moto_a["id"], moto_b["id"]):
+        moto_after = await client.get(f"/api/v2/motorcycles/{moto_id}", headers=admin_headers)
+        assert moto_after.json()["data"]["status"] == "Available"
+
+
+async def test_create_rental_keeps_independent_line_durations(client, admin_headers):
+    moto_a, customer = await _setup(client, admin_headers)
+    moto_b = (
+        await client.post(
+            "/api/v2/motorcycles",
+            headers=admin_headers,
+            json={
+                "code": f"MC-R{uuid.uuid4().hex[:6].upper()}",
+                "model": "Week Test Bike",
+                "plate": "PP-TEST-007",
+                "dailyRate": 10,
+                "threeDayRate": 27,
+                "weeklyRate": 60,
+                "monthlyRate": 200,
+            },
+        )
+    ).json()["data"]
+    now = datetime.now(timezone.utc)
+    start = now.replace(microsecond=0)
+    payload = {
+        "customerId": customer["id"],
+        "lines": [
+            {
+                "motorcycleId": moto_a["id"],
+                "startDate": start.isoformat(),
+                "dueDate": (start + timedelta(days=3)).isoformat(),
+            },
+            {
+                "motorcycleId": moto_b["id"],
+                "startDate": start.isoformat(),
+                "dueDate": (start + timedelta(days=7)).isoformat(),
+            },
+        ],
+    }
+    response = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
+    assert response.status_code == 201, response.text
+    rentals = response.json()["data"]
+    assert len(rentals) == 1
+    rental = rentals[0]
+    assert len(rental["lines"]) == 2
+    by_moto = {line["motorcycleId"]: line for line in rental["lines"]}
+    assert by_moto[moto_a["id"]]["durationDays"] == 3
+    assert by_moto[moto_a["id"]]["rateType"] == "ThreeDay"
+    assert by_moto[moto_b["id"]]["durationDays"] == 7
+    assert by_moto[moto_b["id"]]["rateType"] == "Weekly"
+    assert rental["durationDays"] == 7
+    assert rental["rateAmount"] == "87.00"
+    assert rental["rentalCharge"] == "87.00"
+
+
 async def test_viewer_cannot_create_rental(client, admin_headers):
     login = await client.post("/api/v2/auth/login", json={"email": TEST_VIEWER_EMAIL, "password": TEST_VIEWER_PASSWORD})
     viewer_headers = {"Authorization": f"Bearer {login.json()['data']['accessToken']}"}

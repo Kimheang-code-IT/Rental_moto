@@ -39,12 +39,15 @@ class TelegramReportService:
 
     def access_payload(self) -> dict:
         modules = {key: self.ctx.can_module(key) for key in ("finance", "motorcycles", "customers", "rentals")}
-        return {
+        payload = {
             "mode": self.ctx.mode,
             "linked": self.ctx.user is not None,
             "modules": modules,
             "accountHelp": self.ctx.mode == "private",
         }
+        if self.ctx.denied_reason:
+            payload["reason"] = self.ctx.denied_reason
+        return payload
 
     async def income(self, start: datetime, end: datetime, page: int, limit: int) -> dict:
         self.ctx.require_module("finance")

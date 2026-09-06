@@ -19,7 +19,6 @@ const appLocalization = useAppLocalization()
 
 const pending = ref(true)
 const saving = ref(false)
-const testingEmail = ref(false)
 const testingTelegram = ref(false)
 const resettingData = ref(false)
 const activeTab = ref('localization')
@@ -44,15 +43,6 @@ async function load() {
 
 function fieldValue(key: string): unknown {
   if (!model.value) return undefined
-
-  if (key === '__emailConnection') {
-    const value: ConnectionStatusFieldValue = {
-      status: model.value.email.connectionStatus,
-      message: model.value.email.lastTestMessage,
-      lastTestedAt: model.value.email.lastTestedAt,
-    }
-    return value
-  }
 
   if (key === '__telegramConnection') {
     const value: ConnectionStatusFieldValue = {
@@ -92,7 +82,7 @@ function fieldValue(key: string): unknown {
 async function setFieldValue(key: string, value: unknown) {
   if (!model.value) return
 
-  if (key === '__emailConnection' || key === '__telegramConnection') {
+  if (key === '__telegramConnection') {
     return
   }
 
@@ -138,6 +128,13 @@ async function save() {
   if (!model.value) return
   saving.value = true
   try {
+    // Mirror the visible Group ID field onto the derived interactive group like the backend does:
+    // one interactive group, enabled as soon as a Group ID is set. No separate input is exposed.
+    const telegram = model.value.telegram
+    if (telegram.chatId?.trim()) {
+      telegram.interactiveGroupId = telegram.chatId.trim()
+      telegram.interactiveGroupEnabled = true
+    }
     model.value = await appConfig.update(model.value)
     appLocalization.apply(model.value.localization)
     usePreferencesStore().setCurrency(model.value.localization.currency)
@@ -149,22 +146,6 @@ async function save() {
   }
   finally {
     saving.value = false
-  }
-}
-
-async function testEmail() {
-  testingEmail.value = true
-  try {
-    if (model.value) await appConfig.update({ email: model.value.email })
-    const result = await appConfig.testEmailConnection()
-    model.value = await appConfig.get()
-    toast.add({
-      title: result.message,
-      color: result.status === 'connected' ? 'success' : 'error',
-    })
-  }
-  finally {
-    testingEmail.value = false
   }
 }
 
@@ -197,8 +178,8 @@ async function resetAllData() {
   resettingData.value = true
   try {
     await appConfig.resetAllData()
+    useAppDataStore().reload()
     toast.add({ title: t('core.settings.resetDataSuccess'), color: 'success' })
-    await auth.logout()
   }
   catch (error: unknown) {
     toast.add({ title: errorMessage(error, t('core.settings.resetDataFailed')), color: 'error' })
@@ -228,11 +209,6 @@ useAppPageTitle(() => t('app.pages.settings'))
     @refresh="load"
   >
     <template #actions>
-      <CommonAppConnectionTestButton
-        v-if="activeTab === 'email' && canConfigure"
-        :loading="testingEmail"
-        @click="testEmail"
-      />
       <CommonAppConnectionTestButton
         v-if="activeTab === 'telegram' && canConfigure"
         :loading="testingTelegram"

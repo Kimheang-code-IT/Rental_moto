@@ -1,5 +1,5 @@
-import pytest
 
+from app.core.config import settings
 from tests.conftest import (
     TEST_ADMIN_EMAIL,
     TEST_ADMIN_NAME,
@@ -20,6 +20,9 @@ async def test_login_success_returns_pair_and_user(client):
     assert data["tokenType"] == "Bearer"
     assert data["accessToken"]
     assert data["refreshToken"]
+    assert data["expiresIn"] == settings.access_token_expire_minutes * 60
+    assert data["refreshExpiresIn"] == settings.refresh_token_expire_days * 24 * 3600
+    assert settings.refresh_token_expire_days == 7
     assert data["user"]["email"] == TEST_ADMIN_EMAIL
     assert data["user"]["role"] is None
     assert data["user"]["isOwner"] is True

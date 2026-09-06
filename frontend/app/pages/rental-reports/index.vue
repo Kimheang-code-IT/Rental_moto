@@ -309,7 +309,7 @@ const currentPageRowIds = computed(() => {
 
 async function exportCsv(request: ExportRequest) {
   if (store.isHttpMode) {
-    // Server export job through the exports queue; filters ride along in `query`.
+    // Server export job through the API (in-process); filters ride along in `query`.
     const query: Record<string, unknown> = {
       q: q.value || undefined,
       status: 'Completed',

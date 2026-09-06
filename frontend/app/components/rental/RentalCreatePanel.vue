@@ -14,9 +14,12 @@ import {
   daysBetween,
   detectRatePlan,
   documentTotals,
+  applySharedDurationToLines,
   dueDateFromRatePlan,
+  latestLineDueDate,
   lineAmounts,
   lineCharge,
+  lineDueFromPlan,
   rentalRateType,
   todayDateTimeLocal,
   type RentalRatePlan,
@@ -53,9 +56,6 @@ const isEditable = computed(() =>
 )
 const isFormReadOnly = computed(() => isDetail.value && !isEditable.value)
 
-function staffName() {
-  return auth.user?.name || 'Staff'
-}
 
 function tx(key: string, fallback: string) {
   return te(key) ? String(t(key)) : fallback
@@ -129,11 +129,7 @@ const lines = ref<RentalLine[]>([newLine()])
 
 /** Due datetime for one line from shared start + that line's plan/days. */
 function lineDueDate(line: RentalLine) {
-  if (!startDate.value) return ''
-  if (line.ratePlan === 'custom') {
-    return addDaysToDateTime(startDate.value, Math.max(1, line.days || 1))
-  }
-  return dueDateFromRatePlan(startDate.value, line.ratePlan, line.days)
+  return lineDueFromPlan(startDate.value, line)
 }
 
 function daysForRatePlan(plan: RentalRatePlan, fallbackDays = 1) {
@@ -161,13 +157,13 @@ function repriceLine(line: RentalLine) {
 /** Header Due mirrors the latest line due; does not rewrite other lines. */
 function refreshHeaderDueFromLines() {
   if (!startDate.value || !lines.value.length) return
-  const dues = lines.value.map(lineDueDate).filter(Boolean)
-  if (!dues.length) return
-  const latest = dues.reduce((a, b) => (a > b ? a : b))
-  if (latest === dueDate.value) return
+  const latest = latestLineDueDate(startDate.value, lines.value)
+  if (!latest || latest === dueDate.value) return
   syncingDates.value = true
   dueDate.value = latest
-  syncingDates.value = false
+  void nextTick(() => {
+    syncingDates.value = false
+  })
 }
 
 const selectedCustomer = computed(() =>
@@ -355,20 +351,20 @@ watch(startDate, () => {
   refreshHeaderDueFromLines()
 })
 
-/**
- * Header Due edited by staff: apply that shared duration to every line.
- * Programmatic due updates (from line edits) are ignored via syncingDates.
- */
-watch(dueDate, () => {
-  if (isFormReadOnly.value || syncingDates.value || !startDate.value || !dueDate.value) return
-  const days = Math.max(1, daysBetween(startDate.value, dueDate.value) || 1)
-  const plan = detectRatePlan(startDate.value, dueDate.value, days)
-  for (const line of lines.value) {
-    line.days = days
-    line.ratePlan = plan
+/** Staff edited the header Due field: apply that duration to every motorcycle line. */
+function onHeaderDueChange(value: string) {
+  if (isFormReadOnly.value || syncingDates.value) return
+  dueDate.value = String(value || '')
+  if (!startDate.value || !dueDate.value) return
+  const nextLines = applySharedDurationToLines(lines.value, startDate.value, dueDate.value)
+  nextLines.forEach((row, index) => {
+    const line = lines.value[index]
+    if (!line) return
+    line.days = row.days
+    line.ratePlan = row.ratePlan
     repriceLine(line)
-  }
-})
+  })
+}
 
 function onRatePlanChange(line: RentalLine, plan: string) {
   if (isFormReadOnly.value || !startDate.value) return
@@ -532,6 +528,7 @@ function hydrateDetail() {
   rentalNo.value = String(found.rentalNo || '')
   rentalStatus.value = String(found.status || 'Active')
   customerId.value = String(found.customerId || '')
+  syncingDates.value = true
   startDate.value = String(found.startDate || '')
   dueDate.value = String(found.dueDate || '')
   depositDate.value = String(found.depositDate || String(found.startDate || '').slice(0, 10))
@@ -555,25 +552,45 @@ function hydrateDetail() {
     }
   }
 
-  lines.value = [{
-    key: `line-${lineSeq++}`,
-    model: String(found.motorcycle || ''),
-    motorcycleId: String(found.motorcycleId || ''),
-    days: Math.max(1, Number(found.durationDays || daysBetween(String(found.startDate || ''), String(found.dueDate || '')) || 1)),
-    ratePlan: detectRatePlan(
-      String(found.startDate || ''),
-      String(found.dueDate || ''),
-      Math.max(1, Number(found.durationDays || 1)),
-    ),
-    unitPrice: Number(found.rateAmount || 0),
-    discount: Math.max(0, Number(found.discount || 0)),
-  }]
-  const firstLine = lines.value[0]
-  if (firstLine) {
-    repriceLine(firstLine)
+  const savedLines = Array.isArray(found.lines) ? found.lines as Array<Record<string, unknown>> : []
+  if (savedLines.length) {
+    lines.value = savedLines.map((row) => {
+      const start = String(row.startDate || found.startDate || '')
+      const due = String(row.dueDate || found.dueDate || '')
+      const days = Math.max(1, Number(row.durationDays || daysBetween(start, due) || 1))
+      return {
+        key: `line-${lineSeq++}`,
+        model: String(row.motorcycle || ''),
+        motorcycleId: String(row.motorcycleId || ''),
+        days,
+        ratePlan: detectRatePlan(start, due, days),
+        unitPrice: Number(row.rateAmount || 0),
+        discount: Math.max(0, Number(row.discount || 0)),
+      }
+    })
   }
+  else {
+    lines.value = [{
+      key: `line-${lineSeq++}`,
+      model: String(found.motorcycle || ''),
+      motorcycleId: String(found.motorcycleId || ''),
+      days: Math.max(1, Number(found.durationDays || daysBetween(String(found.startDate || ''), String(found.dueDate || '')) || 1)),
+      ratePlan: detectRatePlan(
+        String(found.startDate || ''),
+        String(found.dueDate || ''),
+        Math.max(1, Number(found.durationDays || 1)),
+      ),
+      unitPrice: Number(found.rateAmount || 0),
+      discount: Math.max(0, Number(found.discount || 0)),
+    }]
+  }
+  for (const line of lines.value) repriceLine(line)
   // Detail stores discount on the rental line; keep header extra at 0 so totals do not double-count.
   headerDiscount.value = 0
+  void nextTick(() => {
+    refreshHeaderDueFromLines()
+    syncingDates.value = false
+  })
 }
 
 watch(
@@ -731,13 +748,13 @@ async function createRental() {
 
   saving.value = true
   try {
-    const created = await rentalCommands.create({
+    await rentalCommands.create({
         customerId: String(selectedCustomer.value.id),
-        lines: validLines.map(row => ({
+        lines: validLines.map((row, index) => ({
           motorcycleId: String(row.line.motorcycleId),
           startDate: toIsoZoned(startDate.value)!,
           dueDate: toIsoZoned(row.due || lineDueDate(row.line))!,
-          deposit: Number((deposit.value / validLines.length).toFixed(2)),
+          deposit: index === 0 ? Number(deposit.value || 0) : 0,
           discount: Number(row.line.discount || 0),
           note: null,
         })),
@@ -767,8 +784,8 @@ async function createRental() {
 
 async function updateRental() {
   if (!canEditRental.value || !props.rentalId) return
-  const line = lineComputed.value.find(row => row.moto)
-  if (!line) return
+  const validLines = lineComputed.value.filter(row => row.moto)
+  if (!validLines.length) return
 
   const ok = await confirm({
     kind: 'update',
@@ -782,13 +799,20 @@ async function updateRental() {
   try {
     await rentalCommands.update(String(props.rentalId), {
       customerId: customerId.value,
-      motorcycleId: String(line.line.motorcycleId),
       startDate: toIsoZoned(startDate.value)!,
       dueDate: toIsoZoned(dueDate.value)!,
       deposit: deposit.value,
-      discount: Number(line.line.discount || 0),
+      discount: headerDiscount.value,
       taxPercent: taxPercent.value,
       note: null,
+      lines: validLines.map((row, index) => ({
+        motorcycleId: String(row.line.motorcycleId),
+        startDate: toIsoZoned(startDate.value)!,
+        dueDate: toIsoZoned(row.due || lineDueDate(row.line))!,
+        deposit: index === 0 ? Number(deposit.value || 0) : 0,
+        discount: Number(row.line.discount || 0),
+        note: null,
+      })),
     })
     await store.fetchOne('rentals', String(props.rentalId))
     await store.fetchList('motorcycles')
@@ -897,16 +921,17 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
             </UFormField>
             <UFormField
               :label="tx('rental.ui.dueDate', 'Due')"
-              :help="help('dueDate', 'Return date and time. 1 month uses the same day next month.')"
+              :help="help('dueDate', 'Latest motorcycle return. Each line keeps its own package unless you edit this date.')"
               required
             >
               <CommonAppInputDate
-                v-model="dueDate"
+                :model-value="dueDate"
                 granularity="minute"
                 required
                 size="md"
                 class="w-full"
                 :disabled="isFormReadOnly"
+                @update:model-value="onHeaderDueChange"
               />
             </UFormField>
             <UFormField
@@ -1233,7 +1258,12 @@ class="w-full" />
             :label="tx('app.modules.rentalCustomers.fields.address', 'Address')"
             :help="help('address', 'Customer home or business address.')"
           >
-            <UTextarea v-model="newCustomer.address" :rows="3" size="md" class="w-full" />
+            <UTextarea
+              v-model="newCustomer.address"
+              :rows="3"
+              size="md"
+              class="w-full"
+            />
           </UFormField>
         </div>
       </template>

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from sqlalchemy import select, text
 
@@ -9,7 +10,6 @@ from app.core.security import utcnow
 from app.models import (
     AppSetting,
     DocumentSequence,
-    StorageProvider,
 )
 from app.services.admin_service import default_document_sequences
 
@@ -17,7 +17,7 @@ logger = logging.getLogger("hollywing.seed")
 
 
 async def seed_bootstrap() -> None:
-    """Seed only non-auth bootstrap data: sequences, app info, storage provider.
+    """Seed only non-auth bootstrap data: sequences and app info.
 
     Roles are NEVER created here: the operator defines every role through
     Administration → Roles after the first administrator completes setup.
@@ -28,7 +28,11 @@ async def seed_bootstrap() -> None:
     """
     async with SessionFactory() as session:
         for spec in default_document_sequences():
-            existing = (await session.execute(select(DocumentSequence).where(DocumentSequence.document_type == spec["document_type"]))).scalar_one_or_none()
+            existing = (
+                await session.execute(
+                    select(DocumentSequence).where(DocumentSequence.document_type == spec["document_type"])
+                )
+            ).scalar_one_or_none()
             if existing is None:
                 session.add(
                     DocumentSequence(
@@ -57,36 +61,6 @@ async def seed_bootstrap() -> None:
                 )
             )
 
-        if settings.minio_enabled:
-            minio_provider = await session.get(StorageProvider, "sp-minio")
-            if minio_provider is None:
-                existing_default = (
-                    await session.execute(select(StorageProvider).where(StorageProvider.is_default.is_(True)))
-                ).scalar_one_or_none()
-                endpoint = settings.minio_endpoint
-                if "://" not in endpoint:
-                    endpoint = f"{'https' if settings.minio_secure else 'http'}://{endpoint}"
-                session.add(
-                    StorageProvider(
-                        id="sp-minio",
-                        name="HollyWing MinIO",
-                        type="minio",
-                        active=True,
-                        is_default=existing_default is None,
-                        max_file_size_mb=25,
-                        allowed_file_types=["pdf", "csv", "xlsx"],
-                        access_mode="private",
-                        upload_path_pattern="{entity}/{yyyy}/{mm}/{id}",
-                        connection_status="not_tested",
-                        endpoint=endpoint,
-                        region="us-east-1",
-                        bucket=settings.minio_bucket,
-                        access_key=settings.minio_access_key,
-                        secret_key=settings.minio_secret_key,
-                        path_style=True,
-                    )
-                )
-
         await session.commit()
         logger.info("Bootstrap seed completed")
 
@@ -95,8 +69,36 @@ async def seed() -> None:
     await seed_bootstrap()
 
 
-async def reset_all_data() -> None:
-    """Delete all business and auth data, then re-seed bootstrap only."""
+def _clear_export_files() -> int:
+    export_root = Path(settings.export_dir)
+    if not export_root.exists():
+        return 0
+    removed = 0
+    for path in export_root.glob("**/*"):
+        if path.is_file():
+            try:
+                path.unlink()
+                removed += 1
+            except OSError:
+                pass
+    # Remove empty directories left behind.
+    for path in sorted(export_root.glob("**/*"), reverse=True):
+        if path.is_dir():
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+    return removed
+
+
+async def reset_all_data() -> dict:
+    """Delete operational business data and export files; keep auth and config.
+
+    Preserved: users, roles, document sequences, app settings, storage providers,
+    and refresh-token sessions. Missing sequences/app-info are re-seeded only if
+    absent. Callers that hold an open request session must rollback/expire it
+    first so TRUNCATE is not blocked by locks on truncated tables.
+    """
     tables = [
         "rental_payments",
         "rental_charges",
@@ -108,20 +110,19 @@ async def reset_all_data() -> None:
         "export_jobs",
         "outbox_events",
         "task_progress",
-        "storage_providers",
         "password_reset_challenges",
-        "refresh_token_sessions",
         "telegram_link_codes",
-        "users",
-        "roles",
-        "document_sequences",
-        "app_settings",
     ]
     async with engine.begin() as conn:
         for table in tables:
             await conn.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
-    logger.info("All tables truncated")
+    logger.info("Operational tables truncated; users, roles, sequences, and settings kept")
+
+    removed_exports = await asyncio.to_thread(_clear_export_files)
+    logger.info("Cleared %s export file(s) under %s", removed_exports, settings.export_dir)
+
     await seed_bootstrap()
+    return {"removedExports": removed_exports}
 
 
 async def main() -> None:

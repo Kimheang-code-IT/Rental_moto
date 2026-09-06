@@ -21,7 +21,7 @@ export const useAuthStore = defineStore('auth', () => {
   const user = computed(() => storedUser.value || cookieUser.value)
   const isLoggedIn = computed(() => {
     if (!user.value) return false
-    // Bearer tokens live in sessionStorage; a stale profile cookie alone is not a session.
+    // Bearer tokens live in localStorage; a stale profile cookie alone is not a session.
     if (import.meta.client) return hasTokens()
     return true
   })

@@ -269,7 +269,8 @@ export function createHttpEntityRepository(): EntityRepository {
 
   async function remove(collection: string, id: string): Promise<void> {
     const endpoint = CollectionEndpoints[collection as ApiCollection]
-    await api.delete(`${endpoint}/${id}`)
+    // Caller shows one friendly toast; avoid duplicate technical API toasts.
+    await api.delete(`${endpoint}/${id}`, { suppressErrorToast: true })
   }
 
   async function setStatus(collection: string, id: string, status: string): Promise<AppRecord> {

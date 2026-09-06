@@ -389,7 +389,7 @@ Replace the local loop in `RentalCreatePanel.vue` with one request:
 }
 ```
 
-The response `data` is an array because one request can create multiple rentals. Navigate to the first returned rental when appropriate. Replace cached motorcycles/rentals from server responses or reload affected lists.
+The response `data` is an array with **one rental** even when `lines[]` has two or more motorcycles. Motorcycle rows live on `rental.lines`. Replace cached motorcycles/rentals from server responses or reload affected lists.
 
 Remove client-side generation of rental/payment numbers and client-side status persistence in HTTP mode.
 

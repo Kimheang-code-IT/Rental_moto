@@ -1,14 +1,22 @@
+import asyncio
+import logging
+
 from fastapi import APIRouter
 
 from app.api.deps import envelope
 from app.core.config import settings
+from app.core.logging import setup_logging
 from app.core.redis import cache
+
+logger = logging.getLogger("hollywing.health")
+setup_logging()
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
 async def health() -> dict:
+    """Process is alive — cheap, no dependency checks."""
     return envelope({"status": "ok", "environment": settings.environment})
 
 
@@ -19,6 +27,7 @@ async def live() -> dict:
 
 @router.get("/health/ready")
 async def ready() -> dict:
+    """Required dependencies available. Never leaks internal error details."""
     checks: dict[str, str] = {}
     overall = True
 
@@ -30,26 +39,28 @@ async def ready() -> dict:
         async with SessionFactory() as session:
             await session.execute(text("SELECT 1"))
         checks["postgres"] = "ok"
-    except Exception as exc:
-        checks["postgres"] = f"error: {exc}"
+    except Exception:
+        logger.exception("Health readiness check failed for postgres")
+        checks["postgres"] = "error"
         overall = False
 
     checks["redis"] = "ok" if await cache.ping() else "error"
     if checks["redis"] == "error":
-        overall = overall and False
+        overall = False
 
     try:
-        import kombu
+        from redis import asyncio as aioredis
 
-        connection = kombu.Connection(settings.rabbitmq_url)
+        client = aioredis.from_url(settings.celery_broker_url, decode_responses=True)
         try:
-            connection.ensure_connection(max_retries=0, timeout=2)
-            checks["rabbitmq"] = "ok"
+            await asyncio.wait_for(client.ping(), timeout=2)
+            checks["celery_broker"] = "ok"
         finally:
-            connection.release()
-    except Exception as exc:
-        checks["rabbitmq"] = f"error: {exc}"
-        overall = overall and False
+            await client.aclose()
+    except Exception:
+        logger.exception("Health readiness check failed for celery broker")
+        checks["celery_broker"] = "error"
+        overall = False
 
     return envelope({"status": "ok" if overall else "degraded", "checks": checks})
 

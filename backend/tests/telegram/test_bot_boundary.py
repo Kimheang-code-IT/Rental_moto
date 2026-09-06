@@ -1,5 +1,3 @@
-import httpx
-import pytest
 
 
 async def test_telegram_endpoints_reject_anonymous(client):

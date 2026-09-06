@@ -1,4 +1,3 @@
-import pytest
 
 
 async def test_health_endpoints(client):
@@ -14,6 +13,25 @@ async def test_health_endpoints(client):
     data = response.json()["data"]
     assert data["checks"]["postgres"] == "ok"
     assert data["checks"]["redis"] == "ok"
+
+
+async def test_health_ready_does_not_leak_internal_errors(client, monkeypatch):
+    """Dependency failures are logged, never echoed back to clients."""
+    class _BrokenFactory:
+        def __call__(self):
+            raise RuntimeError("connection refused for user rental on 10.0.0.5")
+
+    import app.core.database as db_module
+
+    monkeypatch.setattr(db_module, "SessionFactory", _BrokenFactory())
+    response = await client.get("/health/ready")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["status"] == "degraded"
+    assert data["checks"]["postgres"] == "error"
+    body = response.text
+    assert "rental on 10.0.0.5" not in body
+    assert "connection refused" not in body
 
 
 async def test_openapi_available(client):

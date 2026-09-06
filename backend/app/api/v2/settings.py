@@ -6,13 +6,11 @@ from app.api.deps import envelope, get_db_session, require_permission
 from app.schemas.settings import (
     AppInfoUpdate,
     AppConfigUpdate,
-    StorageProviderCreate,
-    StorageProviderUpdate,
     TestEmailRequest,
     TestTelegramRequest,
 )
 from app.services.admin_service import SettingService
-from app.services.settings_service import StorageProviderService, test_email_connection, test_telegram_connection
+from app.services.settings_service import test_email_connection, test_telegram_connection
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -129,87 +127,3 @@ async def telegram_send_test(
 ) -> dict:
     result = await test_telegram_connection(session, destination_id=body.destination_id, send_message=True)
     return envelope(result)
-
-
-@router.get("/storage")
-async def list_storage(
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.view")),
-) -> dict:
-    service = StorageProviderService(session)
-    providers = await service.list()
-    return envelope(providers, {"page": 1, "limit": max(len(providers), 1), "total": len(providers)})
-
-
-@router.post("/storage", status_code=201)
-async def create_storage(
-    body: StorageProviderCreate,
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.configure")),
-) -> dict:
-    service = StorageProviderService(session)
-    provider = await service.create(body, user.id if user else None)
-    return envelope(provider)
-
-
-@router.get("/storage/{provider_id}")
-async def get_storage(
-    provider_id: str,
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.view")),
-) -> dict:
-    service = StorageProviderService(session)
-    return envelope(await service.get(provider_id))
-
-
-@router.put("/storage/{provider_id}")
-async def update_storage(
-    provider_id: str,
-    body: StorageProviderUpdate,
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.configure")),
-) -> dict:
-    service = StorageProviderService(session)
-    return envelope(await service.update(provider_id, body, user.id if user else None))
-
-
-@router.delete("/storage/{provider_id}")
-async def delete_storage(
-    provider_id: str,
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.configure")),
-) -> dict:
-    service = StorageProviderService(session)
-    await service.delete(provider_id)
-    return envelope({"deleted": True})
-
-
-@router.post("/storage/{provider_id}/test-connection")
-async def test_storage(
-    provider_id: str,
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.configure")),
-) -> dict:
-    service = StorageProviderService(session)
-    return envelope(await service.test_connection(provider_id))
-
-
-@router.post("/storage/{provider_id}/set-default")
-async def set_default_storage(
-    provider_id: str,
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.configure")),
-) -> dict:
-    service = StorageProviderService(session)
-    return envelope(await service.set_flag(provider_id, is_default=True))
-
-
-@router.post("/storage/{provider_id}/set-active")
-async def set_active_storage(
-    provider_id: str,
-    session: AsyncSession = Depends(get_db_session),
-    user=Depends(require_permission("settings.app_config.configure")),
-) -> dict:
-    service = StorageProviderService(session)
-    return envelope(await service.set_flag(provider_id, active=True))
-

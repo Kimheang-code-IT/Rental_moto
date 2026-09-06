@@ -106,9 +106,9 @@ Last verified: 2026-09-01 (Python 3.12.10, Docker 29.1.3 / Compose v2.40.3 on Wi
 ## Docker & operations
 
 - [x] `Dockerfile` (API + workers), `Dockerfile.telegram`
-- [x] `docker-compose.yml`: db, redis, rabbitmq (mgmt UI :15672), api, worker-default, worker-telegram, worker-export, scheduler, telegram-bot
+- [x] `docker-compose.yml`: db, redis, api, worker-telegram, telegram-bot, frontend (no RabbitMQ / MinIO / Beat scheduler)
 - [x] Health checks for all infrastructure services + API container healthcheck
-- [x] Persistent volumes (pgdata, redisdata, rabbitmqdata, exportdata)
+- [x] Persistent volumes (pgdata, redisdata, appdata)
 - [x] Dependency-based startup ordering; api runs migrations + seed before serving
 - [x] `.env.example` with development-only credentials
 - [x] Idempotent seed: roles/permissions, admin + demo users, document sequences, settings, demo fleet/customers
@@ -139,7 +139,7 @@ Last verified: 2026-09-01 (Python 3.12.10, Docker 29.1.3 / Compose v2.40.3 on Wi
 | `docker compose up -d` (repository root; all 9 services healthy) | PASS |
 | `alembic upgrade head` (in api container) | PASS |
 | `pytest` (in api container, 83 tests) | PASS |
-| `/health/live`, `/health/ready` (postgres/redis/rabbitmq all ok) | PASS |
+| `/health/live`, `/health/ready` (postgres/redis/celery_broker) | PASS |
 | `/health/workers` (3 Celery workers respond to ping) | PASS |
 | Auth flow (login → me → refresh → logout) over HTTP | PASS |
 | Full rental lifecycle (create → Progressing → close → Completed → Available) over HTTP | PASS |

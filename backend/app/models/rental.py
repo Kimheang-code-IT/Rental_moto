@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -18,8 +18,8 @@ class Rental(Base, TimestampMixin):
 
     customer: Mapped[str] = mapped_column(String(200), default="", nullable=False)
     phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    motorcycle: Mapped[str] = mapped_column(String(200), default="", nullable=False)
-    plate: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    motorcycle: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    plate: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -60,6 +60,38 @@ class Rental(Base, TimestampMixin):
 
     payments: Mapped[list["RentalPayment"]] = relationship(back_populates="rental", lazy="selectin")
     charges: Mapped[list["RentalCharge"]] = relationship(back_populates="rental", lazy="selectin")
+    lines: Mapped[list["RentalLine"]] = relationship(
+        back_populates="rental",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+        order_by="RentalLine.sort_order",
+    )
+
+
+class RentalLine(Base, TimestampMixin):
+    __tablename__ = "rental_lines"
+    __table_args__ = (UniqueConstraint("rental_id", "motorcycle_id", name="uq_rental_lines_rental_motorcycle"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    rental_id: Mapped[str] = mapped_column(ForeignKey("rentals.id", ondelete="CASCADE"), nullable=False, index=True)
+    motorcycle_id: Mapped[str] = mapped_column(ForeignKey("motorcycles.id"), nullable=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    motorcycle: Mapped[str] = mapped_column(String(160), default="", nullable=False)
+    plate: Mapped[str | None] = mapped_column(String(60), nullable=True)
+
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    rate_type: Mapped[str] = mapped_column(String(20), default="Daily", nullable=False)
+    rate_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    deposit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    discount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    rental_charge: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    rental: Mapped[Rental] = relationship(back_populates="lines")
 
 
 class RentalPayment(Base, TimestampMixin):

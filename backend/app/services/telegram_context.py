@@ -79,6 +79,7 @@ class TelegramRequestContext:
     allowed_modules: dict[str, bool] = field(default_factory=dict)
     sensitive: TelegramSensitivePolicy = field(default_factory=TelegramSensitivePolicy)
     localization: dict = field(default_factory=dict)
+    denied_reason: str | None = None
 
     def can_module(self, module: str) -> bool:
         return bool(self.allowed_modules.get(module, False))
@@ -109,10 +110,41 @@ def normalize_telegram_config(config: dict | None) -> dict:
     return cfg
 
 
+def telegram_ids_equal(left: str | int | None, right: str | int | None) -> bool:
+    """Match Telegram/user IDs across int/string and optional -100 supergroup prefix."""
+    if left is None or right is None:
+        return False
+    left_raw = str(left).strip()
+    right_raw = str(right).strip()
+    if not left_raw or not right_raw:
+        return False
+    return bool(_id_variants(left_raw) & _id_variants(right_raw))
+
+
+def _id_variants(value: str) -> set[str]:
+    variants = {value}
+    try:
+        variants.add(str(int(value)))
+    except (TypeError, ValueError):
+        pass
+    if value.startswith("-100") and value[4:].isdigit():
+        variants.add("-" + value[4:])
+    elif value.startswith("-") and value[1:].isdigit() and not value.startswith("-100"):
+        variants.add("-100" + value[1:])
+    return variants
+
+
+def _denied_message(exc: AccessDeniedError) -> str:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        return str(detail.get("message") or "Access denied")
+    return str(detail or "Access denied")
+
+
 def _sync_main_destination(cfg: dict, chat_id: str) -> None:
     """Keep a default notification destination aligned with the configured group ID."""
     destinations = list(cfg.get("destinations") or [])
-    main = next((item for item in destinations if str(item.get("chatId")) == chat_id), None)
+    main = next((item for item in destinations if telegram_ids_equal(item.get("chatId"), chat_id)), None)
     if main is None:
         destinations.insert(
             0,
@@ -136,7 +168,7 @@ def _sync_main_destination(cfg: dict, chat_id: str) -> None:
                 existing.append(event)
         main["enabledEvents"] = existing
     for dest in destinations:
-        if str(dest.get("chatId")) != chat_id:
+        if not telegram_ids_equal(dest.get("chatId"), chat_id):
             dest["isInteractiveGroup"] = False
     cfg["destinations"] = destinations
 
@@ -159,9 +191,9 @@ def _find_user_access(cfg: dict, *, user_id: int | None = None, chat_id: str | N
     if not rows:
         return None
     for row in rows:
-        if user_id is not None and row.get("userId") == user_id:
+        if user_id is not None and telegram_ids_equal(row.get("userId"), user_id):
             return row
-        if chat_id and str(row.get("chatId") or "") == str(chat_id):
+        if chat_id and telegram_ids_equal(row.get("chatId"), chat_id):
             return row
     return False
 
@@ -226,6 +258,25 @@ async def build_telegram_context(
         raise ValidationError("Invalid Telegram chat type")
 
     loc = localization or {}
+    sensitive = TelegramSensitivePolicy.from_config(cfg.get("sensitiveFields"))
+
+    def denied(
+        mode: Literal["private", "group"],
+        reason: str | None = None,
+        user: User | None = None,
+    ) -> TelegramRequestContext:
+        return TelegramRequestContext(
+            telegram_user_id=telegram_user_id,
+            telegram_chat_id=telegram_chat_id,
+            chat_type=chat_type_norm,  # type: ignore[arg-type]
+            mode=mode,
+            user=user,
+            permissions=[],
+            allowed_modules={key: False for key in MODULE_PERMISSIONS},
+            sensitive=sensitive,
+            localization=loc,
+            denied_reason=reason,
+        )
 
     if chat_type_norm == "private":
         users = UserRepository(session)
@@ -233,24 +284,18 @@ async def build_telegram_context(
         if user is None or user.status != "Active":
             if require_linked:
                 raise AccessDeniedError("Telegram account is not linked to an active user")
-            return TelegramRequestContext(
-                telegram_user_id=telegram_user_id,
-                telegram_chat_id=telegram_chat_id,
-                chat_type=chat_type_norm,  # type: ignore[arg-type]
-                mode="private",
-                user=None,
-                permissions=[],
-                allowed_modules={key: False for key in MODULE_PERMISSIONS},
-                sensitive=TelegramSensitivePolicy.from_config(cfg.get("sensitiveFields")),
-                localization=loc,
-            )
-        _require_private_user_access(cfg, user, telegram_chat_id)
+            return denied("private")
+        try:
+            _require_private_user_access(cfg, user, telegram_chat_id)
+        except AccessDeniedError as exc:
+            if require_linked:
+                raise
+            return denied("private", _denied_message(exc), user=user)
         perms = effective_permissions(user)
         allowed = {
             key: user_has_permission(user, perm)
             for key, perm in MODULE_PERMISSIONS.items()
         }
-        sensitive = TelegramSensitivePolicy.from_config(cfg.get("sensitiveFields"))
         return TelegramRequestContext(
             telegram_user_id=telegram_user_id,
             telegram_chat_id=telegram_chat_id,
@@ -264,13 +309,24 @@ async def build_telegram_context(
         )
 
     if chat_type_norm not in ("group", "supergroup"):
-        raise AccessDeniedError("Reports are only available in private or configured group chats")
+        reason = "Reports are only available in private or configured group chats"
+        if require_linked:
+            raise AccessDeniedError(reason)
+        return denied("private", reason)
 
-    group_id = resolve_interactive_group_id(cfg)
-    if not group_id or str(telegram_chat_id) != str(group_id):
-        raise AccessDeniedError("This Telegram group is not authorized")
+    authorized_ids = _interactive_group_chat_ids(cfg)
+    if not any(telegram_ids_equal(telegram_chat_id, group_id) for group_id in authorized_ids):
+        reason = "This Telegram group is not authorized"
+        if require_linked:
+            raise AccessDeniedError(reason)
+        return denied("group", reason)
 
-    await _require_group_user_access(session, cfg, telegram_user_id)
+    try:
+        await _require_group_user_access(session, cfg, telegram_user_id)
+    except AccessDeniedError as exc:
+        if require_linked:
+            raise
+        return denied("group", _denied_message(exc))
 
     allowed = dict(cfg.get("allowedModules") or DEFAULT_ALLOWED_MODULES)
     sensitive = TelegramSensitivePolicy.from_config(cfg.get("sensitiveFields"))

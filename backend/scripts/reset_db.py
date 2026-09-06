@@ -1,4 +1,4 @@
-"""Wipe all database data and re-seed non-auth bootstrap (sequences, settings)."""
+"""Wipe operational business data; keep users, roles, sequences, and settings."""
 
 import asyncio
 import logging
@@ -14,8 +14,8 @@ logging.basicConfig(level=logging.INFO)
 
 async def main() -> None:
     await reset_all_data()
-    print("Database reset complete. Only non-auth bootstrap data remains (sequences, settings).")
-    print("No users and no roles exist. Register the system owner through /auth/setup, then create roles in the UI.")
+    print("Database reset complete. Users, roles, document sequences, and settings were kept.")
+    print("Rentals, customers, motorcycles, payments, charges, expenses, and related operational data were removed.")
 
 
 if __name__ == "__main__":

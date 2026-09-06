@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 import {
   addMonthsToDateTime,
   appliedUnitPrice,
+  applySharedDurationToLines,
   calendarMonthsBetween,
   detectRatePlan,
   dueDateFromRatePlan,
+  latestLineDueDate,
   lineCharge,
   lineAmounts,
   rentalRateType,
+  rentalReturnBalance,
 } from '../app/utils/rental/pricing'
 
 const moto = {
@@ -71,5 +74,76 @@ describe('rental package pricing', () => {
       discount: 7,
       lineTotal: 43,
     })
+  })
+})
+
+describe('rentalReturnBalance', () => {
+  const rental = {
+    rentalCharge: 30,
+    lateFee: 0,
+    additionalCharges: 0,
+    discount: 0,
+    totalDue: 30,
+    paid: 16.22,
+    outstanding: 13.78,
+  }
+
+  it('keeps already paid separate from the return payment amount', () => {
+    const beforePay = rentalReturnBalance(rental)
+    expect(beforePay.totalDue).toBe(30)
+    expect(beforePay.alreadyPaid).toBe(16.22)
+    expect(beforePay.balanceDue).toBe(13.78)
+    expect(beforePay.suggestedPayment).toBe(13.78)
+
+    const afterSuggestedPay = rentalReturnBalance(rental, 0, beforePay.suggestedPayment)
+    expect(afterSuggestedPay.alreadyPaid).toBe(16.22)
+    expect(afterSuggestedPay.outstandingAfterPay).toBe(0)
+  })
+
+  it('adds return charges onto total due and the remaining payment', () => {
+    const result = rentalReturnBalance(rental, 5, 0)
+    expect(result.totalDue).toBe(35)
+    expect(result.alreadyPaid).toBe(16.22)
+    expect(result.balanceDue).toBe(18.78)
+    expect(result.suggestedPayment).toBe(18.78)
+  })
+
+  it('suggests no payment when the rental is already paid in full', () => {
+    const result = rentalReturnBalance({ ...rental, paid: 30, outstanding: 0 })
+    expect(result.alreadyPaid).toBe(30)
+    expect(result.balanceDue).toBe(0)
+    expect(result.suggestedPayment).toBe(0)
+    expect(result.outstandingAfterPay).toBe(0)
+  })
+})
+
+describe('independent motorcycle line durations', () => {
+  const start = '2026-09-06T08:00'
+
+  it('keeps a 3-day line and a 1-week line on the same rental', () => {
+    const lines = [
+      { ratePlan: '3d' as const, days: 3 },
+      { ratePlan: '1w' as const, days: 7 },
+    ]
+    expect(dueDateFromRatePlan(start, '3d')).toBe('2026-09-09T08:00')
+    expect(dueDateFromRatePlan(start, '1w')).toBe('2026-09-13T08:00')
+    expect(latestLineDueDate(start, lines)).toBe('2026-09-13T08:00')
+    expect(lines[0]?.ratePlan).toBe('3d')
+    expect(lines[0]?.days).toBe(3)
+    expect(lines[1]?.ratePlan).toBe('1w')
+    expect(lines[1]?.days).toBe(7)
+  })
+
+  it('applies a shared header due to every line only when requested', () => {
+    const mixed = [
+      { key: 'a', ratePlan: '3d' as const, days: 3 },
+      { key: 'b', ratePlan: '1w' as const, days: 7 },
+    ]
+    const synced = applySharedDurationToLines(mixed, start, dueDateFromRatePlan(start, '1w'))
+    expect(synced).toEqual([
+      { key: 'a', ratePlan: '1w', days: 7 },
+      { key: 'b', ratePlan: '1w', days: 7 },
+    ])
+    expect(mixed[0]?.ratePlan).toBe('3d')
   })
 })

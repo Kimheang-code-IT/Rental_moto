@@ -373,16 +373,22 @@ class SettingService:
     async def reset_all_data(self) -> dict:
         from app.seed import reset_all_data as run_reset_all_data
 
-        await run_reset_all_data()
-        await cache.delete_keys(
-            f"{SETTINGS_CACHE_PREFIX}app-info",
-            f"{SETTINGS_CACHE_PREFIX}app-config",
-            f"{SETTINGS_CACHE_PREFIX}storage",
-        )
+        # Release locks from this request session (loaded rows / open transaction)
+        # so TRUNCATE on operational tables is not blocked.
+        await self.session.rollback()
+        self.session.expire_all()
+
+        result = await run_reset_all_data()
         await cache.delete_prefix(DASHBOARD_CACHE_PREFIX)
+        await cache.delete_prefix("task:telegram:event:")
         return {
-            "message": "All data reset. Users and roles were removed; document sequences and app defaults were restored.",
-            "requiresReauth": True,
+            "message": (
+                "Business data reset. Users, roles, document sequences, and "
+                "settings were kept."
+            ),
+            "requiresReauth": False,
+            "requiresSetup": False,
+            "removedExports": result.get("removedExports", 0),
         }
 
     async def get_app_config(self, mask: bool = True) -> dict:

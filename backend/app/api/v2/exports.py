@@ -13,8 +13,7 @@ from app.core.permissions import user_has_permission
 from app.models import ExportJob, TaskProgress
 from app.repositories.admin import ExportRepository, TaskProgressRepository
 from app.schemas.settings import ExportCreateRequest
-from app.services.export_service import EXPORT_RESOURCES, export_permission
-from app.tasks.celery_app import celery_app
+from app.services.export_service import EXPORT_RESOURCES, export_permission, process_export
 
 router = APIRouter(tags=["exports"])
 
@@ -82,23 +81,17 @@ async def create_export(
     await TaskProgressRepository(session).upsert(task)
     await session.commit()
 
-    try:
-        result = celery_app.send_task(
-            "app.tasks.exports.export_resource",
-            kwargs={"export_id": job.id, "task_id": task.id},
-            queue="exports",
-        )
-        job.task_id = result.id
-        task.status = "queued"
-        await session.commit()
-    except Exception:
-        job.status = "failed"
-        job.error = "Task broker unavailable"
-        task.status = "failed"
-        task.message = "Task broker unavailable"
-        await session.commit()
+    job.task_id = task.id
+    await session.commit()
 
-    return envelope(_to_dict(job), {"taskId": task.id})
+    try:
+        await process_export(session, job.id, task.id)
+    except Exception:
+        # process_export already marks the job/task failed and commits.
+        pass
+
+    refreshed = await ExportRepository(session).get(job.id)
+    return envelope(_to_dict(refreshed or job, include_download=True), {"taskId": task.id})
 
 
 @router.get("/exports")

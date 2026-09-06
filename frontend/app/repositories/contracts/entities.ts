@@ -85,6 +85,7 @@ export interface RentalUpdateInput {
   discount?: number
   taxPercent?: number
   note?: string | null
+  lines?: RentalLineInput[]
 }
 
 export interface RentalCommandRepository {

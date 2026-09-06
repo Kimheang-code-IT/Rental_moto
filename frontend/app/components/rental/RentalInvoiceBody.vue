@@ -110,16 +110,20 @@ const lineItems = computed<LineItem[]>(() => {
   const draftLines = Array.isArray(props.rental.invoiceLines)
     ? (props.rental.invoiceLines as Array<Record<string, unknown>>)
     : []
+  const savedLines = Array.isArray(props.rental.lines)
+    ? (props.rental.lines as Array<Record<string, unknown>>)
+    : []
+  const sourceLines = draftLines.length ? draftLines : savedLines
 
-  if (draftLines.length) {
-    for (const row of draftLines) {
+  if (sourceLines.length) {
+    for (const row of sourceLines) {
       items.push({
         motorcycle: String(row.motorcycle || '—'),
         plate: String(row.plate || '—'),
-        days: Number(row.days || 1),
-        unitPrice: Number(row.unitPrice || 0),
+        days: Number(row.days || row.durationDays || 1),
+        unitPrice: Number(row.unitPrice || row.rateAmount || 0),
         discount: Math.max(0, Number(row.discount || 0)),
-        amount: Number(row.amount || 0),
+        amount: Number(row.amount || row.rentalCharge || 0),
       })
     }
   }

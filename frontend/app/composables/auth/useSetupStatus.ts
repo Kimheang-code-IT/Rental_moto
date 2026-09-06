@@ -82,5 +82,9 @@ export function useSetupStatus() {
     needsSetup.value = false
   }
 
-  return { needsSetup, ensureSetupStatus, markConfigured }
+  function markNeedsSetup() {
+    needsSetup.value = true
+  }
+
+  return { needsSetup, ensureSetupStatus, markConfigured, markNeedsSetup }
 }

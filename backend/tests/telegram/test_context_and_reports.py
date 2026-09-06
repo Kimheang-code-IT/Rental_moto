@@ -54,6 +54,23 @@ def test_normalize_adds_deadline_event_to_existing_destination():
     assert cfg["destinations"][0]["isInteractiveGroup"] is True
 
 
+def test_telegram_ids_equal_string_and_supergroup_prefix():
+    from app.services.telegram_context import telegram_ids_equal
+
+    assert telegram_ids_equal(1, "1")
+    assert telegram_ids_equal("1489002750", 1489002750)
+    assert telegram_ids_equal("-5378646026", "-1005378646026")
+    assert not telegram_ids_equal("-111", "-222")
+
+
+def test_user_access_matches_string_user_id():
+    from types import SimpleNamespace
+    from app.services.telegram_context import _require_private_user_access
+
+    cfg = {"userAccess": [{"userId": "7", "chatId": "1489002750", "chatbotEnabled": True}]}
+    _require_private_user_access(cfg, SimpleNamespace(id=7), "1489002750")
+
+
 def test_validate_accepts_single_group_synced_from_chat_id():
     cfg = normalize_telegram_config({"chatId": "-5378646026"})
     validate_telegram_config(cfg)
@@ -125,6 +142,37 @@ async def test_missing_context_headers_rejected(client):
     service = await _service_headers(client)
     response = await client.get("/api/v2/telegram/access", headers=service)
     assert response.status_code == 401
+
+
+async def test_access_unauthorized_group_returns_empty_modules(client, admin_headers):
+    await client.patch(
+        "/api/v2/settings/app-config",
+        headers=admin_headers,
+        json={"telegram": {"chatId": "-100111111"}},
+    )
+    headers = {
+        **(await _service_headers(client)),
+        "X-Telegram-User-Id": "800010",
+        "X-Telegram-Chat-Id": "-999999",
+        "X-Telegram-Chat-Type": "group",
+    }
+    response = await client.get("/api/v2/telegram/access", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["mode"] == "group"
+    assert data["linked"] is False
+    assert data["modules"]["rentals"] is False
+    assert data.get("reason") == "This Telegram group is not authorized"
+
+    matching = {
+        **(await _service_headers(client)),
+        "X-Telegram-User-Id": "800010",
+        "X-Telegram-Chat-Id": "-111111",
+        "X-Telegram-Chat-Type": "supergroup",
+    }
+    allowed = await client.get("/api/v2/telegram/access", headers=matching)
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["data"]["mode"] == "group"
 
 
 async def test_handoff_exchange(client, admin_headers):

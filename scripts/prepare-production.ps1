@@ -4,15 +4,15 @@
   Prepare HollyWing Motor for a clean production-ready local/prod start.
 
 .DESCRIPTION
-  - Resets PostgreSQL business data (keeps SuperAdmin bootstrap)
-  - Clears objects in the MinIO rental-files bucket
+  - Resets PostgreSQL operational data (keeps users, roles, sequences, settings)
+  - Clears local export files under /srv/data/exports
   - Removes local Python/Node/tooling caches
 
   Does NOT rewrite .env secrets. Fill .env.production.example manually before a real deploy.
 #>
 
 param(
-  [switch]$SkipMinio,
+  [switch]$SkipFiles,
   [switch]$SkipDbReset,
   [switch]$SkipCacheClean
 )
@@ -24,18 +24,13 @@ Set-Location $root
 Write-Host "== HollyWing Motor production prepare ==" -ForegroundColor Cyan
 
 if (-not $SkipDbReset) {
-  Write-Host "Resetting database to bootstrap-only..." -ForegroundColor Yellow
+  Write-Host "Resetting operational data (keeping users, roles, sequences, settings)..." -ForegroundColor Yellow
   docker compose exec -T api python scripts/reset_db.py
 }
 
-if (-not $SkipMinio) {
-  Write-Host "Clearing MinIO rental-files objects..." -ForegroundColor Yellow
-  $user = if ($env:MINIO_ROOT_USER) { $env:MINIO_ROOT_USER } else { "minioadmin" }
-  $pass = if ($env:MINIO_ROOT_PASSWORD) { $env:MINIO_ROOT_PASSWORD } else { "minioadmin123" }
-  $bucket = if ($env:MINIO_BUCKET) { $env:MINIO_BUCKET } else { "rental-files" }
-  docker run --rm --entrypoint /bin/sh --network rental_moto_default `
-    minio/mc:RELEASE.2025-08-13T08-35-41Z `
-    -c "mc alias set local http://minio:9000 $user $pass >/dev/null; mc rm --recursive --force --dangerous local/$bucket/ >/dev/null 2>&1; echo MinIO cleared"
+if (-not $SkipFiles) {
+  Write-Host "Clearing local export files..." -ForegroundColor Yellow
+  docker compose exec -T api sh -c "rm -rf /srv/data/exports/* 2>/dev/null; echo Export files cleared"
 }
 
 if (-not $SkipCacheClean) {

@@ -34,7 +34,7 @@ async def get_motorcycle(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     moto = await MotorcycleRepository(session).get(moto_id)
-    if moto is None:
+    if moto is None or moto.status == "Deleted":
         raise NotFoundError("Motorcycle not found")
     return envelope(_to_dict(moto))
 

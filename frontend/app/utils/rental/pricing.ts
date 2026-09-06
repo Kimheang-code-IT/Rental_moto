@@ -104,6 +104,39 @@ export function dueDateFromRatePlan(start: string, plan: RentalRatePlan, days = 
   return addDaysToDateTime(start, Math.max(1, Math.floor(Number(days) || 1)))
 }
 
+export interface LineDuration {
+  ratePlan: RentalRatePlan
+  days: number
+}
+
+export function durationFromDateRange(start: string, due: string): LineDuration {
+  const days = Math.max(1, daysBetween(start, due) || 1)
+  return { days, ratePlan: detectRatePlan(start, due, days) }
+}
+
+export function lineDueFromPlan(start: string, line: LineDuration): string {
+  if (!start) return ''
+  if (line.ratePlan === 'custom') return addDaysToDateTime(start, Math.max(1, line.days || 1))
+  return dueDateFromRatePlan(start, line.ratePlan, line.days)
+}
+
+/** Header due is the latest motorcycle return; it does not rewrite other lines. */
+export function latestLineDueDate(start: string, lines: LineDuration[]): string {
+  const dues = lines.map(line => lineDueFromPlan(start, line)).filter(Boolean)
+  if (!dues.length) return ''
+  return dues.reduce((a, b) => (a > b ? a : b))
+}
+
+/** Apply a shared header due to every line. Use only when staff edit the header Due field. */
+export function applySharedDurationToLines<T extends LineDuration>(
+  lines: T[],
+  start: string,
+  due: string,
+): T[] {
+  const next = durationFromDateRange(start, due)
+  return lines.map(line => ({ ...line, days: next.days, ratePlan: next.ratePlan }))
+}
+
 export function rentalRateType(days: number, start = '', due = ''): RentalRateType {
   const months = start && due ? calendarMonthsBetween(start, due) : 0
   if (months >= 1) return 'Monthly'
@@ -196,6 +229,47 @@ export function documentTotals(input: {
     taxPercent,
     tax,
     total: round2(taxable + tax),
+  }
+}
+
+export interface RentalReturnBalance {
+  totalDue: number
+  alreadyPaid: number
+  balanceDue: number
+  suggestedPayment: number
+  outstandingAfterPay: number
+}
+
+/**
+ * Return/close dialog totals.
+ * Remaining and the suggested payment are `totalDue - paid` (plus new return charges).
+ * Already paid is the recorded amount only — it does not include the payment being collected now.
+ */
+export function rentalReturnBalance(
+  rental: Record<string, unknown>,
+  returnChargesTotal = 0,
+  returnPaidAmount = 0,
+): RentalReturnBalance {
+  const charges = asMoney(returnChargesTotal)
+  const alreadyPaid = round2(asMoney(rental.paid))
+  const storedTotal = Number(rental.totalDue)
+  const composedTotal = Math.max(
+    asMoney(rental.rentalCharge)
+    + asMoney(rental.lateFee)
+    + asMoney(rental.additionalCharges)
+    - asMoney(rental.discount),
+    0,
+  )
+  const baseTotal = Number.isFinite(storedTotal) ? Math.max(storedTotal, 0) : composedTotal
+  const totalDue = round2(baseTotal + charges)
+  const balanceDue = round2(Math.max(totalDue - alreadyPaid, 0))
+  const payment = asMoney(returnPaidAmount)
+  return {
+    totalDue,
+    alreadyPaid,
+    balanceDue,
+    suggestedPayment: balanceDue,
+    outstandingAfterPay: round2(Math.max(balanceDue - payment, 0)),
   }
 }
 

@@ -5,8 +5,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v2.router import api_router
 from app.api.v2.health import router as health_router
+from app.api.v2.router import api_router
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.redis import close_redis
@@ -19,7 +19,17 @@ logger = logging.getLogger("hollywing")
 async def lifespan(app: FastAPI):
     settings.assert_safe_for_production()
     logger.info("HollyWing Motor API starting (%s)", settings.environment)
+
+    from app.scheduler import create_scheduler
+
+    scheduler = create_scheduler()
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("APScheduler started for deadline, outbox, and maintenance jobs")
+
     yield
+
+    scheduler.shutdown(wait=False)
     await close_redis()
     logger.info("HollyWing Motor API stopped")
 
@@ -55,7 +65,10 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
-        return JSONResponse(status_code=500, content={"detail": {"code": "INTERNAL_ERROR", "message": "Internal server error"}})
+        return JSONResponse(
+            status_code=500,
+            content={"detail": {"code": "INTERNAL_ERROR", "message": "Internal server error"}},
+        )
 
     app.include_router(health_router)
     app.include_router(api_router)

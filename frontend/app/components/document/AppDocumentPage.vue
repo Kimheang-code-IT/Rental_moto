@@ -85,7 +85,7 @@ const emit = defineEmits<{
   export: [request: ExportRequest]
 }>()
 
-const { t, te } = useI18n()
+const { t } = useI18n()
 
 const exportFields = computed(() => {
   if (!props.canExport) return []

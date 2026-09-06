@@ -6,7 +6,7 @@ from app.core.errors import NotFoundError
 from app.repositories.rental import ExpenseRepository
 from app.schemas.rental import ExpenseRecordRequest, ExpenseResponse, ExpenseUpdateRequest
 from app.services.admin_service import DashboardService
-from app.services.rental_service import RentalService, normalize_charge_type, normalize_expense_type, normalize_payment_method
+from app.services.rental_service import RentalService, normalize_expense_type
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 

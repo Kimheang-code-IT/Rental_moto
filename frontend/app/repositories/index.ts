@@ -1,4 +1,4 @@
-import type { AppConfigRepository, AppInfoRepository, StorageRepository } from '~/repositories/contracts/settings'
+import type { AppConfigRepository, AppInfoRepository } from '~/repositories/contracts/settings'
 import type {
   EntityRepository,
   FinanceRepository,
@@ -6,7 +6,6 @@ import type {
   SearchRepository,
 } from '~/repositories/contracts/entities'
 import { createHttpAppConfigRepository, createHttpAppInfoRepository } from '~/repositories/http/settings'
-import { createHttpStorageRepository } from '~/repositories/http/settings-storage'
 import {
   createHttpEntityRepository,
   createHttpFinanceRepository,
@@ -16,7 +15,6 @@ import {
 
 let appInfoRepo: AppInfoRepository
 let appConfigRepo: AppConfigRepository
-let storageRepo: StorageRepository
 let entityRepo: EntityRepository
 let rentalCommandRepo: RentalCommandRepository
 let financeRepo: FinanceRepository
@@ -28,7 +26,6 @@ function ensureRepositories() {
   initialized = true
   appInfoRepo = createHttpAppInfoRepository()
   appConfigRepo = createHttpAppConfigRepository()
-  storageRepo = createHttpStorageRepository()
   entityRepo = createHttpEntityRepository()
   rentalCommandRepo = createHttpRentalCommandRepository()
   financeRepo = createHttpFinanceRepository()
@@ -37,7 +34,7 @@ function ensureRepositories() {
 
 export function useSettingsRepositories() {
   ensureRepositories()
-  return { appInfo: appInfoRepo!, appConfig: appConfigRepo!, storage: storageRepo! }
+  return { appInfo: appInfoRepo!, appConfig: appConfigRepo! }
 }
 
 export function useEntityRepository(): EntityRepository {

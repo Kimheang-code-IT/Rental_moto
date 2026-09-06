@@ -6,7 +6,7 @@ from app.core.errors import NotFoundError
 from app.repositories.rental import PaymentRepository, RentalRepository
 from app.schemas.rental import PaymentRecordRequest, PaymentResponse, PaymentUpdateRequest
 from app.services.admin_service import DashboardService
-from app.services.rental_service import RentalService, normalize_charge_type, normalize_payment_method
+from app.services.rental_service import RentalService, normalize_payment_method
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 

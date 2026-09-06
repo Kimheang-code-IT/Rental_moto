@@ -2,11 +2,11 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Select, func, select, update
+from sqlalchemy import Select, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Motorcycle, Rental, RentalCharge, RentalCustomer, RentalExpense, RentalPayment
+from app.models import Motorcycle, Rental, RentalCharge, RentalCustomer, RentalExpense, RentalLine, RentalPayment
 from app.repositories.base import apply_sorting, build_q_filter, paginate
 
 
@@ -55,6 +55,8 @@ class MotorcycleRepository:
             statuses = [s.strip() for s in status.split(",") if s.strip()]
             if statuses:
                 stmt = stmt.where(Motorcycle.status.in_(statuses))
+        else:
+            stmt = stmt.where(Motorcycle.status != "Deleted")
         if start_date:
             stmt = stmt.where(Motorcycle.created_at >= start_date)
         if end_date:
@@ -74,7 +76,11 @@ class MotorcycleRepository:
         await self.session.execute(update(Motorcycle).where(Motorcycle.id == moto_id).values(status=status))
 
     async def status_counts(self) -> dict[str, int]:
-        result = await self.session.execute(select(Motorcycle.status, func.count()).group_by(Motorcycle.status))
+        result = await self.session.execute(
+            select(Motorcycle.status, func.count())
+            .where(Motorcycle.status != "Deleted")
+            .group_by(Motorcycle.status)
+        )
         return {row[0]: int(row[1]) for row in result.all()}
 
     async def next_code(self, prefix: str = "MC") -> str:
@@ -119,6 +125,8 @@ class CustomerRepository:
             statuses = [s.strip() for s in status.split(",") if s.strip()]
             if statuses:
                 stmt = stmt.where(RentalCustomer.status.in_(statuses))
+        else:
+            stmt = stmt.where(RentalCustomer.status != "Deleted")
         if start_date:
             stmt = stmt.where(RentalCustomer.created_at >= start_date)
         if end_date:
@@ -139,6 +147,13 @@ class CustomerRepository:
             select(func.count()).select_from(Rental).where(
                 Rental.customer_id == customer_id, Rental.status.in_(["Active", "Overdue"])
             )
+        )
+        return int(result.scalar() or 0) > 0
+
+    async def has_rentals(self, customer_id: str) -> bool:
+        """True when any rental row still references this customer (blocks hard delete)."""
+        result = await self.session.execute(
+            select(func.count()).select_from(Rental).where(Rental.customer_id == customer_id)
         )
         return int(result.scalar() or 0) > 0
 
@@ -166,25 +181,29 @@ class RentalRepository:
         "created_at": Rental.created_at,
     }
 
+    _LOAD = (
+        selectinload(Rental.payments),
+        selectinload(Rental.charges),
+        selectinload(Rental.lines),
+    )
+
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get(self, rental_id: str) -> Rental | None:
         result = await self.session.execute(
-            select(Rental).options(selectinload(Rental.payments), selectinload(Rental.charges)).where(Rental.id == rental_id)
+            select(Rental).options(*self._LOAD).where(Rental.id == rental_id)
         )
         return result.scalar_one_or_none()
 
     async def get_by_no(self, rental_no: str) -> Rental | None:
         result = await self.session.execute(
-            select(Rental)
-            .options(selectinload(Rental.payments), selectinload(Rental.charges))
-            .where(Rental.rental_no == rental_no)
+            select(Rental).options(*self._LOAD).where(Rental.rental_no == rental_no)
         )
         return result.scalar_one_or_none()
 
     def _base_stmt(self) -> Select:
-        return select(Rental).options(selectinload(Rental.payments), selectinload(Rental.charges))
+        return select(Rental).options(*self._LOAD)
 
     async def list(
         self, q: str | None, page: int, limit: int, sort: str | None, status: str | None,
@@ -203,7 +222,15 @@ class RentalRepository:
         if customer_id:
             stmt = stmt.where(Rental.customer_id == customer_id)
         if motorcycle_id:
-            stmt = stmt.where(Rental.motorcycle_id == motorcycle_id)
+            stmt = stmt.where(
+                or_(
+                    Rental.motorcycle_id == motorcycle_id,
+                    exists().where(
+                        RentalLine.rental_id == Rental.id,
+                        RentalLine.motorcycle_id == motorcycle_id,
+                    ),
+                )
+            )
         date_col = Rental.return_date if date_field == "return_date" else Rental.start_date
         if start_date:
             stmt = stmt.where(date_col >= start_date)

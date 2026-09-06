@@ -15,7 +15,6 @@ const emit = defineEmits<{
 const { t, te } = useI18n()
 const store = useAppDataStore()
 const preferences = usePreferencesStore()
-const auth = useAuthStore()
 const toast = useToast()
 const { confirm } = useConfirm()
 
@@ -53,13 +52,6 @@ function resetForm() {
   amount.value = 0
 }
 
-function nextExpenseNumber() {
-  const sequence = store.list('rentalExpenses').reduce((max, row) => {
-    const match = String(row.expenseNo || '').match(/(\d+)$/)
-    return Math.max(max, match ? Number(match[1]) : 0)
-  }, 0) + 1
-  return `RNX-${String(sequence).padStart(6, '0')}`
-}
 
 async function save() {
   if (!canSave.value || !props.motorcycle) return

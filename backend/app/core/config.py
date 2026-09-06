@@ -4,7 +4,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEV_JWT_SECRET = "dev-only-secret-change-me-in-production-0123456789abcdef"
 _DEV_TELEGRAM_SECRET = "dev-only-telegram-secret-change-me-0123456789abcdef"
-_DEV_MINIO_SECRET = "minioadmin123"
 
 
 def _is_placeholder_secret(value: str) -> bool:
@@ -24,10 +23,10 @@ class Settings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 20
 
+    # Redis DB map: /0 cache, /1 telegram-bot state, /2 celery results, /3 celery broker
     redis_url: str = "redis://localhost:6379/0"
-    celery_broker_url: str = "amqp://rental:rental@localhost:5672/rental"
+    celery_broker_url: str = "redis://localhost:6379/3"
     celery_result_backend: str = "redis://localhost:6379/2"
-    rabbitmq_url: str = "amqp://rental:rental@localhost:5672/rental"
 
     jwt_secret_key: str = _DEV_JWT_SECRET
     jwt_algorithm: str = "HS256"
@@ -63,13 +62,6 @@ class Settings(BaseSettings):
     export_dir: str = "./data/exports"
     export_url_expire_seconds: int = 3600
 
-    minio_enabled: bool = True
-    minio_endpoint: str = "minio:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = _DEV_MINIO_SECRET
-    minio_bucket: str = "rental-files"
-    minio_secure: bool = False
-
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -92,8 +84,6 @@ class Settings(BaseSettings):
             problems.append("JWT_SECRET_KEY is missing, too short, or still a development placeholder")
         if self.telegram_bot_client_secret == _DEV_TELEGRAM_SECRET or _is_placeholder_secret(self.telegram_bot_client_secret):
             problems.append("TELEGRAM_BOT_CLIENT_SECRET is still a development placeholder")
-        if self.minio_enabled and (self.minio_secret_key == _DEV_MINIO_SECRET or _is_placeholder_secret(self.minio_secret_key)):
-            problems.append("MINIO_SECRET_KEY is still a development placeholder")
         if self.debug:
             problems.append("DEBUG must be false in production")
         if self.cors_allow_private_networks:

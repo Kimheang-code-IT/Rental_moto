@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import type { TableQueryParams } from '~/types/api'
 import { compactQuery } from '~/utils/api/query'
 import { normalizeApiError } from '~/utils/api/errors'
-import { getAccessToken, getRefreshToken, setAccessToken } from '~/utils/auth/tokens'
+import { getAccessToken, getRefreshToken, setAccessToken, setTokens as persistTokenPair } from '~/utils/auth/tokens'
 import { createAuthRefresher } from '~/utils/api/auth-refresher'
 import { isAutoApiBase, isSameOriginApiBase, resolveApiBase } from '~/utils/api/base-url'
 import type { AuthUser } from '~/types/auth-user'
@@ -113,7 +113,10 @@ export function useApi() {
     refreshEndpoint: () => `${getApiBase()}/api/v2/auth/refresh`,
     timeoutMs: Number(config.public.apiTimeoutMs) || 30000,
     getRefreshToken: () => getRefreshToken(),
-    setAccessToken: token => setAccessToken(token),
+    setTokens: (access, refresh) => {
+      if (refresh) persistTokenPair(access, refresh)
+      else setAccessToken(access)
+    },
     onSessionExpired: () => handleSessionFailure(),
   })
 

@@ -90,7 +90,7 @@ NUXT_PUBLIC_AUTH_MODE=bearer
 ```env
 DATABASE_URL=postgresql://rental:rental@db:5432/rental_moto
 REDIS_URL=redis://redis:6379/0
-RABBITMQ_URL=amqp://rental:rental@rabbitmq:5672/rental
+CELERY_BROKER_URL=redis://redis:6379/3
 CELERY_RESULT_BACKEND=redis://redis:6379/2
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=15
@@ -155,18 +155,21 @@ Only **Active** customers appear in rental create form.
 | ------------------------------------------------ | -------- | --------------------------------------------- |
 | rental_no                                        | string   | RNT-2026-000001                               |
 | customer_id                                      | FK       |                                               |
-| motorcycle_id                                    | FK       |                                               |
-| start_date, due_date                             | datetime |                                               |
-| duration_days                                    | int      | Computed                                      |
+| motorcycle_id                                    | FK       | First motorcycle (display/filter helper)      |
+| start_date, due_date                             | datetime | Earliest start / latest due across lines      |
+| duration_days                                    | int      | Computed from header dates                    |
 | rate_type                                        | enum     | Daily, Monthly                                |
-| rate_amount, deposit, discount, tax_percent, tax | decimal  |                                               |
+| rate_amount, deposit, discount, tax_percent, tax | decimal  | Header totals                                 |
 | rental_charge, late_fee, additional_charges      | decimal  |                                               |
 | total_due, paid, outstanding                     | decimal  | Balance                                       |
 | payment_method                                   | enum     | Cash, Bank Transfer, Card, QR Payment,other   |
 | return_date, condition, return_note, note        |          | On close                                      |
 | payment_status                                   | enum     | Paid, Partial (completed only)                |
 | status                                           | enum     | `Active`, `Overdue`, `Completed`, `Cancelled` |
+| lines                                            | list     | One row per motorcycle on this transaction    |
 
+
+**Rental line (`rental_lines`):** `rental_id`, `motorcycle_id`, dates, rate, discount, `rental_charge`. One rental transaction can include two or more motorcycles; the rentals table still stores a single row.
 
 **List filters:**
 
@@ -224,14 +227,12 @@ Rate used:
 ### 5.2 Create Rental Flow
 
 1. Validate: customer (Active) + at least 1 motorcycle line
-2. For each motorcycle:
-  - Generate `RNT-{year}-{seq}`
-  - Compute charge from pricing tiers
-  - Apply discount/tax share
-3. Save rental with status `Active`
-4. Set motorcycle status → `Progressing`
-5. If paid > 0 → create `rental_payment` record
-6. Write audit log
+2. Generate one `RNT-{year}-{seq}` for the whole transaction
+3. For each motorcycle line, compute charge from pricing tiers and apply discount/tax share
+4. Save **one** `rentals` row (status = `Active`) plus `rental_lines` rows
+5. Set every selected motorcycle status → `Progressing`
+6. If paid > 0 → create one `rental_payment` on that rental
+7. Write audit log
 
 
 
@@ -241,7 +242,7 @@ Rate used:
 2. Final payment → `rental_payments`
 3. Recompute: paid, additional_charges, total_due, outstanding
 4. Set rental status → `Completed`, set return_date
-5. Set motorcycle → `Available`
+5. Set every motorcycle on the rental → `Available`
 6. Audit log
 
 
@@ -440,21 +441,21 @@ configuration.view
 ## 9. Docker Deployment (Full Stack)
 
 ```bash
-docker compose up -d
+docker compose up -d --build --remove-orphans
 ```
 
 Services:
 
-- `api` — FastAPI on port 8000
+- `api` — FastAPI on port 8000 (APScheduler for deadlines/outbox/maintenance; in-process exports)
 - `db` — PostgreSQL on port 5432
-- `redis` — Redis cache and token denylist on port 6379 (internal Docker network)
-- `rabbitmq` — durable task broker; management UI is local-only on port 15672
-- `worker-default` — reports, overdue scans, cleanup, and maintenance tasks
-- `worker-telegram` — critical password-reset and Telegram notification queues
-- `worker-export` — CSV/XLSX/PDF export generation
-- `scheduler` — Celery Beat scheduled summaries and maintenance jobs
-- `telegram-bot` — Telegram commands, keyboards, summaries, notifications, and password-reset delivery
+- `redis` — cache (`/0`), telegram-bot state (`/1`), Celery results (`/2`), Celery broker (`/3`)
+- `worker-telegram` — Redis/Celery worker for text Telegram notifications and password-reset delivery
+- `telegram-bot` — Telegram commands, keyboards, and interactive flows
 - `frontend` — statically generated Nuxt client served by nginx (no Node runtime)
+
+Telegram notifications are **text only** (no invoice PDF attachment). Browser
+invoice print/export remains in the Nuxt UI. CSV/XLSX exports are written under
+`/srv/data/exports` on the shared `appdata` volume.
 
 For local frontend development outside Docker:
 

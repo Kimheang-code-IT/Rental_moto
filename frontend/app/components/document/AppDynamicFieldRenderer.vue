@@ -217,7 +217,8 @@ function applyUserAccessSelection(row: TelegramUserAccess, userId: string | unde
   if (!user) return
   row.userId = user.id
   row.userName = String(user.displayName || user.username || user.id)
-  if (user.telegramChatId) row.chatId = String(user.telegramChatId)
+  // Auto-fill only when the row has no Chat ID yet — never wipe a manually typed one.
+  if (!row.chatId && user.telegramChatId) row.chatId = String(user.telegramChatId)
 }
 
 async function syncUserAccessFromUsers() {
@@ -235,7 +236,8 @@ async function syncUserAccessFromUsers() {
         id: prior?.id || createClientId('tua'),
         userId: user.id,
         userName: prior?.userName || name,
-        chatId: String(user.telegramChatId || prior?.chatId || ''),
+        // Keep existing Chat ID (manually typed or linked); fill from the users API only when empty.
+        chatId: prior?.chatId || String(user.telegramChatId || ''),
         chatbotEnabled: prior?.chatbotEnabled ?? true,
         groupEnabled: prior?.groupEnabled ?? true,
       }
@@ -675,10 +677,16 @@ function removeDestination(id: string) {
               {{ t('rental.settings.telegramUserAccessChatId') }}
             </th>
             <th class="px-3 py-2 font-medium">
-              {{ t('rental.settings.telegramUserAccessChatbot') }}
+              <span
+                  :title="t('rental.settings.telegramUserAccessChatbotHelp')"
+                  class="cursor-help"
+              >{{ t('rental.settings.telegramUserAccessChatbot') }}</span>
             </th>
             <th class="px-3 py-2 font-medium">
-              {{ t('rental.settings.telegramUserAccessGroup') }}
+              <span
+                  :title="t('rental.settings.telegramUserAccessGroupHelp')"
+                  class="cursor-help"
+              >{{ t('rental.settings.telegramUserAccessGroup') }}</span>
             </th>
             <th class="px-3 py-2 font-medium" />
           </tr>

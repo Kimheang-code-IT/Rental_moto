@@ -8,6 +8,8 @@ from app.repositories.rental import CustomerRepository, MotorcycleRepository, Re
 
 VALID_MOTORCYCLE_STATUS = ["Available", "Progressing", "Maintenance"]
 VALID_CUSTOMER_STATUS = ["Active", "Inactive"]
+# Soft-delete marker: row kept for rental history FK; hidden from normal lists/get.
+SOFT_DELETED_STATUS = "Deleted"
 
 
 class MotorcycleService:
@@ -50,7 +52,7 @@ class MotorcycleService:
 
     async def update(self, moto_id: str, data) -> Motorcycle:
         moto = await self.repo.get(moto_id)
-        if moto is None:
+        if moto is None or moto.status == SOFT_DELETED_STATUS:
             raise NotFoundError("Motorcycle not found")
         updates = data.model_dump(exclude_unset=True, by_alias=False)
         if "code" in updates:
@@ -83,11 +85,17 @@ class MotorcycleService:
 
     async def delete(self, moto_id: str) -> None:
         moto = await self.repo.get(moto_id)
-        if moto is None:
+        if moto is None or moto.status == SOFT_DELETED_STATUS:
             raise NotFoundError("Motorcycle not found")
         if moto.status == "Progressing":
             raise ConflictError("Motorcycle is currently rented and cannot be deleted")
-        await self.repo.delete(moto)
+        active = await self.rentals.list(
+            q=None, page=1, limit=1, sort=None, status="Active,Overdue", motorcycle_id=moto_id
+        )
+        if active.total > 0:
+            raise ConflictError("Motorcycle has active rentals and cannot be deleted")
+        # Soft-delete so rental history (plate/model snapshot + FK) remains intact.
+        moto.status = SOFT_DELETED_STATUS
         await self.audit.add(
             AuditLog(
                 user_id=self.actor.id if self.actor else None,
@@ -140,7 +148,7 @@ class CustomerService:
 
     async def update(self, customer_id: str, data) -> RentalCustomer:
         customer = await self.repo.get(customer_id)
-        if customer is None:
+        if customer is None or customer.status == SOFT_DELETED_STATUS:
             raise NotFoundError("Customer not found")
         updates = data.model_dump(exclude_unset=True, by_alias=False)
         updates.pop("code", None)
@@ -165,13 +173,12 @@ class CustomerService:
 
     async def delete(self, customer_id: str) -> None:
         customer = await self.repo.get(customer_id)
-        if customer is None:
+        if customer is None or customer.status == SOFT_DELETED_STATUS:
             raise NotFoundError("Customer not found")
-        if customer.status != "Inactive":
-            raise ConflictError("Only inactive customers can be deleted")
         if await self.repo.has_active_rentals(customer_id):
             raise ConflictError("Customer has active rentals and cannot be deleted")
-        await self.repo.delete(customer)
+        # Soft-delete: keep the row so rental history still references customer name/id.
+        customer.status = SOFT_DELETED_STATUS
         await self.audit.add(
             AuditLog(
                 user_id=self.actor.id if self.actor else None,

@@ -24,7 +24,14 @@ async def global_search(
     motos = (
         await session.execute(
             select(Motorcycle)
-            .where(or_(func.lower(Motorcycle.code).like(term), func.lower(Motorcycle.model).like(term), func.lower(func.coalesce(Motorcycle.plate, "")).like(term)))
+            .where(
+                Motorcycle.status != "Deleted",
+                or_(
+                    func.lower(Motorcycle.code).like(term),
+                    func.lower(Motorcycle.model).like(term),
+                    func.lower(func.coalesce(Motorcycle.plate, "")).like(term),
+                ),
+            )
             .limit(limit)
         )
     ).scalars().all() if user_has_permission(user, "rental.motorcycles.view") else []
@@ -43,12 +50,13 @@ async def global_search(
         await session.execute(
             select(RentalCustomer)
             .where(
+                RentalCustomer.status != "Deleted",
                 or_(
                     func.lower(RentalCustomer.code).like(term),
                     func.lower(RentalCustomer.full_name).like(term),
                     func.lower(func.coalesce(RentalCustomer.company, "")).like(term),
                     func.lower(func.coalesce(RentalCustomer.phone, "")).like(term),
-                )
+                ),
             )
             .limit(limit)
         )

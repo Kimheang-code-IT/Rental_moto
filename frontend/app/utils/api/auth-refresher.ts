@@ -10,13 +10,17 @@ export interface AuthRefresherOptions {
   refreshEndpoint: string | (() => string)
   timeoutMs?: number
   getRefreshToken: () => string | null
-  setAccessToken: (token: string | null) => void
+  setTokens: (access: string, refresh: string | null) => void
   onSessionExpired: () => void
   /** Injectable request function returning the refresh response payload. */
-  post?: (url: string, body: Record<string, unknown>, timeoutMs: number) => Promise<{ accessToken?: string }>
+  post?: (url: string, body: Record<string, unknown>, timeoutMs: number) => Promise<PostRefreshResponse>
 }
 
-export type PostRefreshResponse = { data?: { accessToken?: string } } | { accessToken?: string }
+export type PostRefreshResponse = {
+  data?: { accessToken?: string, refreshToken?: string }
+  accessToken?: string
+  refreshToken?: string
+}
 
 export function createAuthRefresher(options: AuthRefresherOptions) {
   let refreshPromise: Promise<boolean> | null = null
@@ -33,7 +37,7 @@ export function createAuthRefresher(options: AuthRefresherOptions) {
   const post = options.post || defaultPost
 
   /**
-   * Rotate the refresh token for a fresh access token.
+   * Rotate the refresh token for a fresh access/refresh pair.
    * Returns true only when a new access token is stored.
    */
   function rotate(): Promise<boolean> {
@@ -49,13 +53,13 @@ export function createAuthRefresher(options: AuthRefresherOptions) {
           ? options.refreshEndpoint()
           : options.refreshEndpoint
         const response = await post(endpoint, { refreshToken }, options.timeoutMs || 30000)
-        const payload = response as { data?: { accessToken?: string }, accessToken?: string }
-        const accessToken = payload?.data?.accessToken || payload?.accessToken
+        const accessToken = response?.data?.accessToken || response?.accessToken
+        const nextRefresh = response?.data?.refreshToken || response?.refreshToken || null
         if (!accessToken) {
           options.onSessionExpired()
           return false
         }
-        options.setAccessToken(accessToken)
+        options.setTokens(accessToken, nextRefresh)
         return true
       }
       catch {
