@@ -1,0 +1,61 @@
+# Production overlay for HollyWing Motor.
+#
+# First-time setup on the production host:
+#   1. Copy this repo (needed for compose files)
+#   2. Copy `.env.production.example` to `.env` and fill real secrets
+#   3. docker login ghcr.io -u YOUR_GITHUB_USERNAME
+#   4. docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   5. docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+#
+# Do not pass `--build` on the production host; images come from GHCR.
+# Set IMAGE_TAG to `latest` (default here), a git SHA, or a version tag such as `v1.0.0`.
+#
+# Differences from development:
+# - Pulls pre-built images instead of building from source
+#   (pull_policy defaults to `missing` so `up -d` also works offline with
+#   already-pulled images; run the explicit `pull` step above to update)
+# - ENVIRONMENT=production, DEBUG=false
+# - CORS private-network helper disabled
+# - Database / Redis ports are not published to the host
+# - API port is not published (nginx proxies `/api` and `/health`)
+
+services:
+  db:
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  api:
+    image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/api:${IMAGE_TAG:-latest}
+    build: !reset {}
+    pull_policy: ${PULL_POLICY:-missing}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      CORS_ALLOW_PRIVATE_NETWORKS: ${CORS_ALLOW_PRIVATE_NETWORKS:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports: !reset []
+
+  frontend:
+    image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/frontend:${IMAGE_TAG:-latest}
+    build: !reset {}
+    pull_policy: ${PULL_POLICY:-missing}
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+
+  worker-telegram:
+    image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/api:${IMAGE_TAG:-latest}
+    build: !reset {}
+    pull_policy: ${PULL_POLICY:-missing}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+
+  telegram-bot:
+    image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/telegram-bot:${IMAGE_TAG:-latest}
+    build: !reset {}
+    pull_policy: ${PULL_POLICY:-missing}
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}

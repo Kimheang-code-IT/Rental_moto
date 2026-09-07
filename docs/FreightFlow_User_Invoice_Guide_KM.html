@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FreightFlow — ណែនាំការប្រើប្រាស់ និងវិក្កយបត្រ</title>
+    <style>
+        * { box-sizing: border-box; }
+
+        html {
+            background-color: #cbd5e1;
+            display: flex;
+            justify-content: center;
+            padding: 20px 0;
+        }
+
+        body {
+            font-family: 'Khmer OS Content', 'Khmer OS', 'Noto Sans Khmer', 'Battambang', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #1E293B;
+            line-height: 1.8;
+            margin: 0;
+            width: 210mm;
+            background-color: #FFFFFF;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        @media print {
+            html { background-color: transparent; display: block; padding: 0; }
+            body { width: 100%; margin: 0; box-shadow: none; }
+
+            @page {
+                size: A4;
+                margin: 12mm 12mm 14mm 12mm;
+            }
+            @page :first { margin: 0mm; }
+
+            .cover-page {
+                height: 297mm;
+                width: 100%;
+                page-break-after: always;
+                margin: 0;
+            }
+            .content-pages { padding: 0; }
+            h2, h3 { page-break-after: avoid; }
+        }
+
+        .cover-page {
+            position: relative;
+            height: 297mm;
+            width: 100%;
+            background: linear-gradient(180deg, #0B0B0B 0%, #1A1A1A 55%, #0F172A 100%);
+            border-top: 12px solid #1E40AF;
+            border-bottom: 12px solid #06B6D4;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 36px 40px;
+            overflow: hidden;
+        }
+
+        .content-pages { padding: 12mm; }
+
+        .cover-logo {
+            display: block;
+            margin: 0 auto 28px auto;
+            width: 180px;
+            height: auto;
+            max-height: 200px;
+            object-fit: contain;
+            filter: drop-shadow(0 8px 24px rgba(6, 182, 212, 0.35));
+        }
+
+        .cover-page h1 {
+            color: #F8FAFC;
+            font-size: 2.2em;
+            margin: 0 0 10px 0;
+            font-weight: 800;
+            line-height: 1.25;
+        }
+        .cover-page h2 {
+            color: #67E8F9;
+            font-size: 1.35em;
+            margin: 0 0 18px 0;
+            border: none;
+            padding: 0;
+            font-weight: 600;
+        }
+        .cover-page h3 {
+            color: #CBD5E1;
+            font-size: 1.05em;
+            font-weight: 400;
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+
+        .cover-meta {
+            display: inline-block;
+            text-align: left;
+            background-color: rgba(255, 255, 255, 0.96);
+            padding: 22px 30px;
+            border-left: 8px solid #06B6D4;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            width: 85%;
+            max-width: 600px;
+        }
+        .cover-meta p { margin: 10px 0; color: #1E293B; font-size: 1.02em; }
+        .cover-meta strong { color: #1E40AF; }
+
+        h1, h2, h3, h4 { color: #1E40AF; }
+
+        .content-pages h2 {
+            border-bottom: 3px solid #E2E8F0;
+            position: relative;
+            padding-bottom: 12px;
+            margin-top: 2.2em;
+            margin-bottom: 0.9em;
+            font-size: 1.45em;
+        }
+        .content-pages h2::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: 0;
+            width: 80px;
+            height: 3px;
+            background-color: #06B6D4;
+        }
+        .content-pages h3 {
+            margin-top: 1.5em;
+            margin-bottom: 0.6em;
+            font-size: 1.15em;
+            border-left: 4px solid #10B981;
+            padding-left: 12px;
+        }
+        .content-pages h4 {
+            margin-top: 1em;
+            margin-bottom: 0.4em;
+            font-size: 1.02em;
+            color: #334155;
+        }
+
+        p, li { color: #334155; font-size: 11pt; }
+        ul, ol { margin-bottom: 16px; padding-left: 22px; }
+        ul li, ol li { margin-bottom: 7px; }
+        ul li::marker { color: #06B6D4; font-size: 1.2em; }
+        strong { color: #0F172A; font-weight: 600; }
+
+        .flow-container {
+            text-align: center;
+            margin: 24px 0;
+            background-color: #F8FAFC;
+            padding: 20px 10px;
+            border-radius: 12px;
+            border: 1px solid #E2E8F0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+        .flow-step {
+            display: inline-block;
+            background-color: #1E40AF;
+            color: #FFFFFF;
+            padding: 7px 12px;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 9.5pt;
+        }
+        .flow-arrow { color: #06B6D4; font-weight: bold; font-size: 12pt; }
+
+        .info-box {
+            background-color: #F0FDF4;
+            border-left: 4px solid #10B981;
+            padding: 14px 18px;
+            margin: 16px 0;
+        }
+        .info-box p { margin: 0; color: #166534; }
+
+        .warn-box {
+            background-color: #FFF7ED;
+            border-left: 4px solid #F97316;
+            padding: 14px 18px;
+            margin: 16px 0;
+        }
+        .warn-box p { margin: 0; color: #9A3412; }
+
+        .invoice-box {
+            background-color: #EFF6FF;
+            border-left: 4px solid #2563EB;
+            padding: 14px 18px;
+            margin: 16px 0;
+        }
+        .invoice-box p { margin: 0; color: #1E3A8A; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 14px 0 20px;
+            font-size: 10.2pt;
+        }
+        th, td {
+            border: 1px solid #E2E8F0;
+            padding: 8px 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th { background: #F1F5F9; color: #1E40AF; font-weight: 700; }
+
+        .tag {
+            display: inline-block;
+            background: #EEF2FF;
+            color: #3730A3;
+            border-radius: 6px;
+            padding: 1px 7px;
+            font-size: 9pt;
+            font-weight: 600;
+        }
+        .tree { list-style: none; padding-left: 0; }
+        .tree ul { list-style: disc; margin-top: 6px; }
+        .tree > li {
+            background: #F8FAFC;
+            border: 1px solid #E2E8F0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="cover-page">
+        <img class="cover-logo" src="logo.png" alt="Company logo" width="180" height="180" />
+        <h1>FreightFlow</h1>
+        <h2>Freight Forwarding Management System</h2>
+        <h3>ឯកសារណែនាំការប្រើប្រាស់<br>ទំព័រ · មុខងារ · លំហូរវិក្កយបត្រ និងការទូទាត់</h3>
+        <div class="cover-meta">
+            <p><strong>រៀបចំសម្រាប់៖</strong> អ្នកប្រើប្រាស់ / ប្រតិបត្តិការ / ហិរញ្ញវត្ថុ</p>
+            <p><strong>កាលបរិច្ឆេទ៖</strong> ខែកញ្ញា ឆ្នាំ ២០២៦</p>
+            <p><strong>គោលបំណង៖</strong> ពន្យល់រចនាសម្ព័ន្ធប្រព័ន្ធ និងរបៀបបង្កើតវិក្កយបត្រ រហូតដល់ការទូទាត់</p>
+            <p><strong>ភាសា៖</strong> ខ្មែរ</p>
+        </div>
+    </div>
+
+    <div class="content-pages">
+
+        <h2>១. សេចក្តីណែនាំ</h2>
+        <p><strong>FreightFlow</strong> គឺជាប្រព័ន្ធគ្រប់គ្រង Freight Forwarding ដែលភ្ជាប់ពី <strong>សម្រង់តម្លៃ (Quotation)</strong> → <strong>បញ្ជាសេវាកម្ម (Service Order)</strong> → <strong>ប្រតិបត្តិការ / ឯកសារ</strong> → <strong>វិក្កយបត្រ និងការទូទាត់</strong>។</p>
+        <div class="invoice-box">
+            <p><strong>ចំណុចសំខាន់សម្រាប់វិក្កយបត្រ៖</strong> វិក្កយបត្រត្រូវបានបង្កើតពី Service Order (ឬពីថ្លៃសេវា / Debit Note) បន្ទាប់ពីមានព័ត៌មានអតិថិជន ទំនិញ ចលនា និងថ្លៃសេវាគ្រប់គ្រាន់។</p>
+        </div>
+
+        <h2>២. រចនាសម្ព័ន្ធប្រព័ន្ធ (ម៉ឺនុយ)</h2>
+        <ul class="tree">
+            <li><strong>Dashboard</strong> — ផ្ទាំងគ្រប់គ្រង</li>
+            <li><strong>Quotation Management</strong> — គ្រប់គ្រងសម្រង់តម្លៃ</li>
+            <li>
+                <strong>Service Order</strong> — បញ្ជាសេវាកម្ម
+                <ul>
+                    <li>General Information — ព័ត៌មានទូទៅ</li>
+                    <li>
+                        Movement and Cargo Information — ចលនា និងទំនិញ
+                        <ul>
+                            <li>Invoice — វិក្កយបត្រ</li>
+                            <li>Shipment Register — ចុះបញ្ជីដឹកជញ្ជូន</li>
+                            <li>Bill — វិក្កយបត្រអ្នកផ្គត់ផ្គង់ / Bill</li>
+                            <li>Packing List — បញ្ជីវេចខ្ចប់</li>
+                            <li>Container and Transportation — កុងតឺន័រ និងដឹកជញ្ជូន</li>
+                            <li>Checkpoint Arrival — មកដល់ចំណុចត្រួតពិនិត្យ</li>
+                            <li>Final Destination Arrival — មកដល់ទិសដៅចុងក្រោយ</li>
+                        </ul>
+                    </li>
+                    <li>Customs Declarations Information — ប្រកាសគយ</li>
+                    <li>Document and Attachments — ឯកសារ និងឯកសារភ្ជាប់</li>
+                    <li>
+                        Financial Information and Payment — ហិរញ្ញវត្ថុ និងការទូទាត់
+                        <ul>
+                            <li>Debit Note — កំណត់ត្រាឥណពន្ធ</li>
+                            <li>Customer Payment — ការទូទាត់របស់អតិថិជន</li>
+                            <li>Expense and Profit — ចំណាយ និងប្រាក់ចំណេញ</li>
+                        </ul>
+                    </li>
+                </ul>
+            </li>
+            <li>
+                <strong>Financial</strong> — ហិរញ្ញវត្ថុ
+                <ul>
+                    <li>Payment — ការទូទាត់</li>
+                </ul>
+            </li>
+        </ul>
+
+        <h2>៣. លំហូរអាជីវកម្មរហូតដល់វិក្កយបត្រ</h2>
+        <div class="flow-container">
+            <span class="flow-step">Quotation</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">Service Order</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">Cargo / Movement</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">Documents</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">Invoice</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">Payment</span>
+        </div>
+
+        <h3>ជំហានសង្ខេបដើម្បីធ្វើវិក្កយបត្រ</h3>
+        <ol>
+            <li>បង្កើត / ទទួលយក <strong>Quotation</strong></li>
+            <li>បម្លែងទៅ <strong>Service Order</strong></li>
+            <li>បំពេញ <strong>General Information</strong> (អតិថិជន, ទិសដៅ, ប្រភេទសេវា)</li>
+            <li>បញ្ចូល <strong>Movement and Cargo</strong> (ទំនិញ, កុងតឺន័រ, ផ្លូវដឹក)</li>
+            <li>ភ្ជាប់ឯកសារ (Packing List, Bill, Shipment Register, Customs…)</li>
+            <li>កំណត់ថ្លៃសេវា / Debit Note បើមាន</li>
+            <li>បង្កើត <strong>Invoice</strong> ពី Service Order</li>
+            <li>ផ្ញើអតិថិជន → ទទួល <strong>Customer Payment</strong> → កត់ត្រា <strong>Payment</strong></li>
+        </ol>
+
+        <h2>៤. Dashboard</h2>
+        <p>ផ្ទាំងទិដ្ឋភាពរហ័សសម្រាប់អ្នកគ្រប់គ្រង និងប្រតិបត្តិការ។</p>
+        <ul>
+            <li>ចំនួន Quotation កំពុងរង់ចាំ / បានទទួលយក</li>
+            <li>Service Order កំពុងដំណើរការ / បានបញ្ចប់</li>
+            <li>វិក្កយបត្រមិនទាន់ទូទាត់ (Outstanding)</li>
+            <li>ការទូទាត់ថ្មីៗ និងសង្ខេបចំណូល–ចំណាយ</li>
+            <li>ការជូនដំណឹងសម្រាប់ Checkpoint / Destination Arrival</li>
+        </ul>
+
+        <h2>៥. Quotation Management</h2>
+        <p>គ្រប់គ្រងសម្រង់តម្លៃមុនចាប់ផ្តើមសេវា។</p>
+        <h4>មុខងារ</h4>
+        <ul>
+            <li>បង្កើតសម្រង់តម្លៃថ្មី (អតិថិជន, ទិសដៅ, ប្រភេទដឹក, ថ្លៃសេវា)</li>
+            <li>កែព្រាង / ផ្ញើទៅអតិថិជន / បង្កើតកំណែ (Revision)</li>
+            <li>ទទួលយក ឬបដិសេធ</li>
+            <li>បម្លែងសម្រង់ដែលទទួលយកទៅ <strong>Service Order</strong></li>
+        </ul>
+        <div class="info-box">
+            <p><strong>ច្បាប់៖</strong> មានតែសម្រង់ដែល <strong>Accepted</strong> ទេ ទើបបម្លែងទៅ Service Order បាន។ កំណែដែលបានផ្ញើមិនគួរកែដោយសម្ងាត់ — បង្កើត Revision ថ្មី។</p>
+        </div>
+
+        <h2>៦. Service Order</h2>
+        <p>បញ្ជាសេវាកម្មគឺជាកំណត់ត្រាស្នូល។ វិក្កយបត្រ និងឯកសារភាគច្រើនភ្ជាប់ពីទីនេះ។</p>
+
+        <h3>៦.១ General Information</h3>
+        <ul>
+            <li>លេខ Service Order</li>
+            <li>អតិថិជន / អ្នកទទួលទំនិញ / អ្នកផ្ញើ</li>
+            <li>ប្រភេទសេវា (Import / Export / Transit…)</li>
+            <li>ច្រកចេញ–ចូល, ឃ្លាំង, ទិសដៅ</li>
+            <li>កាលបរិច្ឆេទចាប់ផ្តើម / គោលដៅ</li>
+            <li>ស្ថានភាពបញ្ជា (Draft / Confirmed / In Progress / Completed)</li>
+        </ul>
+
+        <h3>៦.២ Movement and Cargo Information</h3>
+        <p>ផ្នែកប្រតិបត្តិការ និងឯកសារដឹកជញ្ជូន។</p>
+
+        <h4>Invoice <span class="tag">វិក្កយបត្រអតិថិជន</span></h4>
+        <ul>
+            <li>បង្កើតវិក្កយបត្រពី Service Order</li>
+            <li>បញ្ចូលបន្ទាត់ថ្លៃសេវា (Freight, Customs, Handling, Storage…)</li>
+            <li>ពន្ធ / បញ្ចុះតម្លៃ / រូបិយប័ណ្ណ</li>
+            <li>មើលស្ថានភាព៖ Draft → Issued → Partially Paid → Paid</li>
+            <li>បោះពុម្ព / រក្សាជា PDF / ផ្ញើអតិថិជន</li>
+        </ul>
+
+        <h4>Shipment Register</h4>
+        <ul>
+            <li>ចុះបញ្ជីដឹកជញ្ជូន (លេខដឹក, កាលបរិច្ឆេទ, អ្នកដឹក)</li>
+            <li>ភ្ជាប់ទៅ Container / Route</li>
+        </ul>
+
+        <h4>Bill</h4>
+        <ul>
+            <li>វិក្កយបត្រឬវិក័យប័ត្រពីអ្នកផ្គត់ផ្គង់ / Carrier</li>
+            <li>ប្រើសម្រាប់តាមដានថ្លៃចំណាយដែលត្រូវបង់ទៅភាគីទីបី</li>
+        </ul>
+
+        <h4>Packing List</h4>
+        <ul>
+            <li>បញ្ជីទំនិញ / កញ្ចប់ / ទម្ងន់ / ទំហំ</li>
+            <li>ភ្ជាប់ជាឯកសារសម្រាប់គយ និងការដឹក</li>
+        </ul>
+
+        <h4>Container and Transportation</h4>
+        <ul>
+            <li>លេខកុងតឺន័រ, ប្រភេទ, Seal</li>
+            <li>រថយន្ត / កប៉ាល់ / ជើងហោះហើរ</li>
+            <li>កាលវិភាគចេញ–មកដល់</li>
+        </ul>
+
+        <h4>Checkpoint Arrival</h4>
+        <ul>
+            <li>កត់ត្រាពេលមកដល់ចំណុចត្រួតពិនិត្យ</li>
+            <li>ស្ថានភាព / កំណត់សម្គាល់ / ភ្ជាប់រូបភាព ឬឯកសារ</li>
+        </ul>
+
+        <h4>Final Destination Arrival</h4>
+        <ul>
+            <li>កត់ត្រាមកដល់ទិសដៅចុងក្រោយ</li>
+            <li>ជំហានសំខាន់មុនបញ្ចប់ Service Order និងចេញវិក្កយបត្រចុងក្រោយ</li>
+        </ul>
+
+        <h3>៦.៣ Customs Declarations Information</h3>
+        <ul>
+            <li>លេខប្រកាសគយ / ប្រភេទប្រកាស</li>
+            <li>កាលបរិច្ឆេទដាក់ / អនុម័ត</li>
+            <li>ស្ថានភាពគយ និងឯកសារភ្ជាប់</li>
+        </ul>
+
+        <h3>៦.៤ Document and Attachments</h3>
+        <ul>
+            <li>ផ្ទុកឯកសារ (PDF, រូបភាព, Excel…)</li>
+            <li>ភ្ជាប់ទៅ Quotation / Service Order / Invoice / Payment</li>
+            <li>គ្រប់គ្រងកំណែឯកសារ និងសិទ្ធិទាញយក</li>
+        </ul>
+
+        <h3>៦.៥ Financial Information and Payment</h3>
+
+        <h4>Debit Note</h4>
+        <ul>
+            <li>កត់ថ្លៃបន្ថែមដែលអតិថិជនត្រូវបង់ (ឧ. demurrage, storage, correction)</li>
+            <li>អាចបម្លែង ឬបញ្ចូលទៅ Invoice</li>
+        </ul>
+
+        <h4>Customer Payment</h4>
+        <ul>
+            <li>កត់ការទូទាត់ពីអតិថិជន</li>
+            <li>ភ្ជាប់ទៅ Invoice (ទូទាត់ពេញ ឬផ្នែក)</li>
+            <li>វិធីទូទាត់៖ សាច់ប្រាក់ / ធនាគារ / ABA / ផ្ទេរ…</li>
+        </ul>
+
+        <h4>Expense and Profit</h4>
+        <ul>
+            <li>កត់ចំណាយតាម Service Order</li>
+            <li>គណនាប្រាក់ចំណេញ = ចំណូល (Invoice/Payment) − ចំណាយ (Bill/Expense)</li>
+        </ul>
+
+        <h2>៧. Financial → Payment</h2>
+        <p>ម៉ូឌុលហិរញ្ញវត្ថុកណ្តាល សម្រាប់មើល និងគ្រប់គ្រងការទូទាត់ទូទាំងប្រព័ន្ធ។</p>
+        <ul>
+            <li>បញ្ជីការទូទាត់ទាំងអស់</li>
+            <li>ត្រងតាមអតិថិជន / Invoice / កាលបរិច្ឆេទ / ស្ថានភាព</li>
+            <li>បែងចែកការទូទាត់ទៅវិក្កយបត្រជាច្រើន (Allocation)</li>
+            <li>មើលសមតុល្យនៅសល់ (Outstanding)</li>
+        </ul>
+
+        <h2>៨. របៀបធ្វើវិក្កយបត្រ (ជំហានលម្អិត)</h2>
+
+        <h3>៨.១ មុនបង្កើត Invoice ត្រូវមានអ្វីខ្លះ?</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>តម្រូវការ</th>
+                    <th>មកពីម៉ូឌុល</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>អតិថិជន និងអាសយដ្ឋានវិក្កយបត្រ</td>
+                    <td>General Information</td>
+                </tr>
+                <tr>
+                    <td>លេខ Service Order / ឯកសារយោង</td>
+                    <td>Service Order</td>
+                </tr>
+                <tr>
+                    <td>ព័ត៌មានទំនិញ / កុងតឺន័រ (បើត្រូវបង្ហាញ)</td>
+                    <td>Cargo / Container</td>
+                </tr>
+                <tr>
+                    <td>បន្ទាត់ថ្លៃសេវា</td>
+                    <td>Quotation / Debit Note / Manual lines</td>
+                </tr>
+                <tr>
+                    <td>រូបិយប័ណ្ណ និងអត្រាប្តូរប្រាក់</td>
+                    <td>Financial settings / Invoice form</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3>៨.២ ជំហានបង្កើត Invoice</h3>
+        <ol>
+            <li>បើក <strong>Service Order</strong> ដែលត្រូវចេញវិក្កយបត្រ</li>
+            <li>ចូលផ្នែក <strong>Movement and Cargo → Invoice</strong> (ឬប៊ូតុង Create Invoice)</li>
+            <li>ប្រព័ន្ធបង្កើតព្រាងវិក្កយបត្រ រួចទាញព័ត៌មានអតិថិជន និងថ្លៃសេវាពី Quotation/Debit Note</li>
+            <li>ពិនិត្យ / បន្ថែម / កែបន្ទាត់ថ្លៃ</li>
+            <li>រក្សាទុកជា <strong>Draft</strong></li>
+            <li>ពេលត្រឹមត្រូវ ចុច <strong>Issue / Post</strong> ដើម្បីចេញផ្លូវការ</li>
+            <li>បោះពុម្ព ឬរក្សាជា PDF ផ្ញើអតិថិជន</li>
+        </ol>
+
+        <h3>៨.៣ បន្ទាប់ពីចេញ Invoice</h3>
+        <ol>
+            <li>អតិថិជនបង់ប្រាក់</li>
+            <li>ចូល <strong>Customer Payment</strong> ឬ <strong>Financial → Payment</strong></li>
+            <li>ជ្រើស Invoice → បញ្ចូលចំនួនទឹកប្រាក់ → វិធីទូទាត់ → កាលបរិច្ឆេទ</li>
+            <li>ប្រព័ន្ធធ្វើបច្ចុប្បន្នភាពស្ថានភាព Invoice (Partial / Paid)</li>
+            <li>បើមានចំណាយភាគីទីបី កត់ក្នុង <strong>Bill / Expense</strong> ដើម្បីមើល Profit</li>
+        </ol>
+
+        <div class="warn-box">
+            <p><strong>ប្រុងប្រយ័ត្ន៖</strong> វិក្កយបត្រដែលបាន Issue/Post មិនគួរលុបផ្ទាល់។ បើខុស ប្រើ Credit Note / Adjustment / Reverse ដើម្បីរក្សាប្រវត្តិសវនកម្ម។</p>
+        </div>
+
+        <h2>៩. ស្ថានភាពសំខាន់ៗ</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ឯកសារ</th>
+                    <th>ស្ថានភាព</th>
+                    <th>អត្ថន័យ</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Quotation</td>
+                    <td>Draft / Sent / Accepted / Rejected</td>
+                    <td>ព្រាង → ផ្ញើ → ទទួលយក / បដិសេធ</td>
+                </tr>
+                <tr>
+                    <td>Service Order</td>
+                    <td>Draft / Confirmed / In Progress / Completed</td>
+                    <td>ដំណើរការប្រតិបត្តិការ</td>
+                </tr>
+                <tr>
+                    <td>Invoice</td>
+                    <td>Draft / Issued / Partial / Paid / Cancelled</td>
+                    <td>ស្ថានភាពវិក្កយបត្រ និងការទូទាត់</td>
+                </tr>
+                <tr>
+                    <td>Payment</td>
+                    <td>Recorded / Allocated</td>
+                    <td>បានកត់ត្រា និងបែងចែកទៅ Invoice</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>១០. តួនាទីណាធ្វើអ្វី (ណែនាំ)</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>តួនាទី</th>
+                    <th>ការងារសំខាន់</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Sales</td>
+                    <td>Quotation, ទំនាក់ទំនងអតិថិជន</td>
+                </tr>
+                <tr>
+                    <td>Operations</td>
+                    <td>Service Order, Cargo, Container, Checkpoint, Documents, Customs</td>
+                </tr>
+                <tr>
+                    <td>Finance</td>
+                    <td>Invoice, Debit Note, Customer Payment, Bill, Expense &amp; Profit</td>
+                </tr>
+                <tr>
+                    <td>Manager</td>
+                    <td>Dashboard, អនុម័ត, របាយការណ៍ចំណេញ</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>១១. Checklist មុនចេញវិក្កយបត្រ</h2>
+        <ul>
+            <li>□ Service Order មានអតិថិជនត្រឹមត្រូវ</li>
+            <li>□ ព័ត៌មានទំនិញ / ដឹកជញ្ជូនគ្រប់គ្រាន់ (បើត្រូវបង្ហាញលើ Invoice)</li>
+            <li>□ បន្ទាត់ថ្លៃសេវាត្រូវបានពិនិត្យ</li>
+            <li>□ Debit Note បន្ថែម (បើមាន) បានបញ្ចូល</li>
+            <li>□ រូបិយប័ណ្ណ និងពន្ធត្រឹមត្រូវ</li>
+            <li>□ ឯកសារភ្ជាប់ចាំបាច់មានរួច</li>
+            <li>□ Issue Invoice → ផ្ញើអតិថិជន → រង់ចាំ Payment</li>
+        </ul>
+
+        <h2>១២. សេចក្តីបញ្ចប់</h2>
+        <p>ឯកសារនេះសង្ខេបម៉ូឌុលទាំងអស់នៃ <strong>Freight Forwarding Management System</strong> ហើយផ្តោតលើរបៀបទៅដល់ <strong>Invoice</strong> និង <strong>Payment</strong> ពី Service Order។</p>
+        <p>បើត្រូវការបន្ថែម៖ គំរូវិក្កយបត្រ (ទម្រង់បោះពុម្ព), រូបអេក្រង់តាមជំហាន, ឬកំណែអង់គ្លេស — សូមជូនដំណឹង។</p>
+
+        <div class="info-box">
+            <p><strong>កំណែឯកសារ៖</strong> FreightFlow User &amp; Invoice Guide (ខ្មែរ) · ខែកញ្ញា ២០២៦</p>
+        </div>
+    </div>
+</body>
+</html>

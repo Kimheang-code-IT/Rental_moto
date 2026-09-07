@@ -1,0 +1,1066 @@
+<script setup lang="ts">
+import type {
+  ConnectionStatusFieldValue,
+  DocumentFieldSchema,
+  FieldOption,
+} from '~/types/rental/common'
+import type { ConnectionStatus, NotificationRule, TelegramDestination, TelegramUserAccess } from '~/types/rental/settings'
+import { TELEGRAM_NOTIFICATION_EVENTS, TELEGRAM_TEMPLATE_VARIABLES } from '~/types/rental/settings'
+import type { AppRolePermissionRow } from '~/types/rental/entities'
+import { createClientId } from '~/utils/client-id'
+import { TELEGRAM_DESTINATION_TYPE_OPTIONS } from '~/utils/constants/select-options'
+import { resolveFieldHelp } from '~/utils/field-help'
+import { normalizeDocumentSequenceType } from '~/utils/document-sequences'
+import { useReferenceOptions } from '~/composables/common/useReferenceOptions'
+import type { ModuleRelated, ModuleTable } from '~/config/modules'
+import type { AppRecord } from '~/config/admin-seed'
+import { asNumber, statusLabel } from '~/composables/module/useModule'
+import { useAppLocalization } from '~/composables/settings/useAppLocalization'
+import { ApiEndpoints } from '~/utils/constants/api-endpoints'
+import {
+  moduleDocumentLineActionKey,
+  moduleDocumentRecordKey,
+} from '~/utils/module/document-tabs'
+
+const props = defineProps<{
+  field: DocumentFieldSchema
+  modelValue: unknown
+  disabled?: boolean
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [unknown]
+}>()
+
+const { t, te, locale } = useI18n()
+const { loadReferenceOptions } = useReferenceOptions()
+
+const hintOpen = ref(false)
+
+const destinationTypeItems = TELEGRAM_DESTINATION_TYPE_OPTIONS
+
+const km = computed(() => locale.value === 'km')
+
+const stringValue = computed({
+  get: () => String(props.modelValue ?? ''),
+  set: (v: string) => emit('update:modelValue', v),
+})
+
+const selectValue = computed({
+  get: () => {
+    if (props.modelValue == null || props.modelValue === '') return undefined
+    if (typeof props.modelValue === 'object' && 'value' in (props.modelValue as object)) {
+      const nested = (props.modelValue as { value?: unknown }).value
+      return nested == null || nested === '' ? undefined : String(nested)
+    }
+    return String(props.modelValue)
+  },
+  set: (v: string | { value?: string } | undefined) => {
+    if (v && typeof v === 'object' && 'value' in v) {
+      emit('update:modelValue', v.value ?? '')
+      return
+    }
+    emit('update:modelValue', v ?? '')
+  },
+})
+
+const numberValue = computed({
+  get: () => (typeof props.modelValue === 'number' ? props.modelValue : Number(props.modelValue || 0)),
+  set: (v: number | null) => emit('update:modelValue', v ?? 0),
+})
+
+const boolValue = computed({
+  get: () => {
+    const trueValue = props.field.meta?.trueValue
+    if (trueValue !== undefined) return props.modelValue === trueValue || props.modelValue === true
+    if (typeof props.modelValue === 'string') {
+      const value = props.modelValue.trim().toLowerCase()
+      if (['no', 'false', '0', ''].includes(value)) return false
+      if (['yes', 'true', '1'].includes(value)) return true
+    }
+    return Boolean(props.modelValue)
+  },
+  set: (v: boolean | 'indeterminate') => {
+    const checked = v === true
+    const trueValue = props.field.meta?.trueValue
+    const falseValue = props.field.meta?.falseValue
+    if (trueValue !== undefined) {
+      emit('update:modelValue', checked ? trueValue : (falseValue ?? ''))
+      return
+    }
+    emit('update:modelValue', checked)
+  },
+})
+
+const multiValue = computed({
+  get: () => (Array.isArray(props.modelValue)
+    ? props.modelValue.map(String).filter(Boolean)
+    : (props.modelValue ? [String(props.modelValue)] : [])),
+  set: (v: string | string[]) => emit('update:modelValue', v),
+})
+
+const permissionRows = computed({
+  get: () => (Array.isArray(props.modelValue) ? props.modelValue as AppRolePermissionRow[] : []),
+  set: (v: AppRolePermissionRow[]) => emit('update:modelValue', v),
+})
+
+const csvValue = computed({
+  get: () => Array.isArray(props.modelValue)
+    ? (props.modelValue as unknown[]).map(String).join(', ')
+    : String(props.modelValue ?? ''),
+  set: (v: string) => {
+    emit(
+      'update:modelValue',
+      String(v || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean),
+    )
+  },
+})
+
+const imageValue = computed({
+  get: () => (props.modelValue == null || props.modelValue === ''
+    ? undefined
+    : String(props.modelValue)),
+  set: (v: string | undefined) => emit('update:modelValue', v),
+})
+
+const colorValue = computed({
+  get: () => String(props.modelValue || '#2563eb'),
+  set: (v: string) => emit('update:modelValue', v),
+})
+
+const secretValue = computed({
+  get: () => String(props.modelValue ?? ''),
+  set: (v: string) => emit('update:modelValue', v),
+})
+
+const destinationsValue = computed({
+  get: () => (Array.isArray(props.modelValue) ? props.modelValue as TelegramDestination[] : []),
+  set: (v: TelegramDestination[]) => emit('update:modelValue', v),
+})
+
+const userAccessValue = computed({
+  get: () => (Array.isArray(props.modelValue) ? props.modelValue as TelegramUserAccess[] : []),
+  set: (v: TelegramUserAccess[]) => emit('update:modelValue', v),
+})
+
+const { get: apiGet } = useApi()
+const userAccessSyncPending = ref(false)
+const systemUsers = ref<LinkedUserRow[]>([])
+const systemUsersPending = ref(false)
+
+type LinkedUserRow = {
+  id: number
+  displayName?: string
+  username?: string
+  telegramChatId?: string
+  telegramLinked?: boolean
+  status?: string
+}
+
+const userAccessSelectItems = computed(() =>
+  systemUsers.value.map(user => ({
+    label: `${user.displayName || user.username || user.id} (${user.username || user.id})`,
+    value: String(user.id),
+  })),
+)
+
+function userAccessItemsForRow(row: TelegramUserAccess) {
+  const usedIds = new Set(
+    userAccessValue.value
+      .filter(item => item.id !== row.id && item.userId)
+      .map(item => item.userId),
+  )
+  const items = userAccessSelectItems.value.filter(item => !usedIds.has(Number(item.value)))
+  if (row.userId) {
+    const current = userAccessSelectItems.value.find(item => Number(item.value) === row.userId)
+    if (current && !items.some(item => item.value === current.value)) items.unshift(current)
+  }
+  return items
+}
+
+async function loadSystemUsers() {
+  systemUsersPending.value = true
+  try {
+    const collected: LinkedUserRow[] = []
+    let page = 1
+    let total = Number.POSITIVE_INFINITY
+    while (collected.length < total) {
+      const response = await apiGet<{ data: LinkedUserRow[], meta?: { total?: number } }>(ApiEndpoints.USERS, {
+        query: { limit: 100, page },
+      })
+      const batch = response?.data || []
+      collected.push(...batch)
+      total = Number(response?.meta?.total ?? batch.length)
+      if (batch.length < 100) break
+      page += 1
+    }
+    systemUsers.value = collected.filter(user => String(user.status || 'Active') === 'Active')
+  }
+  catch {
+    systemUsers.value = []
+  }
+  finally {
+    systemUsersPending.value = false
+  }
+}
+
+function applyUserAccessSelection(row: TelegramUserAccess, userId: string | undefined) {
+  if (!userId) {
+    row.userId = undefined
+    row.userName = ''
+    return
+  }
+  const user = systemUsers.value.find(item => String(item.id) === String(userId))
+  if (!user) return
+  row.userId = user.id
+  row.userName = String(user.displayName || user.username || user.id)
+  // Auto-fill only when the row has no Chat ID yet — never wipe a manually typed one.
+  if (!row.chatId && user.telegramChatId) row.chatId = String(user.telegramChatId)
+}
+
+async function syncUserAccessFromUsers() {
+  userAccessSyncPending.value = true
+  try {
+    await loadSystemUsers()
+    const existingByUserId = new Map<number, TelegramUserAccess>()
+    for (const row of userAccessValue.value) {
+      if (row.userId) existingByUserId.set(row.userId, row)
+    }
+    userAccessValue.value = systemUsers.value.map((user) => {
+      const prior = existingByUserId.get(user.id)
+      const name = String(user.displayName || user.username || user.id)
+      return {
+        id: prior?.id || createClientId('tua'),
+        userId: user.id,
+        userName: prior?.userName || name,
+        // Keep existing Chat ID (manually typed or linked); fill from the users API only when empty.
+        chatId: prior?.chatId || String(user.telegramChatId || ''),
+        chatbotEnabled: prior?.chatbotEnabled ?? true,
+        groupEnabled: prior?.groupEnabled ?? true,
+      }
+    })
+  }
+  finally {
+    userAccessSyncPending.value = false
+  }
+}
+
+function addUserAccessRow() {
+  if (!systemUsers.value.length && !systemUsersPending.value) {
+    void loadSystemUsers().then(() => addUserAccessRow())
+    return
+  }
+  const usedIds = new Set(userAccessValue.value.map(row => row.userId).filter(Boolean))
+  const nextUser = systemUsers.value.find(user => !usedIds.has(user.id))
+  const next: TelegramUserAccess = {
+    id: createClientId('tua'),
+    userId: nextUser?.id,
+    userName: nextUser ? String(nextUser.displayName || nextUser.username || nextUser.id) : '',
+    chatId: nextUser?.telegramChatId ? String(nextUser.telegramChatId) : '',
+    chatbotEnabled: true,
+    groupEnabled: true,
+  }
+  userAccessValue.value = [...userAccessValue.value, next]
+}
+
+const canAddUserAccessRow = computed(() => {
+  if (systemUsersPending.value) return false
+  if (!systemUsers.value.length) return true
+  return userAccessSelectItems.value.some(item =>
+    !userAccessValue.value.some(row => row.userId === Number(item.value)),
+  )
+})
+
+function removeUserAccessRow(id: string) {
+  userAccessValue.value = userAccessValue.value.filter(row => row.id !== id)
+}
+
+const rulesValue = computed({
+  get: () => (Array.isArray(props.modelValue) ? props.modelValue as NotificationRule[] : []),
+  set: (v: NotificationRule[]) => emit('update:modelValue', v),
+})
+
+const connectionValue = computed(() => {
+  const raw = props.modelValue as ConnectionStatusFieldValue | null | undefined
+  return {
+    status: (raw?.status || 'not_tested') as ConnectionStatus,
+    message: raw?.message,
+    lastTestedAt: raw?.lastTestedAt,
+    details: raw?.details,
+  }
+})
+
+const remoteOptions = ref<FieldOption[]>([])
+const optionsPending = ref(false)
+
+const resolvedOptionsEndpoint = computed(() => props.field.optionsEndpoint || undefined)
+
+watch(resolvedOptionsEndpoint, async (endpoint) => {
+  remoteOptions.value = []
+  if (!endpoint) return
+  optionsPending.value = true
+  try {
+    remoteOptions.value = await loadReferenceOptions(endpoint)
+  }
+  catch {
+    remoteOptions.value = []
+  }
+  finally {
+    optionsPending.value = false
+  }
+}, { immediate: true })
+
+const searchRemoteOptions = useDebounceFn(async (search: string) => {
+  const endpoint = resolvedOptionsEndpoint.value
+  if (!endpoint) return
+  optionsPending.value = true
+  try { remoteOptions.value = await loadReferenceOptions(endpoint, search) }
+  finally { optionsPending.value = false }
+}, 250)
+
+const selectItems = computed(() => {
+  const translateStatus = props.field.key === 'status'
+    || props.field.key === 'paymentStatus'
+    || props.field.key === 'result'
+    || props.field.key.toLowerCase().endsWith('status')
+  return [...(props.field.options || []), ...remoteOptions.value]
+    .filter(o => o.value !== '')
+    .map(o => ({
+      label: o.labelKey
+        ? t(o.labelKey)
+        : (translateStatus ? statusLabel(o.value, t, te) : (o.label || o.value)),
+      value: o.value,
+    }))
+})
+
+const creatableSelectItems = computed(() => selectItems.value)
+
+function onCreateSelectItem(item: string) {
+  const trimmed = normalizeDocumentSequenceType(item)
+  if (!trimmed) return
+  emit('update:modelValue', trimmed)
+}
+
+const labelText = computed(() => {
+  if (props.field.labelKey && te(props.field.labelKey)) return String(t(props.field.labelKey))
+  // Fallback: app.fields.* when module-scoped key was set but missing a leaf.
+  const leafKey = `app.fields.${props.field.key}`
+  if (props.field.labelKey !== leafKey && te(leafKey)) return String(t(leafKey))
+  if (km.value && props.field.labelKm) return props.field.labelKm
+  if (props.field.label) return props.field.label
+  return props.field.labelKey || ''
+})
+
+const helpText = computed(() => {
+  if (props.field.help) return props.field.help
+  return resolveFieldHelp(props.field, labelText.value, t, te)
+})
+
+const hintText = computed(() => {
+  if (props.field.hintKey && te(props.field.hintKey)) return t(props.field.hintKey)
+  return helpText.value
+})
+
+const placeholderText = computed(() => {
+  if (props.field.placeholder) return props.field.placeholder
+  if (props.field.placeholderKey && te(props.field.placeholderKey)) {
+    return t(props.field.placeholderKey)
+  }
+  return labelText.value
+})
+
+const isBoolean = computed(() => props.field.type === 'boolean')
+const isDuration = computed(() => props.field.type === 'duration')
+const isPermissionMatrix = computed(() => props.field.type === 'permission-matrix')
+const isSecret = computed(() => props.field.type === 'secret')
+const isColor = computed(() => props.field.type === 'color')
+const isImage = computed(() => props.field.type === 'image')
+const isIcon = computed(() => props.field.type === 'icon')
+const isTelegramDestinations = computed(() => props.field.type === 'telegram-destinations')
+const isTelegramUserAccess = computed(() => props.field.type === 'telegram-user-access')
+
+watch(isTelegramUserAccess, (active) => {
+  if (active && !systemUsers.value.length) void loadSystemUsers()
+}, { immediate: true })
+
+const isNotificationRules = computed(() => props.field.type === 'notification-rules')
+const isConnectionStatus = computed(() => props.field.type === 'connection-status')
+const isAlert = computed(() => props.field.type === 'alert')
+const isLineTable = computed(() => props.field.type === 'line-table')
+const isRelatedRecords = computed(() => props.field.type === 'related-records')
+const isFile = computed(() => props.field.type === 'file')
+
+const lineAction = inject(moduleDocumentLineActionKey, undefined)
+const recordAccess = inject(moduleDocumentRecordKey, null)
+
+const lineTable = computed(() => props.field.meta?.table as ModuleTable | undefined)
+const lineRows = computed({
+  get: () => (Array.isArray(props.modelValue) ? props.modelValue as Array<Record<string, unknown>> : []),
+  set: (rows: Array<Record<string, unknown>>) => emit('update:modelValue', rows),
+})
+const relatedGroups = computed(() =>
+  Array.isArray(props.modelValue)
+    ? props.modelValue as Array<ModuleRelated & { rows: AppRecord[] }>
+    : [],
+)
+const showPricingTotals = computed(() => Boolean(props.field.meta?.showPricingTotals))
+const includeTaxTotal = computed(() => Boolean(props.field.meta?.includeTax))
+const lineCompact = computed(() => Boolean(props.field.meta?.compact))
+const lineViewOnly = computed(() => Boolean(props.field.meta?.viewOnly || props.field.readOnly))
+
+const DURATION_UNITS = ['minutes', 'hours', 'days'] as const
+
+function asDuration(value: unknown): { value: number, unit: (typeof DURATION_UNITS)[number] } {
+  const raw = value && typeof value === 'object' ? value as { value?: unknown, unit?: unknown } : {}
+  const parsed = Number(raw.value)
+  const unit = String(raw.unit || 'hours')
+  return {
+    value: Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 10_080) : 1,
+    unit: DURATION_UNITS.includes(unit as typeof DURATION_UNITS[number]) ? unit as typeof DURATION_UNITS[number] : 'hours',
+  }
+}
+
+const durationValue = computed({
+  get: () => asDuration(props.modelValue).value,
+  set: (value: number | null) => emit('update:modelValue', { ...asDuration(props.modelValue), value: value ?? 1 }),
+})
+
+const durationUnit = computed({
+  get: () => asDuration(props.modelValue).unit,
+  set: (unit: string | { value?: string } | undefined) => {
+    const next = unit && typeof unit === 'object' ? String(unit.value || 'hours') : String(unit || 'hours')
+    emit('update:modelValue', { ...asDuration(props.modelValue), unit: next })
+  },
+})
+
+const durationUnitItems = computed(() => {
+  if (props.field.options?.length) return selectItems.value
+  return DURATION_UNITS.map(unit => ({
+    label: t(`rental.settings.duration${unit.charAt(0).toUpperCase()}${unit.slice(1)}`),
+    value: unit,
+  }))
+})
+
+const durationPreview = computed(() => {
+  const duration = asDuration(props.modelValue)
+  const unitItem = durationUnitItems.value.find(item => item.value === duration.unit)
+  const unitLabel = (unitItem?.label || duration.unit).toLowerCase()
+  return t('rental.settings.deadlineReminderPreview', { value: duration.value, unit: unitLabel })
+})
+
+const { formatMoney } = useAppLocalization()
+
+const documentCurrency = computed(() => String(recordAccess?.get('currency') || '').trim() || undefined)
+
+function moneyAmount(key: string) {
+  return asNumber(recordAccess?.get(key))
+}
+
+function moneyLabel(value: unknown) {
+  return formatMoney(value, documentCurrency.value)
+}
+
+function onFileChange(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  emit('update:modelValue', file?.name || props.modelValue)
+}
+
+const iconValue = computed({
+  get: () => String(props.modelValue ?? ''),
+  set: (v: string) => emit('update:modelValue', v),
+})
+
+const textareaHelp = computed(() => {
+  if (props.field.key === 'telegram.messageTemplate') {
+    return TELEGRAM_TEMPLATE_VARIABLES.join(' ')
+  }
+  return helpText.value
+})
+
+/** Textareas: min 3 lines, grow with content up to 7. */
+const TEXTAREA_MIN_ROWS = 3
+const TEXTAREA_MAX_ROWS = 7
+
+const textareaRows = computed(() => {
+  const requested = props.field.rows ?? TEXTAREA_MIN_ROWS
+  return Math.min(TEXTAREA_MAX_ROWS, Math.max(TEXTAREA_MIN_ROWS, requested))
+})
+
+function toggleHint() {
+  hintOpen.value = !hintOpen.value
+}
+
+function closeHint() {
+  hintOpen.value = false
+}
+
+watch(() => props.field.key, () => {
+  hintOpen.value = false
+})
+
+const telegramEventItems = computed(() =>
+  TELEGRAM_NOTIFICATION_EVENTS.map(event => ({ label: event, value: event })),
+)
+
+function addDestination() {
+  const next: TelegramDestination = {
+    id: createClientId('td'),
+    name: 'New destination',
+    type: 'chat',
+    chatId: '',
+    enabledEvents: ['rental_created'],
+    status: 'not_tested',
+    enabled: true,
+  }
+  destinationsValue.value = [...destinationsValue.value, next]
+}
+
+function removeDestination(id: string) {
+  destinationsValue.value = destinationsValue.value.filter(d => d.id !== id)
+}
+</script>
+
+<template>
+  <CommonAppRolePermissionMatrix
+    v-if="isPermissionMatrix"
+    v-model="permissionRows"
+    :disabled="disabled || field.readOnly"
+  />
+
+  <div
+    v-else-if="isLineTable && lineTable"
+    class="space-y-6 md:col-span-2"
+  >
+    <TableAppLineTable
+      :table="lineTable"
+      :model-value="lineRows"
+      :disabled="disabled || lineViewOnly"
+      :compact="lineCompact"
+      :view-only-actions="lineViewOnly"
+      @update:model-value="lineRows = $event"
+      @row-action="(action, row) => lineAction?.(action, row)"
+    />
+    <div
+      v-if="showPricingTotals"
+      class="ms-auto grid w-full max-w-sm gap-1 px-1 py-1.5 text-xs"
+    >
+      <div class="flex items-center justify-between gap-4">
+        <span class="text-muted">{{ $t('app.fields.subtotal') }}</span>
+        <span class="font-medium text-highlighted">{{ moneyLabel(moneyAmount('subtotal')) }}</span>
+      </div>
+      <div class="flex items-center justify-between gap-4">
+        <span class="text-muted">{{ $t('app.fields.discount') }}</span>
+        <span class="font-medium text-highlighted">− {{ moneyLabel(moneyAmount('discount')) }}</span>
+      </div>
+      <div
+        v-if="includeTaxTotal"
+        class="flex items-center justify-between gap-4"
+      >
+        <span class="text-muted">{{ $t('app.fields.tax') }}</span>
+        <span class="font-medium text-highlighted">{{ moneyLabel(moneyAmount('tax')) }}</span>
+      </div>
+      <div class="mt-1 flex items-center justify-between gap-4 border-t border-default pt-2 text-base">
+        <span class="font-semibold text-highlighted">{{ $t('app.fields.total') }}</span>
+        <span class="font-bold text-primary">{{ moneyLabel(moneyAmount('total')) }}</span>
+      </div>
+    </div>
+  </div>
+
+  <TableAppRelatedRecords
+    v-else-if="isRelatedRecords"
+    class="md:col-span-2"
+    :groups="relatedGroups"
+  />
+
+  <UAlert
+    v-else-if="isAlert"
+    class="md:col-span-2"
+    :color="field.alertColor || 'warning'"
+    variant="subtle"
+    :title="labelText"
+    :description="helpText || undefined"
+  />
+
+  <CommonAppSecretInput
+    v-else-if="isSecret"
+    v-model="secretValue"
+    :label="labelText"
+    :help="helpText"
+    :disabled="disabled || field.readOnly"
+  />
+
+  <CommonAppColorPicker
+    v-else-if="isColor"
+    v-model="colorValue"
+    :label="labelText"
+    :help="helpText"
+    :disabled="disabled || field.readOnly"
+  />
+
+  <CommonAppImageUploadField
+    v-else-if="isImage"
+    v-model="imageValue"
+    :label="labelText"
+    :help="helpText"
+    :disabled="disabled || field.readOnly"
+  />
+
+  <CommonAppIconPicker
+    v-else-if="isIcon"
+    v-model="iconValue"
+    :label="labelText"
+    :help="helpText"
+    :disabled="disabled || field.readOnly"
+  />
+
+  <!-- Configuration builders removed (numbering-preview, validation, options, visibility, workflow) -->
+
+  <div
+    v-else-if="isTelegramUserAccess"
+    class="space-y-3 md:col-span-2"
+  >
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h4 class="text-sm font-semibold">
+        {{ labelText }}
+      </h4>
+      <div class="flex flex-wrap gap-2">
+        <UButton
+          size="sm"
+          variant="outline"
+          icon="i-lucide-refresh-cw"
+          :loading="userAccessSyncPending"
+          :disabled="disabled || field.readOnly"
+          @click="syncUserAccessFromUsers"
+        >
+          {{ t('rental.settings.syncLinkedUsers') }}
+        </UButton>
+        <UButton
+          size="sm"
+          icon="i-lucide-plus"
+          :loading="systemUsersPending"
+          :disabled="disabled || field.readOnly || !canAddUserAccessRow"
+          @click="addUserAccessRow"
+        >
+          {{ t('rental.settings.addUserAccess') }}
+        </UButton>
+      </div>
+    </div>
+
+    <p
+      v-if="helpText"
+      class="text-xs text-muted"
+    >
+      {{ helpText }}
+    </p>
+
+    <div
+      v-if="!userAccessValue.length"
+      class="rounded-lg border border-dashed border-default px-4 py-6 text-center text-sm text-muted"
+    >
+      {{ t('rental.settings.telegramUserAccessEmpty') }}
+    </div>
+
+    <div
+      v-else
+      class="overflow-x-auto rounded-lg border border-default"
+    >
+      <table class="min-w-full text-sm">
+        <thead class="border-b border-default bg-elevated/50 text-left">
+          <tr>
+            <th class="px-3 py-2 font-medium">
+              {{ t('rental.settings.telegramUserAccessUser') }}
+            </th>
+            <th class="px-3 py-2 font-medium">
+              {{ t('rental.settings.telegramUserAccessChatId') }}
+            </th>
+            <th class="px-3 py-2 font-medium">
+              <span
+                  :title="t('rental.settings.telegramUserAccessChatbotHelp')"
+                  class="cursor-help"
+              >{{ t('rental.settings.telegramUserAccessChatbot') }}</span>
+            </th>
+            <th class="px-3 py-2 font-medium">
+              <span
+                  :title="t('rental.settings.telegramUserAccessGroupHelp')"
+                  class="cursor-help"
+              >{{ t('rental.settings.telegramUserAccessGroup') }}</span>
+            </th>
+            <th class="px-3 py-2 font-medium" />
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="row in userAccessValue"
+            :key="row.id"
+            class="border-b border-default last:border-b-0"
+          >
+            <td class="px-3 py-2 min-w-56">
+              <USelectMenu
+                :model-value="row.userId ? String(row.userId) : undefined"
+                :items="userAccessItemsForRow(row)"
+                value-key="value"
+                label-key="label"
+                :placeholder="t('rental.settings.telegramUserAccessUser')"
+                :disabled="disabled || field.readOnly"
+                :loading="systemUsersPending"
+                @update:model-value="applyUserAccessSelection(row, $event ? String($event) : undefined)"
+              />
+            </td>
+            <td class="px-3 py-2">
+              <UInput
+                v-model="row.chatId"
+                :placeholder="t('rental.settings.telegramUserAccessChatId')"
+                :disabled="disabled || field.readOnly"
+              />
+            </td>
+            <td class="px-3 py-2">
+              <USwitch
+                v-model="row.chatbotEnabled"
+                :disabled="disabled || field.readOnly"
+              />
+            </td>
+            <td class="px-3 py-2">
+              <USwitch
+                v-model="row.groupEnabled"
+                :disabled="disabled || field.readOnly"
+              />
+            </td>
+            <td class="px-3 py-2 text-right">
+              <UButton
+                size="xs"
+                color="error"
+                variant="ghost"
+                icon="i-lucide-trash-2"
+                :disabled="disabled || field.readOnly"
+                @click="removeUserAccessRow(row.id)"
+              />
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div
+    v-else-if="isTelegramDestinations"
+    class="space-y-3 md:col-span-2"
+  >
+    <div class="flex items-center justify-between">
+      <h4 class="text-sm font-semibold">
+        {{ t('core.settings.destinations') }}
+      </h4>
+      <UButton
+        size="sm"
+        icon="i-lucide-plus"
+        :disabled="disabled || field.readOnly"
+        @click="addDestination"
+      >
+        {{ t('core.settings.addDestination') }}
+      </UButton>
+    </div>
+
+    <div
+      v-for="dest in destinationsValue"
+      :key="dest.id"
+      class="grid gap-2 rounded-lg border border-default p-3 md:grid-cols-2"
+    >
+      <UInput
+        v-model="dest.name"
+        :placeholder="t('core.fields.name')"
+        :disabled="disabled || field.readOnly"
+      />
+      <UInput
+        v-model="dest.chatId"
+        placeholder="Chat ID"
+        :disabled="disabled || field.readOnly"
+      />
+      <USelect
+        v-model="dest.type"
+        :items="destinationTypeItems"
+        value-key="value"
+        label-key="label"
+        :disabled="disabled || field.readOnly"
+      />
+      <USelectMenu
+        v-model="dest.enabledEvents"
+        :items="telegramEventItems"
+        value-key="value"
+        label-key="label"
+        multiple
+        :placeholder="t('rental.settings.enabledEvents')"
+        :disabled="disabled || field.readOnly"
+      />
+      <div class="flex items-center gap-3 md:col-span-2">
+        <USwitch v-model="dest.enabled" :disabled="disabled || field.readOnly" />
+        <USwitch v-model="dest.isInteractiveGroup" :disabled="disabled || field.readOnly" />
+        <span class="text-xs text-muted">{{ t('rental.settings.interactiveGroup') }}</span>
+        <UButton
+          icon="i-lucide-trash-2"
+          color="error"
+          variant="ghost"
+          size="xs"
+          class="ms-auto"
+          :disabled="disabled || field.readOnly"
+          @click="removeDestination(dest.id)"
+        />
+      </div>
+    </div>
+  </div>
+
+  <div
+    v-else-if="isNotificationRules"
+    class="space-y-2 md:col-span-2"
+  >
+    <p class="text-sm font-medium">
+      {{ t('core.settings.eventRules') }}
+    </p>
+    <div
+      v-for="rule in rulesValue"
+      :key="rule.id"
+      class="flex items-center justify-between rounded-md border border-default px-3 py-2"
+    >
+      <span class="text-sm">{{ rule.event }}</span>
+      <USwitch v-model="rule.enabled" :disabled="disabled || field.readOnly" />
+    </div>
+  </div>
+
+  <CommonAppConnectionStatusCard
+    v-else-if="isConnectionStatus"
+    class="md:col-span-2"
+    :status="connectionValue.status"
+    :title="labelText"
+    :message="connectionValue.message"
+    :last-tested-at="connectionValue.lastTestedAt"
+    :details="connectionValue.details"
+  />
+
+  <UFormField
+    v-else-if="isDuration"
+    class="md:col-span-2"
+    :label="labelText"
+    :help="helpText"
+  >
+    <UFieldGroup size="md" class="w-full max-w-md">
+      <UInputNumber
+        v-model="durationValue"
+        :min="1"
+        :max="10080"
+        :disabled="disabled || field.readOnly"
+        :increment="false"
+        :decrement="false"
+        size="md"
+        class="min-w-0 flex-1"
+      />
+      <USelect
+        v-model="durationUnit"
+        :items="durationUnitItems"
+        value-key="value"
+        :disabled="disabled || field.readOnly"
+        size="md"
+        class="w-36"
+      />
+    </UFieldGroup>
+    <p class="mt-1.5 text-xs text-muted">
+      {{ durationPreview }}
+    </p>
+  </UFormField>
+
+  <!-- Checkbox: label beside control + helper text below -->
+  <UFormField
+    v-else-if="isBoolean"
+    :help="helpText"
+  >
+    <div class="flex min-h-11 flex-wrap items-center gap-2 pt-1">
+      <UCheckbox
+        v-model="boolValue"
+        :disabled="disabled || field.readOnly"
+        :required="field.required"
+        size="md"
+        :ui="{ label: 'text-base text-highlighted' }"
+      >
+        <template #label>
+          <span class="inline-flex items-center gap-1.5">
+            <span>{{ labelText }}</span>
+            <UButton
+              v-if="hintText"
+              icon="i-lucide-info"
+              color="neutral"
+              variant="ghost"
+              size="xs"
+              square
+              class="text-muted"
+              :aria-label="hintText"
+              @click.prevent.stop="toggleHint"
+            />
+          </span>
+        </template>
+      </UCheckbox>
+
+      <div
+        v-if="hintText && hintOpen"
+        class="inline-flex max-w-md items-start gap-2 rounded-md border border-default bg-elevated px-2.5 py-1.5 text-xs text-toned"
+      >
+        <p class="min-w-0 flex-1 leading-relaxed">{{ hintText }}</p>
+        <UButton
+          icon="i-lucide-x"
+          color="neutral"
+          variant="soft"
+          size="xs"
+          square
+          class="shrink-0"
+          @click="closeHint"
+        />
+      </div>
+    </div>
+  </UFormField>
+
+  <!-- Standard fields: label + control + help below -->
+  <UFormField
+    v-else
+    :label="labelText"
+    :required="field.required"
+    :help="field.type === 'textarea' && textareaHelp ? textareaHelp : helpText"
+  >
+    <div class="flex items-start gap-1.5">
+      <div class="min-w-0 flex-1">
+        <UTextarea
+          v-if="field.type === 'textarea'"
+          v-model="stringValue"
+          :disabled="disabled || field.readOnly"
+          :placeholder="placeholderText"
+          :rows="textareaRows"
+          :maxrows="TEXTAREA_MAX_ROWS"
+          autoresize
+          size="md"
+          class="w-full"
+          :class="field.key === 'telegram.messageTemplate' ? 'font-mono text-sm' : ''"
+        />
+        <UInputNumber
+          v-else-if="field.type === 'number'"
+          v-model="numberValue"
+          :disabled="disabled || field.readOnly"
+          :increment="false"
+          :decrement="false"
+          size="md"
+          class="w-full"
+        />
+        <CommonAppInputDate
+          v-else-if="field.type === 'date'"
+          v-model="stringValue"
+          :disabled="disabled || field.readOnly"
+          :required="field.required"
+          size="md"
+          class="w-full"
+        />
+        <CommonAppInputDate
+          v-else-if="field.type === 'datetime'"
+          v-model="stringValue"
+          granularity="minute"
+          :disabled="disabled || field.readOnly"
+          :required="field.required"
+          size="md"
+          class="w-full"
+        />
+        <UInputMenu
+          v-else-if="field.type === 'select' && field.meta?.creatable"
+          v-model="selectValue"
+          :items="creatableSelectItems"
+          value-key="value"
+          create-item
+          :placeholder="placeholderText"
+          :disabled="disabled || field.readOnly"
+          size="md"
+          class="w-full"
+          @create="onCreateSelectItem"
+        />
+        <UInputMenu
+          v-else-if="field.type === 'select' && field.optionsEndpoint"
+          v-model="selectValue"
+          :items="selectItems"
+          value-key="value"
+          :placeholder="placeholderText"
+          :disabled="disabled || field.readOnly"
+          :loading="optionsPending"
+          size="md"
+          class="w-full"
+          @update:search-term="searchRemoteOptions"
+        />
+        <USelect
+          v-else-if="field.type === 'select'"
+          v-model="selectValue"
+          :items="selectItems"
+          value-key="value"
+          :placeholder="placeholderText"
+          :disabled="disabled || field.readOnly"
+          :loading="optionsPending"
+          size="md"
+          class="w-full"
+        />
+        <CommonAppMentionMultiInput
+          v-else-if="field.type === 'multiselect'"
+          v-model="multiValue"
+          :items="selectItems"
+          :placeholder="placeholderText"
+          :disabled="disabled || field.readOnly"
+          :loading="optionsPending"
+          @search="searchRemoteOptions"
+        />
+        <UInput
+          v-else-if="field.type === 'csv-list'"
+          v-model="csvValue"
+          :placeholder="placeholderText"
+          :disabled="disabled || field.readOnly"
+          size="md"
+          class="w-full"
+        />
+        <UInput
+          v-else-if="isFile"
+          type="file"
+          :disabled="disabled || field.readOnly"
+          size="md"
+          class="w-full"
+          @change="onFileChange"
+        />
+        <UInput
+          v-else
+          v-model="stringValue"
+          :type="field.type === 'url' ? 'url' : 'text'"
+          :placeholder="placeholderText"
+          :disabled="disabled || field.readOnly"
+          size="md"
+          class="w-full"
+        />
+      </div>
+
+      <UButton
+        v-if="field.hintKey && hintText"
+        icon="i-lucide-info"
+        color="neutral"
+        variant="ghost"
+        size="xs"
+        square
+        class="mt-1.5 shrink-0 text-muted"
+        @click="toggleHint"
+      />
+    </div>
+
+    <div
+      v-if="field.hintKey && hintText && hintOpen"
+      class="mt-2 flex items-start gap-2 rounded-md border border-default bg-elevated px-2.5 py-1.5 text-xs text-toned"
+    >
+      <p class="min-w-0 flex-1 leading-relaxed">{{ hintText }}</p>
+      <UButton
+        icon="i-lucide-x"
+        color="neutral"
+        variant="soft"
+        size="xs"
+        square
+        class="shrink-0"
+        @click="closeHint"
+      />
+    </div>
+  </UFormField>
+</template>

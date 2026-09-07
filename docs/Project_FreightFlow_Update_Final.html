@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HollyWing Motor — ណែនាំការប្រើប្រាស់ប្រព័ន្ធ</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html {
+            background-color: #cbd5e1;
+            display: flex;
+            justify-content: center;
+            padding: 20px 0;
+        }
+
+        body {
+            font-family: 'Khmer OS Content', 'Khmer OS', 'Noto Sans Khmer', 'Battambang', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #1E293B;
+            line-height: 1.8;
+            margin: 0;
+            width: 210mm;
+            background-color: #FFFFFF;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        @media print {
+            html {
+                background-color: transparent;
+                display: block;
+                padding: 0;
+            }
+            body {
+                width: 100%;
+                margin: 0;
+                box-shadow: none;
+            }
+
+            /* Content pages only: keep margins tight (cover uses :first = 0). */
+            @page {
+                size: A4;
+                margin: 12mm 12mm 14mm 12mm;
+            }
+            @page :first {
+                margin: 0mm;
+            }
+
+            .cover-page {
+                height: 297mm;
+                width: 100%;
+                page-break-after: always;
+                margin: 0;
+            }
+
+            /* Avoid double margin: page margin already set — no extra content padding. */
+            .content-pages {
+                padding: 0;
+            }
+
+            h2, h3 {
+                page-break-after: avoid;
+            }
+        }
+
+        .cover-page {
+            position: relative;
+            height: 297mm;
+            width: 100%;
+            background: linear-gradient(180deg, #0B0B0B 0%, #1A1A1A 55%, #111827 100%);
+            border-top: 12px solid #C9A227;
+            border-bottom: 12px solid #e8472a;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 36px 40px;
+            overflow: hidden;
+        }
+
+        .content-pages {
+            padding: 12mm;
+        }
+
+        .cover-logo {
+            display: block;
+            margin: 0 auto 28px auto;
+            width: 200px;
+            height: auto;
+            max-height: 220px;
+            object-fit: contain;
+            filter: drop-shadow(0 8px 24px rgba(201, 162, 39, 0.35));
+        }
+
+        .cover-page h1 {
+            color: #F8FAFC;
+            font-size: 2.6em;
+            margin: 0 0 10px 0;
+            font-weight: 800;
+            line-height: 1.25;
+        }
+
+        .cover-page h2 {
+            color: #FBBF24;
+            font-size: 1.55em;
+            margin: 0 0 20px 0;
+            border: none;
+            padding: 0;
+            font-weight: 600;
+        }
+
+        .cover-page h3 {
+            color: #CBD5E1;
+            font-size: 1.15em;
+            font-weight: 400;
+            margin-bottom: 36px;
+            line-height: 1.6;
+        }
+
+        .cover-meta {
+            display: inline-block;
+            text-align: left;
+            background-color: rgba(255, 255, 255, 0.96);
+            padding: 22px 30px;
+            border-left: 8px solid #C9A227;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            width: 85%;
+            max-width: 600px;
+        }
+
+        .cover-meta p {
+            margin: 10px 0;
+            color: #1E293B;
+            font-size: 1.05em;
+        }
+
+        .cover-meta strong {
+            color: #1E40AF;
+        }
+
+        h1, h2, h3, h4 { color: #1E40AF; }
+
+        .content-pages h2 {
+            border-bottom: 3px solid #E2E8F0;
+            position: relative;
+            padding-bottom: 12px;
+            margin-top: 2.5em;
+            margin-bottom: 1em;
+            font-size: 1.55em;
+            page-break-after: avoid;
+        }
+
+        .content-pages h2::after {
+            content: '';
+            position: absolute;
+            bottom: -3px;
+            left: 0;
+            width: 80px;
+            height: 3px;
+            background-color: #e8472a;
+        }
+
+        .content-pages h3 {
+            margin-top: 1.8em;
+            margin-bottom: 0.7em;
+            font-size: 1.2em;
+            page-break-after: avoid;
+            border-left: 4px solid #10B981;
+            padding-left: 12px;
+        }
+
+        .content-pages h4 {
+            margin-top: 1.2em;
+            margin-bottom: 0.5em;
+            font-size: 1.05em;
+            color: #334155;
+        }
+
+        p, li {
+            color: #334155;
+            font-size: 11pt;
+        }
+
+        ul, ol {
+            margin-bottom: 18px;
+            padding-left: 22px;
+        }
+
+        ul li, ol li {
+            margin-bottom: 8px;
+        }
+
+        ul li::marker {
+            color: #e8472a;
+            font-size: 1.2em;
+        }
+
+        strong {
+            color: #0F172A;
+            font-weight: 600;
+        }
+
+        .flow-container {
+            text-align: center;
+            margin: 30px 0;
+            background-color: #F8FAFC;
+            padding: 24px 10px;
+            border-radius: 12px;
+            border: 1px solid #E2E8F0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .flow-step {
+            display: inline-block;
+            background-color: #1E40AF;
+            color: #FFFFFF;
+            padding: 8px 14px;
+            border-radius: 30px;
+            font-weight: 600;
+            font-size: 10pt;
+        }
+
+        .flow-arrow {
+            display: inline-block;
+            color: #e8472a;
+            font-weight: bold;
+            font-size: 12pt;
+        }
+
+        .info-box {
+            background-color: #F0FDF4;
+            border-left: 4px solid #10B981;
+            padding: 15px 20px;
+            margin: 18px 0;
+        }
+        .info-box p {
+            margin: 0;
+            color: #166534;
+        }
+
+        .warn-box {
+            background-color: #FFF7ED;
+            border-left: 4px solid #F97316;
+            padding: 15px 20px;
+            margin: 18px 0;
+        }
+        .warn-box p {
+            margin: 0;
+            color: #9A3412;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 24px;
+            font-size: 10.5pt;
+        }
+        th, td {
+            border: 1px solid #E2E8F0;
+            padding: 10px 12px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background: #F1F5F9;
+            color: #1E40AF;
+            font-weight: 700;
+        }
+
+        .toc ol {
+            padding-left: 24px;
+        }
+        .toc li {
+            margin-bottom: 6px;
+        }
+
+        .page-tag {
+            display: inline-block;
+            background: #EEF2FF;
+            color: #3730A3;
+            border-radius: 6px;
+            padding: 2px 8px;
+            font-size: 9.5pt;
+            font-weight: 600;
+            margin-left: 6px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="cover-page">
+        <img class="cover-logo" src="logo.png" alt="HollyWing Motor logo" width="200" height="200" />
+
+        <h1>HollyWing Motor</h1>
+        <h2>ប្រព័ន្ធគ្រប់គ្រងជួលម៉ូតូ</h2>
+        <h3>ឯកសារណែនាំការប្រើប្រាស់សម្រាប់អតិថិជន<br>ទំព័រ និងមុខងារនីមួយៗក្នុងប្រព័ន្ធ</h3>
+
+        <div class="cover-meta">
+            <p><strong>រៀបចំសម្រាប់៖</strong> អ្នកប្រើប្រាស់ប្រព័ន្ធ / ម្ចាស់អាជីវកម្ម</p>
+            <p><strong>កាលបរិច្ឆេទ៖</strong> ខែកញ្ញា ឆ្នាំ ២០២៦</p>
+            <p><strong>គោលបំណង៖</strong> ពន្យល់របៀបប្រើទំព័រ និងមុខងារនីមួយៗក្នុង HollyWing Motor ដោយភាសាសាមញ្ញ ងាយយល់</p>
+            <p><strong>ភាសា៖</strong> ខ្មែរ</p>
+        </div>
+    </div>
+
+    <div class="content-pages">
+
+        <h2>១. សេចក្តីណែនាំ</h2>
+        <p><strong>HollyWing Motor</strong> គឺជាប្រព័ន្ធគ្រប់គ្រងអាជីវកម្មជួលម៉ូតូ ដែលជួយក្រុមការងារកត់ត្រា ម៉ូតូ អតិថិជន ការជួល ការទូទាត់ ចំណូល–ចំណាយ និងរបាយការណ៍ ក្នុងកន្លែងតែមួយ។</p>
+        <p>ឯកសារនេះសម្រាប់អ្នកប្រើប្រចាំថ្ងៃ និងម្ចាស់អាជីវកម្ម ដើម្បីដឹងថា៖</p>
+        <ul>
+            <li>មានទំព័រអ្វីខ្លះ</li>
+            <li>មុខងារនីមួយៗធ្វើអ្វី</li>
+            <li>លំដាប់ការងារធម្មតាដើម្បីចាប់ផ្តើមប្រើ</li>
+        </ul>
+
+        <div class="info-box">
+            <p><strong>គន្លឹះ៖</strong> អ្វីដែលអ្នកឃើញក្នុងម៉ឺនុយ អាស្រ័យលើតួនាទី និងសិទ្ធិរបស់គណនីអ្នក។ បើមិនឃើញប៊ូតុងណាមួយ សូមសួរអ្នកគ្រប់គ្រងប្រព័ន្ធ។</p>
+        </div>
+
+        <h2>២. លំហូរអាជីវកម្មសង្ខេប</h2>
+        <div class="flow-container">
+            <span class="flow-step">បង្កើតម៉ូតូ</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">បង្កើតអតិថិជន</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">បង្កើតការជួល</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">ទូទាត់ / គិតថ្លៃបន្ថែម</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">ប្រគល់ម៉ូតូ</span>
+            <span class="flow-arrow">➔</span>
+            <span class="flow-step">របាយការណ៍</span>
+        </div>
+
+        <h2>៣. មាតិកា</h2>
+        <div class="toc">
+            <ol>
+                <li>សេចក្តីណែនាំ</li>
+                <li>លំហូរអាជីវកម្មសង្ខេប</li>
+                <li>មាតិកា</li>
+                <li>ចាប់ផ្តើមប្រើប្រព័ន្ធ (រៀបចំ / ចូលគណនី)</li>
+                <li>ផ្ទាំងគ្រប់គ្រង</li>
+                <li>ទំព័រ ម៉ូតូ</li>
+                <li>ទំព័រ អតិថិជន</li>
+                <li>ទំព័រ ការជួល</li>
+                <li>ទំព័រ ចំណូល និងចំណាយ</li>
+                <li>ទំព័រ របាយការណ៍ការជួល</li>
+                <li>ការគ្រប់គ្រងប្រព័ន្ធ (Administration)</li>
+                <li>ភាសា និងការកំណត់ផ្ទាល់ខ្លួន</li>
+                <li>សំណួរញឹកញាប់ និងការណែនាំសុវត្ថិភាព</li>
+            </ol>
+        </div>
+
+        <h2>៤. ចាប់ផ្តើមប្រើប្រព័ន្ធ</h2>
+
+        <h3>៤.១ រៀបចំលើកដំបូង <span class="page-tag">/auth/setup</span></h3>
+        <p>ពេលប្រព័ន្ធទើបដំឡើង ឬបន្ទាប់ពី <strong>កំណត់ទិន្នន័យឡើងវិញទាំងអស់</strong> អ្នកនឹងត្រូវបង្កើតគណនីអ្នកគ្រប់គ្រងទីមួយ។</p>
+        <ol>
+            <li>បើកទំព័រ <strong>រៀបចំ HollyWing Motor</strong></li>
+            <li>បញ្ចូលអ៊ីមែល និងពាក្យសម្ងាត់</li>
+            <li>ចុច <strong>បង្កើតអ្នកគ្រប់គ្រង</strong></li>
+            <li>បន្ទាប់មកបង្កើតតួនាទី និងអ្នកប្រើប្រាស់ផ្សេងទៀតនៅផ្នែកគ្រប់គ្រង</li>
+        </ol>
+
+        <h3>៤.២ ចូលគណនី <span class="page-tag">/auth/login</span></h3>
+        <ol>
+            <li>បញ្ចូលអ៊ីមែល</li>
+            <li>បញ្ចូលពាក្យសម្ងាត់</li>
+            <li>ចុច <strong>ចូលគណនី</strong></li>
+        </ol>
+        <p>បើភ្លេចពាក្យសម្ងាត់ ចុច <strong>ភ្លេចពាក្យសម្ងាត់?</strong> រួចធ្វើតាមជំហានខាងក្រោម។</p>
+
+        <h3>៤.៣ ភ្លេចពាក្យសម្ងាត់</h3>
+        <ol>
+            <li>បញ្ចូលអ៊ីមែលគណនី</li>
+            <li>ប្រព័ន្ធផ្ញើលេខកូដ ៦ ខ្ទង់តាម Telegram chatbot</li>
+            <li>បញ្ចូលលេខកូដដើម្បីផ្ទៀងផ្ទាត់</li>
+            <li>កំណត់ពាក្យសម្ងាត់ថ្មី រួចចូលគណនីម្តងទៀត</li>
+        </ol>
+        <div class="warn-box">
+            <p><strong>ចំណាំ៖</strong> ការកំណត់ពាក្យសម្ងាត់ឡើងវិញតាម Telegram ដំណើរការបាន លុះត្រាគណនីភ្ជាប់ Telegram រួច និង Telegram ត្រូវបានកំណត់ក្នុងប្រព័ន្ធ។</p>
+        </div>
+
+        <h2>៥. ផ្ទាំងគ្រប់គ្រង <span class="page-tag">/</span></h2>
+        <p>ទំព័រដំបូងបន្ទាប់ពីចូលគណនី។ ប្រើដើម្បីមើលស្ថានភាពអាជីវកម្មរហ័ស។</p>
+        <h4>មុខងារសំខាន់</h4>
+        <ul>
+            <li>មើលសង្ខេបចំនួនម៉ូតូ / ការជួល / អតិថិជន</li>
+            <li>មើលចំណូល ចំណាយ និងប្រាក់នៅសល់ (យោងតាមរយៈពេលដែលជ្រើស)</li>
+            <li>ចូលទៅទំព័រផ្សេងៗពីម៉ឺនុយខាងឆ្វេង</li>
+            <li>ស្វែងរករហ័ស (បើមានសិទ្ធិ)</li>
+        </ul>
+
+        <h2>៦. ទំព័រ ម៉ូតូ <span class="page-tag">/motorcycles</span></h2>
+        <p>គ្រប់គ្រងបញ្ជីម៉ូតូដែលអាជីវកម្មមានសម្រាប់ជួល។</p>
+
+        <h3>៦.១ បញ្ជីម៉ូតូ</h3>
+        <ul>
+            <li>មើលបញ្ជីម៉ូតូទាំងអស់</li>
+            <li>ស្វែងរកតាមលេខផ្ទាំង ឈ្មោះ ម៉ូដែល ឬព័ត៌មានផ្សេង</li>
+            <li>តម្រៀប / រៀបជួរតារាង</li>
+            <li>បើកកំណត់ត្រាម៉ូតូដើម្បីមើលលម្អិត</li>
+            <li>បង្កើតម៉ូតូថ្មី</li>
+        </ul>
+
+        <h3>៦.២ បង្កើត / កែម៉ូតូ</h3>
+        <p>ព័ត៌មានធម្មតាដែលត្រូវបញ្ចូល៖</p>
+        <ul>
+            <li>លេខផ្ទាំង</li>
+            <li>ឈ្មោះ / ម៉ាក / ម៉ូដែល</li>
+            <li>តម្លៃជួល (១ ថ្ងៃ, ៣ ថ្ងៃ, ១ សប្តាហ៍, ១ ខែ)</li>
+            <li>ស្ថានភាពម៉ូតូ</li>
+        </ul>
+
+        <h3>៦.៣ ស្ថានភាពម៉ូតូ និងសកម្មភាព</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ស្ថានភាព / សកម្មភាព</th>
+                    <th>អត្ថន័យ</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>ទំនេរ</strong></td>
+                    <td>អាចជ្រើសសម្រាប់ការជួលថ្មី</td>
+                </tr>
+                <tr>
+                    <td><strong>កំពុងជួល</strong></td>
+                    <td>កំពុងស្ថិតក្នុងការជួលសកម្ម</td>
+                </tr>
+                <tr>
+                    <td><strong>ជួសជុល</strong></td>
+                    <td>មិនទាន់អាចជួលបាន រហូតដល់កំណត់ជា ទំនេរ វិញ</td>
+                </tr>
+                <tr>
+                    <td><strong>កំណត់ជា ទំនេរ</strong></td>
+                    <td>បើកម៉ូតូឱ្យអាចជួលបានវិញ</td>
+                </tr>
+                <tr>
+                    <td><strong>កំណត់ជា ជួសជុល</strong></td>
+                    <td>ផ្អាកការជួលម៉ូតូនោះជាបណ្តោះអាសន្ន</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>៧. ទំព័រ អតិថិជន <span class="page-tag">/customers</span></h2>
+        <p>គ្រប់គ្រងព័ត៌មានអតិថិជនដែលជួលម៉ូតូ។</p>
+
+        <h3>៧.១ បញ្ជីអតិថិជន</h3>
+        <ul>
+            <li>មើល / ស្វែងរកអតិថិជន</li>
+            <li>បង្កើតអតិថិជនថ្មី</li>
+            <li>បើកកំណត់ត្រាដើម្បីមើល ឬកែ</li>
+        </ul>
+
+        <h3>៧.២ បង្កើត / កែអតិថិជន</h3>
+        <ul>
+            <li>ឈ្មោះ</li>
+            <li>លេខទូរស័ព្ទ / ព័ត៌មានទំនាក់ទំនង</li>
+            <li>ឯកសារអត្តសញ្ញាណ (បើមាន)</li>
+            <li>ស្ថានភាព៖ <strong>សកម្ម</strong> ឬ <strong>អសកម្ម</strong></li>
+        </ul>
+
+        <h3>៧.៣ ច្បាប់សំខាន់</h3>
+        <ul>
+            <li>ការជួលថ្មីត្រូវជ្រើសអតិថិជនដែលមានស្ថានភាព <strong>សកម្ម</strong></li>
+            <li>មិនអាចកំណត់អសកម្ម បើអតិថិជននៅមានការជួលកំពុងដំណើរការ</li>
+            <li>អតិថិជនដែលមានប្រវត្តិជួល ជាទូទៅមិនគួរលុប — ប្រើ <strong>អសកម្ម</strong> ជំនួស</li>
+        </ul>
+
+        <h2>៨. ទំព័រ ការជួល <span class="page-tag">/rentals</span></h2>
+        <p>នេះជាទំព័រស្នូលនៃប្រព័ន្ធ — បង្កើតការជួល តាមដាន ប្រគល់ម៉ូតូ និងបោះពុម្ពវិក្កយបត្រ។</p>
+
+        <h3>៨.១ បញ្ជីការជួល</h3>
+        <ul>
+            <li>មើលការជួលទាំងអស់</li>
+            <li>ស្វែងរកតាមលេខជួល អតិថិជន លេខផ្ទាំង</li>
+            <li>មើលស្ថានភាព៖ សកម្ម / ហួសកំណត់ / បានបញ្ចប់</li>
+            <li>បង្កើតការជួលថ្មី</li>
+        </ul>
+
+        <h3>៨.២ បង្កើតការជួលថ្មី</h3>
+        <ol>
+            <li>ចុច <strong>បង្កើតការជួល</strong></li>
+            <li>ជ្រើសអតិថិជន (សកម្ម)</li>
+            <li>ជ្រើសម៉ូតូយ៉ាងហោចណាស់ ១ គ្រឿង (ទំនេរ)</li>
+            <li>កំណត់ថ្ងៃចាប់ផ្តើម និងថ្ងៃត្រូវប្រគល់</li>
+            <li>ជ្រើសកញ្ចប់តម្លៃ (១ ថ្ងៃ / ៣ ថ្ងៃ / ១ សប្តាហ៍ / ១ ខែ) — ប្រព័ន្ធគណនាតម្លៃស្វ័យប្រវត្តិ</li>
+            <li>បញ្ចូលប្រាក់កក់ / បញ្ចុះតម្លៃ / ពន្ធ (បើមាន)</li>
+            <li>បញ្ចូលការទូទាត់ដំបូង (បើអតិថិជនបានបង់រួច)</li>
+            <li>រក្សាទុក — ប្រព័ន្ធបង្កើតលេខជួលដូច <strong>RNT-ឆ្នាំ-លេខរៀង</strong></li>
+        </ol>
+        <div class="info-box">
+            <p><strong>បន្ទាប់ពីរក្សាទុក៖</strong> ស្ថានភាពការជួល = សកម្ម ហើយម៉ូតូប្តូរទៅ កំពុងជួល។</p>
+        </div>
+
+        <h3>៨.៣ មើល / កែការជួល</h3>
+        <ul>
+            <li>មើលព័ត៌មានអតិថិជន និងម៉ូតូ</li>
+            <li>មើលតម្លៃសរុប បានបង់ នៅសល់</li>
+            <li>មើលប្រវត្តិការទូទាត់ និងការគិតថ្លៃបន្ថែម</li>
+            <li>កែព័ត៌មានដែលអនុញ្ញាត (យោងតាមសិទ្ធិ និងស្ថានភាព)</li>
+        </ul>
+
+        <h3>៨.៤ ប្រគល់ / បិទការជួល</h3>
+        <ol>
+            <li>បើកការជួលដែលកំពុងសកម្ម</li>
+            <li>ចុច <strong>ប្រគល់ / បិទ</strong></li>
+            <li>បញ្ចូលថ្លៃបន្ថែមបើមាន (ឧ. ខូចខាត ឥន្ធនៈ យឺត)</li>
+            <li>បញ្ចូលការទូទាត់ចុងក្រោយបើអតិថិជនបង់នៅពេលប្រគល់</li>
+            <li>បញ្ជាក់ការប្រគល់</li>
+        </ol>
+        <p>បន្ទាប់ពីបិទ៖</p>
+        <ul>
+            <li>ការជួល = <strong>បានបញ្ចប់</strong></li>
+            <li>ម៉ូតូត្រឡប់ទៅ <strong>ទំនេរ</strong></li>
+            <li>ប្រព័ន្ធគណនាឡើងវិញនូវចំនួនបានបង់ / ថ្លៃបន្ថែម / នៅសល់</li>
+        </ul>
+
+        <h3>៨.៥ បោះពុម្ពវិក្កយបត្រ</h3>
+        <ul>
+            <li>ចុច <strong>បោះពុម្ពវិក្កយបត្រ</strong> នៅលើទំព័រការជួល</li>
+            <li>ប្រើការបោះពុម្ពរបស់កម្មវិធីរុករក (Browser Print / Save as PDF)</li>
+        </ul>
+
+        <h3>៨.៦ ការជួលហួសកំណត់</h3>
+        <p>បើថ្ងៃត្រូវប្រគល់កន្លងទៅហើយ ប៉ុន្តែការជួលនៅសកម្ម ប្រព័ន្ធនឹងបង្ហាញស្ថានភាព <strong>ហួសកំណត់</strong>។ បុគ្គលិកគួរទំនាក់ទំនងអតិថិជន រួចប្រគល់/បិទតាមដំណើរការធម្មតា។</p>
+
+        <h2>៩. ទំព័រ ចំណូល និងចំណាយ <span class="page-tag">/income-expense</span></h2>
+        <p>មើលសង្ខេបហិរញ្ញវត្ថុប្រចាំថ្ងៃ ឬតាមរយៈពេល។</p>
+        <h4>មុខងារ</h4>
+        <ul>
+            <li><strong>ចំណូល៖</strong> ផលបូកការទូទាត់ពីការជួលក្នុងរយៈពេលដែលជ្រើស</li>
+            <li><strong>ចំណាយ៖</strong> ផលបូកចំណាយដែលបានកត់ត្រា</li>
+            <li><strong>ប្រាក់នៅសល់៖</strong> ចំនួនដែលអតិថិជននៅជំពាក់លើការជួល</li>
+            <li>កត់ត្រាចំណាយថ្មី (ប្រភេទ / ឈ្មោះ / ចំនួនទឹកប្រាក់ / កាលបរិច្ឆេទ)</li>
+            <li>ត្រងតាមកាលបរិច្ឆេទដើម្បីពិនិត្យប្រចាំថ្ងៃ ឬប្រចាំខែ</li>
+        </ul>
+
+        <h2>១០. ទំព័រ របាយការណ៍ការជួល <span class="page-tag">/rental-reports</span></h2>
+        <p>មើលរបាយការណ៍សម្រាប់ការតាមដាន និងការសម្រេចចិត្ត។</p>
+        <ul>
+            <li>របាយការណ៍ការជួលតាមរយៈពេល</li>
+            <li>មើលការជួលសកម្ម / ហួសកំណត់ / បានបញ្ចប់</li>
+            <li>នាំចេញទិន្នន័យ (បើមានសិទ្ធិ export)</li>
+            <li>បោះពុម្ពរបាយការណ៍ (បើមានសិទ្ធិ print)</li>
+        </ul>
+
+        <h2>១១. ការគ្រប់គ្រងប្រព័ន្ធ</h2>
+        <p>ផ្នែកនេះសម្រាប់ម្ចាស់ប្រព័ន្ធ ឬអ្នកគ្រប់គ្រង។</p>
+
+        <h3>១១.១ អ្នកប្រើប្រាស់ <span class="page-tag">/administration/users</span></h3>
+        <ul>
+            <li>មើលបញ្ជីអ្នកប្រើ</li>
+            <li>បង្កើតអ្នកប្រើថ្មី (ឈ្មោះ អ៊ីមែល ពាក្យសម្ងាត់ តួនាទី)</li>
+            <li>កែ / បិទដំណើរការគណនី</li>
+            <li>កំណត់តួនាទីដើម្បីគ្រប់គ្រងសិទ្ធិ</li>
+        </ul>
+
+        <h3>១១.២ តួនាទី និងសិទ្ធិ <span class="page-tag">/administration/roles</span></h3>
+        <ul>
+            <li>បង្កើតតួនាទីថ្មី (ឧ. បុគ្គលិកជួល អ្នកមើលរបាយការណ៍)</li>
+            <li>ជ្រើសសិទ្ធិតាមម៉ូឌុល៖ មើល / បង្កើត / កែ / លុប / ប្រគល់ / បោះពុម្ព / នាំចេញ</li>
+            <li>កែតួនាទីដែលមានស្រាប់</li>
+        </ul>
+        <div class="info-box">
+            <p><strong>ម្ចាស់ប្រព័ន្ធ (Owner)៖</strong> មានសិទ្ធិពេញលេញ។ អ្នកប្រើផ្សេងទៀតប្រើសិទ្ធិតាមតួនាទីដែលបានកំណត់។</p>
+        </div>
+
+        <h3>១១.៣ លំដាប់លេខឯកសារ <span class="page-tag">/administration/document-sequences</span></h3>
+        <ul>
+            <li>កំណត់បុព្វបទ និងលេខរៀងសម្រាប់ឯកសារ (ឧ. លេខការជួល)</li>
+            <li>កំណត់ប្រវែងលេខ / រួមបញ្ចូលឆ្នាំ</li>
+            <li>បើក ឬបិទលំដាប់លេខ</li>
+        </ul>
+
+        <h3>១១.៤ ការកំណត់ប្រព័ន្ធ <span class="page-tag">/administration/system-settings</span></h3>
+        <ul>
+            <li><strong>ការធ្វើមូលដ្ឋានីយកម្ម៖</strong> ភាសា (ខ្មែរ/អង់គ្លេស) រូបិយប័ណ្ណ ទម្រង់កាលបរិច្ឆេទ</li>
+            <li><strong>Telegram៖</strong> បើកការជូនដំណឹង កំណត់ Bot Token / Group ID សាកល្បងការតភ្ជាប់</li>
+            <li><strong>ការជូនដំណឹង៖</strong> ជួលថ្មី ហួសកំណត់ ប្រគល់រួច ការទូទាត់ សង្ខេបប្រចាំថ្ងៃ</li>
+            <li><strong>កំណត់ទិន្នន័យឡើងវិញទាំងអស់៖</strong> លុបទិន្នន័យអាជីវកម្មទាំងអស់ រួចត្រូវរៀបចំប្រព័ន្ធឡើងវិញ</li>
+        </ul>
+        <div class="warn-box">
+            <p><strong>ប្រុងប្រយ័ត្ន៖</strong> «កំណត់ទិន្នន័យឡើងវិញទាំងអស់» មិនអាចត្រឡប់វិញបានទេ។ បន្ទាប់ពីធ្វើរួច អ្នកនឹងត្រូវចេញពីប្រព័ន្ធ និងបង្កើតអ្នកគ្រប់គ្រងថ្មីនៅទំព័រ Setup។</p>
+        </div>
+
+        <h3>១១.៥ កំណត់ហេតុសវនកម្ម <span class="page-tag">/administration/audit-logs</span></h3>
+        <ul>
+            <li>មើលសកម្មភាពសំខាន់ៗដែលបានកើតឡើងក្នុងប្រព័ន្ធ</li>
+            <li>តាមដាននរណាធ្វើអ្វី លើកំណត់ត្រាណា នៅពេលណា</li>
+            <li>មានប្រយោជន៍សម្រាប់ការត្រួតពិនិត្យ និងដោះស្រាយបញ្ហា</li>
+        </ul>
+
+        <h2>១២. ភាសា និងការកំណត់ផ្ទាល់ខ្លួន</h2>
+        <ul>
+            <li>ប្តូរភាសា <strong>ខ្មែរ / English</strong> ពីម៉ឺនុយការកំណត់</li>
+            <li>ប្តូររូបរាងភ្លឺ / ងងឹត (បើមាន)</li>
+            <li>ចាកចេញពីគណនីតាម <strong>ចាកចេញ</strong></li>
+        </ul>
+
+        <h2>១៣. សំណួរញឹកញាប់ និងការណែនាំ</h2>
+
+        <h3>១៣.១ ហេតុអ្វីខ្ញុំមិនឃើញប៊ូតុង?</h3>
+        <p>គណនីអ្នកប្រហែលជាគ្មានសិទ្ធិសម្រាប់សកម្មភាពនោះ។ សូមសួរអ្នកគ្រប់គ្រងឱ្យពិនិត្យតួនាទី។</p>
+
+        <h3>១៣.២ ហេតុអ្វីជ្រើសម៉ូតូមិនបាន?</h3>
+        <p>ម៉ូតូត្រូវមានស្ថានភាព <strong>ទំនេរ</strong>។ បើកំពុងជួល ឬកំពុងជួសជុល មិនអាចជ្រើសបានទេ។</p>
+
+        <h3>១៣.៣ របៀបគណនាតម្លៃជួល?</h3>
+        <p>ប្រព័ន្ធគណនាតាមកញ្ចប់ និងអត្រាតម្លៃរបស់ម៉ូតូ៖</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>រយៈពេល</th>
+                    <th>អត្រាដែលប្រើ</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>១ ថ្ងៃ</td><td>តម្លៃ ១ ថ្ងៃ</td></tr>
+                <tr><td>៣ ថ្ងៃ</td><td>តម្លៃ ៣ ថ្ងៃ</td></tr>
+                <tr><td>១ សប្តាហ៍ (៧ ថ្ងៃ)</td><td>តម្លៃប្រចាំសប្តាហ៍</td></tr>
+                <tr><td>១ ខែ (ខែប្រតិទិនពិត)</td><td>តម្លៃប្រចាំខែ</td></tr>
+                <tr><td>រយៈពេលផ្សេង</td><td>គណនាតាមថ្ងៃ × តម្លៃ ១ ថ្ងៃ (ឬតាមច្បាប់ប្រព័ន្ធ)</td></tr>
+            </tbody>
+        </table>
+
+        <h3>១៣.៤ ការណែនាំសុវត្ថិភាព</h3>
+        <ul>
+            <li>កុំចែករំលែកពាក្យសម្ងាត់</li>
+            <li>ចាកចេញពីគណនីពេលចប់ការងារ លើកុំព្យូទ័ររួម</li>
+            <li>ផ្តល់សិទ្ធិតាមតួនាទីពិតប្រាកដ — កុំផ្តល់សិទ្ធិលើសតម្រូវការ</li>
+            <li>មុនពេល «កំណត់ទិន្នន័យឡើងវិញទាំងអស់» ត្រូវប្រាកដថាអ្នកពិតជាចង់លុបទិន្នន័យទាំងអស់</li>
+        </ul>
+
+        <h2>១៤. សេចក្តីបញ្ចប់</h2>
+        <p>HollyWing Motor ជួយឱ្យអាជីវកម្មជួលម៉ូតូដំណើរការបានរលូន ពីការចុះបញ្ជីម៉ូតូ និងអតិថិជន រហូតដល់ការជួល ការទូទាត់ ការប្រគល់ និងរបាយការណ៍។</p>
+        <p>បើត្រូវការបណ្តុះបណ្តាលបន្ថែមតាមទំព័រ ឬតាមតួនាទីជាក់លាក់ សូមជូនដំណឹងដើម្បីធ្វើបច្ចុប្បន្នភាពឯកសារនេះបន្ថែម (ឧ. រូបអេក្រង់ ឬជំហានលម្អិតជាងនេះ)។</p>
+
+        <div class="info-box">
+            <p><strong>កំណែឯកសារ៖</strong> ខ្មែរតែមួយ — ណែនាំការប្រើប្រាស់សម្រាប់អតិថិជន · HollyWing Motor · ខែកញ្ញា ២០២៦</p>
+        </div>
+    </div>
+</body>
+</html>

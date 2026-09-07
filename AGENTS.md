@@ -1,32 +1,45 @@
-# LCS Freight Forwarding (frontend)
+# HollyWing Motor agent instructions
 
-This file is the **OpenCode project rule**. OpenCode loads `AGENTS.md` on every session.
+These instructions apply to all work in this repository.
 
-## Stack
+## Start with repository evidence
 
-Nuxt 4 + **Nuxt UI** + TypeScript + Tailwind. **Mock data now** (`useFreightStore`, seed files, `app/repositories/mock/`). HTTP later via `app/repositories/` only. Do not add another UI kit.
+- Inspect the relevant implementation before editing it.
+- Read only the applicable sections of `docs/GLM_SYSTEM_GUIDE.md` for domain behavior.
+- For backend work, also read `docs/BACKEND_IMPLEMENTATION_PLAN.md`.
+- For frontend/backend HTTP integration, follow `docs/GLM_FRONTEND_BACKEND_INTEGRATION_GUIDE.md`.
+- Search for existing types, utilities, repositories, components, tests, and translations before adding new patterns.
+- Keep changes focused and preserve unrelated user edits.
 
-## Always
+For implementation, debugging, or review work in OpenCode, load the `rental-moto-development` skill.
 
-- Do not redesign, change global colors/type, or change the sidebar unless a catalog route is missing.
-- Reuse existing components. Do **not** hardcode per-page forms, tables, options, labels, or task-type screens.
-- Drive UI from module schemas (`freight-modules.ts`, `lcs-reference-modules.ts`), settings schemas (`settings-schemas.ts`), and **component templates**.
-- Honour System Settings at runtime: branding (`useAppBranding`), localization (`useAppLocalization`), feature flags. Do not bake tenant settings into Vue/CSS.
-- Job Tasks: render attributes from the assigned template `values[]` by data/input type. Never add a Vue form per task (Customs, Transport, …).
-- Reuse `WorkspaceView`, `DocumentView`, `JobDetail`, `ReportsView`, `DashboardView`, `AppLineTable`, `FieldInput`, `FieldGrid`, `AppDocumentForm`, `AppDynamicFieldRenderer`, `SystemSettingsPage`.
-- One shell per module kind: lists/details render through `WorkspaceView` / `ModulePage`. Do not create page-level clones (e.g. a second service-order list component).
-- Delete superseded/orphaned `.vue` components. Do not leave dead code in the tree.
-- Option lists live only in `app/config/freight-options.ts` / `select-options`. Never copy option arrays into components.
-- Table cells: shared formatter + status badge helper (`formatFreightCell`, `statusColor`). No inline badge-color ternaries; do not copy date/format helpers between files.
-- Data grids use `UTable` with the compact utilities; no raw `<table>` markup in components.
-- No native `window.prompt` / `alert` / `confirm`. Use `AppConfirmDialog` / `useConfirm`, or a small `UModal` form for text input.
-- Every form field shows ERPNext-style helper text under the control (`UFormField` `help`, `useFormFieldHelp`, `freight.fieldHelp.*` / `docetra.fieldHelp.*` in en+km). Do not hide help on compact forms.
-- Compact ERP tables: small rows, subtle borders, light hover, `⋯` actions, right-align money, existing badges.
-- English + Khmer in `i18n/locales/en.json` and `km.json`.
-- Org / branch / `auth.canAccessPage`. Frontend hide is not security.
-- Posted journals only for accounting reports. Issue service charge ≠ posting.
-- Form fields: size `md`. Do not allocate official document numbers in the UI.
+## Repository structure
 
-## Skill
+- `frontend/` is the active Nuxt 4, Vue 3, TypeScript, Pinia, Nuxt UI, Vitest, and English/Khmer i18n application.
+- Documentation paths written as `app/...` refer to `frontend/app/...`.
+- `backend/` is reserved for the planned FastAPI, PostgreSQL, Redis, RabbitMQ, and Celery implementation. Inspect it before assuming backend code exists.
 
-When building or fixing dashboard, quotations, service orders, charges, finance, reports, master data, configuration, administration, settings, or dynamic fields, load skill **`freight-erp-pages`** (`.opencode/skills/freight-erp-pages/SKILL.md`). Then read `pages.md`, `components.md`, and `stack.md` in that same folder.
+## Required invariants
+
+- Reuse existing module, table, form, composable, store, and repository patterns.
+- Keep English and Khmer translation keys synchronized. Avoid hard-coded UI text where i18n is used.
+- Preserve `/api/v2` endpoints and the `{ data, meta }` response envelope.
+- Preserve bearer access tokens and rotating refresh tokens. Do not introduce cookie sessions, CSRF-token authentication, end-user API keys, or tenant/branch claims.
+- PostgreSQL is authoritative. Use Redis only for caching, revocation, rate limits, transient state, progress, and idempotency.
+- Keep rental, payment, charge, completion, motorcycle-status, pricing, audit, and outbox changes transactionally consistent.
+- Use decimal-safe values for persisted backend money calculations.
+- Add or update tests for changed business logic, regressions, permissions, and API contracts.
+- Avoid destructive Git or filesystem operations unless the user explicitly requests them.
+
+## Verification
+
+Run the checks relevant to the change from the repository root:
+
+```text
+pnpm --dir frontend test
+pnpm --dir frontend typecheck
+pnpm --dir frontend lint
+pnpm --dir frontend build
+```
+
+Prefer focused tests while iterating. Never claim a check passed unless it was run successfully. If verification is blocked, report the exact unverified command and reason.
