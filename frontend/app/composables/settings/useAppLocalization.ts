@@ -15,6 +15,7 @@ import {
   type RelativeTimeLabels,
 } from '~/utils/format/format-service'
 import { normalizeLocalization } from '~/utils/format/localization-config'
+import { canLoadProtectedAppSettings } from '~/utils/auth/access-redirect'
 
 export const DEFAULT_APP_LOCALIZATION: AppConfigLocalization = DEFAULT_FORMAT_CONFIG
 
@@ -44,6 +45,11 @@ export function useAppLocalization() {
     }
     loading.value = true
     try {
+      const auth = useAuthStore()
+      if (auth.isLoggedIn && !canLoadProtectedAppSettings(key => auth.canAccessPage(key))) {
+        loaded.value = true
+        return localization.value
+      }
       const config = await appConfig.get()
       localization.value = normalizeLocalization({
         ...DEFAULT_APP_LOCALIZATION,

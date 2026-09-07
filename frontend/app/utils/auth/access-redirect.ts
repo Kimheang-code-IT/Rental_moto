@@ -28,3 +28,8 @@ export function resolvePermissionDenialRoute(options: {
   if (landing) return { action: 'redirect', to: landing[0] }
   return { action: 'clear-session-login' }
 }
+
+/** App-info/app-config GETs are settings-protected; skip them on boot without this permission. */
+export function canLoadProtectedAppSettings(canAccessPage: (permission: string) => boolean) {
+  return canAccessPage('settings.app_config.view')
+}

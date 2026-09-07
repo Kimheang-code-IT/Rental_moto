@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resolvePermissionDenialRoute } from '../app/utils/auth/access-redirect'
+import { canLoadProtectedAppSettings, resolvePermissionDenialRoute } from '../app/utils/auth/access-redirect'
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../app')
 
@@ -47,6 +47,12 @@ describe('permission-denial navigation (no modal host)', () => {
       navigatedFromAnotherPage: false,
     })
     expect(denial).toEqual({ action: 'clear-session-login' })
+  })
+
+  it('does not load protected app settings without view permission', () => {
+    expect(canLoadProtectedAppSettings(() => false)).toBe(false)
+    expect(canLoadProtectedAppSettings(staff)).toBe(false)
+    expect(canLoadProtectedAppSettings(permission => permission === 'settings.app_config.view')).toBe(true)
   })
 
   it('the AppAccessAlertHost and its composable are removed from the app', () => {

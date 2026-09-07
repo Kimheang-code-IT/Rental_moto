@@ -8,8 +8,12 @@ type ConnectionResult = { status: ConnectionStatus; message: string }
 
 export function createHttpAppInfoRepository(): AppInfoRepository {
   const api = useApi()
+  // Branding is optional on boot. Do not toast a 403 for staff who cannot
+  // open System Settings — callers already fall back to defaults.
+  const bootGetOptions = { suppressErrorToast: true, suppressAuthErrorUi: true }
+
   return {
-    get: async () => unwrapApiData(await api.get<AppInfo | ApiResponse<AppInfo>>(ApiEndpoints.APP_INFO)),
+    get: async () => unwrapApiData(await api.get<AppInfo | ApiResponse<AppInfo>>(ApiEndpoints.APP_INFO, bootGetOptions)),
     update: async input => unwrapApiData(await api.patch<AppInfo | ApiResponse<AppInfo>>(ApiEndpoints.APP_INFO, input)),
     reset: async () => unwrapApiData(await api.post<AppInfo | ApiResponse<AppInfo>>(ApiEndpoints.APP_INFO_RESET, {})),
   }

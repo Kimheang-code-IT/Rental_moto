@@ -5,6 +5,7 @@ import { useAppBranding } from '~/composables/settings/useAppBranding'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { useAuth } from '~/composables/auth/useAuth'
 import { usePreferencesStore } from '~/stores/preferences'
+import { canLoadProtectedAppSettings } from '~/utils/auth/access-redirect'
 
 const colorMode = useColorMode()
 const { locale, t } = useI18n()
@@ -40,15 +41,18 @@ async function hydrateStartup() {
     await hydrateSessionFromApi()
   }
 
-  // App info is protected. Do not request it on public auth pages because an
-  // expected 401 would be mistaken for an expired signed-in session.
-  if (auth.isLoggedIn) {
+  // App info and localization are protected. Skip the request unless this
+  // user can open System Settings — a 403 here is expected, not an alert.
+  if (auth.isLoggedIn && canLoadProtectedAppSettings(key => auth.canAccessPage(key))) {
     await Promise.all([
       appInfo.get()
         .then(info => applyFromAppInfo(info))
         .catch(() => applyFromAppInfo(null)),
       useAppLocalization().load(),
     ])
+  }
+  else if (auth.isLoggedIn) {
+    applyFromAppInfo(null)
   }
 }
 
