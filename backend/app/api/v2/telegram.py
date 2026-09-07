@@ -13,6 +13,7 @@ from app.api.deps import (
     parse_date_range,
     require_permission,
 )
+from app.core.config import settings
 from app.core.errors import AccessDeniedError, ValidationError
 from app.core.permissions import user_has_permission
 from app.services.admin_service import SettingService
@@ -109,6 +110,24 @@ async def telegram_localization(
     config = await SettingService(session).get_app_config(mask=False)
     localization = config.get("localization") or {}
     return envelope({key: localization.get(key) for key in TELEGRAM_LOCALIZATION_KEYS})
+
+
+@router.get("/runtime")
+async def telegram_runtime(
+    _service=Depends(get_service_principal),
+    session: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Bot poller bootstrap: unmasked token for the service JWT only."""
+    config = await SettingService(session).get_app_config(mask=False)
+    telegram = config.get("telegram") or {}
+    stored = str(telegram.get("botToken") or "").strip()
+    token = stored if stored and stored != "***" else str(settings.telegram_bot_token or "").strip()
+    return envelope(
+        {
+            "enabled": bool(telegram.get("enabled", True)),
+            "botToken": token,
+        }
+    )
 
 
 @router.get("/income")

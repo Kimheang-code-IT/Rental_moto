@@ -95,7 +95,7 @@ CELERY_RESULT_BACKEND=redis://redis:6379/2
 JWT_SECRET_KEY=change-me-in-production
 ACCESS_TOKEN_EXPIRE_MINUTES=15
 REFRESH_TOKEN_EXPIRE_DAYS=7
-TELEGRAM_BOT_TOKEN=<botfather-token>
+TELEGRAM_BOT_TOKEN=
 TELEGRAM_BOT_MODE=polling
 TELEGRAM_BOT_CLIENT_ID=rental-telegram-bot
 TELEGRAM_BOT_CLIENT_SECRET=<random-secret>
@@ -321,6 +321,8 @@ JWT bearer authentication is the only backend auth mechanism. Do not add cookie 
 
 Telegram runs in a separate `telegram-bot` Docker container. It calls FastAPI using a short-lived service JWT and never queries PostgreSQL directly.
 
+Save the BotFather token in System Settings → Telegram. The poller loads it from `GET /api/v2/telegram/runtime` (service JWT only) and starts within about 15 seconds. `TELEGRAM_BOT_TOKEN` in `.env` is an optional override; leave it empty for UI-managed tokens. Staff user JWTs never receive the unmasked token.
+
 Main keyboard buttons:
 
 - `📋 All Rental Transactions`: group rental creation, payment, charge, return/completion, cancellation, and overdue events by rental number.
@@ -371,7 +373,7 @@ Error:
 | POST   | `/api/v2/auth/logout` | `{ refreshToken }`    | Revoke refresh-token JTI in Redis |
 | GET    | `/api/v2/auth/me`     | Bearer access token   | `{ data: AuthUser }`              |
 
-The Telegram container obtains its JWT from `/api/v2/auth/service-token`. Telegram report endpoints are `/api/v2/telegram/transactions`, `/api/v2/telegram/motorcycle-status`, and `/api/v2/telegram/finance-summary`.
+The Telegram container obtains its JWT from `/api/v2/auth/service-token`. It loads the BotFather token from `GET /api/v2/telegram/runtime`. Report endpoints include `/api/v2/telegram/transactions`, `/api/v2/telegram/motorcycle-status`, and `/api/v2/telegram/finance-summary`.
 
 
 

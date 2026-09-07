@@ -246,9 +246,10 @@ pytest   # conftest defaults to the ports above (Redis broker on /3)
 
 ## Telegram bot
 
-Set `TELEGRAM_BOT_TOKEN` in `backend/.env` and `docker compose up telegram-bot`.
+Set the BotFather token in **System Settings → Telegram** (or optionally `TELEGRAM_BOT_TOKEN` in `.env`) and `docker compose up telegram-bot`.
 The bot exchanges `TELEGRAM_BOT_CLIENT_ID`/`_SECRET` for a short-lived service
-JWT (`POST /api/v2/auth/service-token`) and never touches PostgreSQL. It uses
+JWT (`POST /api/v2/auth/service-token`), reads `GET /api/v2/telegram/runtime` for
+the UI-saved token, and never touches PostgreSQL. It uses
 **Reply Keyboard only** navigation (finance, motorcycles, customers, rentals,
 account help in private chats), period presets (all / today / 3 days / 1 week /
 1 month / custom range), Redis-backed per-user navigation state, pagination,

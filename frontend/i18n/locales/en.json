@@ -56,7 +56,7 @@
       "fromEmail": "Sender email address on outbound emails.",
       "replyTo": "Reply-to address for outbound emails.",
       "enableTelegram": "Allow Telegram bot notifications.",
-      "botToken": "Telegram bot API token from BotFather.",
+      "botToken": "Telegram bot API token from BotFather. Saving it here starts the chatbot; you do not need to set TELEGRAM_BOT_TOKEN in .env.",
       "botUsername": "Public Telegram bot username.",
       "destinations": "Telegram chats or channels that receive notifications.",
       "inApp": "Show in-app notifications in the header bell.",

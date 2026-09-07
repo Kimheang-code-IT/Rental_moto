@@ -93,7 +93,7 @@ After reset, users, roles, document sequences, and settings remain; you stay sig
 - [ ] Open the site over HTTPS, register the first system owner through `/auth/setup`, and use a strong password
 - [ ] Confirm `GET /api/v2/auth/setup-status` returns `needsSetup: false` and `POST /api/v2/auth/setup` returns 409 afterwards
 - [ ] Create real staff users and roles
-- [ ] Configure System Settings → Localization, Telegram destinations, company info
+- [ ] Configure System Settings → Localization, Telegram (Bot token, Group ID, Chat User IDs), company info
 - [ ] Create motorcycles and customers
 - [ ] Create one test rental and confirm Telegram **text** notification (no PDF attachment)
 - [ ] Confirm `/docs` returns 404 (Swagger is off in production)

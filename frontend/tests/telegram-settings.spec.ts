@@ -57,6 +57,12 @@ describe('telegram settings', () => {
     expect(reportPeriod?.options?.map(option => option.value)).toEqual(['today', '3_days', '7_days', '1_month'])
   })
 
+  it('documents that the saved bot token starts the chatbot', () => {
+    const botToken = telegramFields.find(field => field.key === 'telegram.botToken')
+    expect(botToken?.type).toBe('secret')
+    expect(botToken?.helpKey).toBe('core.fieldHelp.botToken')
+  })
+
   it('keeps connection fields ordered with the test status last', () => {
     const connectionSection = telegramTab?.sections.find(section => section.id === 'telegram-connection')
     const keys = connectionSection?.fields.map(field => field.key) ?? []

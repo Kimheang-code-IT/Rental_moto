@@ -5,6 +5,8 @@ async def test_telegram_endpoints_reject_anonymous(client):
         "/api/v2/telegram/transactions",
         "/api/v2/telegram/motorcycle-status",
         "/api/v2/telegram/access",
+        "/api/v2/telegram/runtime",
+        "/api/v2/telegram/localization",
     ):
         response = await client.get(path)
         assert response.status_code == 401
@@ -70,6 +72,50 @@ async def test_telegram_link_flow(client, admin_headers):
     assert reused.status_code == 422
 
     await client.post(f"/api/v2/users/{linked.json()['data']['user']['id']}/unlink-telegram", headers=admin_headers)
+
+
+async def _service_token_response(client):
+    return await client.post(
+        "/api/v2/auth/service-token",
+        json={"clientId": "rental-telegram-bot", "clientSecret": "dev-only-telegram-secret-change-me-0123456789abcdef"},
+    )
+
+
+async def test_user_token_cannot_read_bot_runtime(client, admin_headers):
+    response = await client.get("/api/v2/telegram/runtime", headers=admin_headers)
+    assert response.status_code == 401
+
+
+async def test_service_token_reads_bot_token_saved_in_settings(client, admin_headers):
+    token = "123456789:AASettingsSavedBotTokenForRuntime"
+    saved = await client.patch(
+        "/api/v2/settings/app-config",
+        headers=admin_headers,
+        json={"telegram": {"enabled": True, "botToken": token}},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["data"]["telegram"]["botToken"] == "***"
+
+    service_token = await _service_token_response(client)
+    assert service_token.status_code == 200
+    headers = {"Authorization": f"Bearer {service_token.json()['data']['accessToken']}"}
+
+    runtime = await client.get("/api/v2/telegram/runtime", headers=headers)
+    assert runtime.status_code == 200, runtime.text
+    payload = runtime.json()["data"]
+    assert payload["enabled"] is True
+    assert payload["botToken"] == token
+
+    disabled = await client.patch(
+        "/api/v2/settings/app-config",
+        headers=admin_headers,
+        json={"telegram": {"enabled": False}},
+    )
+    assert disabled.status_code == 200
+    runtime_off = await client.get("/api/v2/telegram/runtime", headers=headers)
+    assert runtime_off.status_code == 200
+    assert runtime_off.json()["data"]["enabled"] is False
+    assert runtime_off.json()["data"]["botToken"] == token
 
 
 async def test_send_test_without_token_reports_failure(client, admin_headers):

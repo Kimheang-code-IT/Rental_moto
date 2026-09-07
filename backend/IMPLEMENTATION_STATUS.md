@@ -148,7 +148,7 @@ Last verified: 2026-09-01 (Python 3.12.10, Docker 29.1.3 / Compose v2.40.3 on Wi
 | Export flow: 202 → queued → completed → CSV download (1753 bytes) | PASS |
 | Service-token flow (bot boundary: reports readable, mutations denied) | PASS |
 | OpenAPI generation (69 paths) | PASS |
-| Telegram bot container healthy (idle until `TELEGRAM_BOT_TOKEN` is set) | PASS |
+| Telegram bot container healthy (idle until System Settings bot token or `TELEGRAM_BOT_TOKEN` is set) | PASS |
 
 ## Known gaps / incomplete items
 

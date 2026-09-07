@@ -14,6 +14,7 @@ from telegram.ext import (
 )
 
 from telegram_bot.api_client import ApiClient
+from telegram_bot.runtime import resolve_bot_token
 from telegram_bot.state import BotState
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
@@ -23,14 +24,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("hollywing.bot")
 
+POLL_WAIT_SECONDS = 15
 
-def build_application() -> Application:
-    api = ApiClient(
-        base_url=os.environ.get("API_INTERNAL_URL", "http://localhost:8000"),
-        client_id=os.environ.get("TELEGRAM_BOT_CLIENT_ID", "rental-telegram-bot"),
-        client_secret=os.environ.get("TELEGRAM_BOT_CLIENT_SECRET", ""),
-    )
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+
+def build_application(token: str, api: ApiClient) -> Application:
     application = Application.builder().token(token).build()
     state_redis = aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/1"), decode_responses=True)
     state = BotState(state_redis)
@@ -77,25 +74,58 @@ def build_application() -> Application:
     return application
 
 
-async def main() -> None:
+async def _poll_until_token_changes(api: ApiClient, token: str) -> None:
+    while True:
+        await asyncio.sleep(POLL_WAIT_SECONDS)
+        latest = await resolve_bot_token(api)
+        if not latest.ok:
+            continue
+        if latest.token != token:
+            logger.info("Telegram bot token or enabled flag changed; restarting poller")
+            return
+
+
+async def run_poller(token: str, api: ApiClient) -> None:
     mode = os.environ.get("TELEGRAM_BOT_MODE", "polling")
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    if not token:
-        logger.warning("TELEGRAM_BOT_TOKEN is not set; bot is idle. Set the token and restart the container.")
-        while True:
-            await asyncio.sleep(3600)
-    application = build_application()
+    application = build_application(token, api)
     async with application:
         await application.bot.delete_webhook(drop_pending_updates=False)
         await application.start()
         await application.updater.start_polling(drop_pending_updates=False)
         logger.info("Telegram bot started in %s mode", mode)
         try:
-            while True:
-                await asyncio.sleep(3600)
+            await _poll_until_token_changes(api, token)
         finally:
             await application.updater.stop()
             await application.stop()
+
+
+async def main() -> None:
+    api = ApiClient(
+        base_url=os.environ.get("API_INTERNAL_URL", "http://localhost:8000"),
+        client_id=os.environ.get("TELEGRAM_BOT_CLIENT_ID", "rental-telegram-bot"),
+        client_secret=os.environ.get("TELEGRAM_BOT_CLIENT_SECRET", ""),
+    )
+    idle_logged = False
+    while True:
+        resolved = await resolve_bot_token(api)
+        if not resolved.ok:
+            if not idle_logged:
+                logger.warning("Waiting for API before loading the Telegram bot token")
+                idle_logged = True
+            await asyncio.sleep(POLL_WAIT_SECONDS)
+            continue
+        if not resolved.token:
+            if not idle_logged:
+                logger.warning(
+                    "Telegram bot token is not set. Save Bot token in System Settings → Telegram "
+                    "(or set TELEGRAM_BOT_TOKEN) and wait; the bot will start automatically."
+                )
+                idle_logged = True
+            await asyncio.sleep(POLL_WAIT_SECONDS)
+            continue
+        idle_logged = False
+        await run_poller(resolved.token, api)
 
 
 if __name__ == "__main__":

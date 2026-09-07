@@ -41,7 +41,7 @@
       "fromEmail": "អាសយដ្ឋានអ៊ីមែលអ្នកផ្ញើ។",
       "replyTo": "អាសយដ្ឋានឆ្លើយតបសម្រាប់អ៊ីមែលចេញ។",
       "enableTelegram": "អនុញ្ញាតការជូនដំណឹងតាម Telegram។",
-      "botToken": "សោ API បូត Telegram ពី BotFather។",
+      "botToken": "សោ API បូត Telegram ពី BotFather។ រក្សាទុកនៅទីនេះដើម្បីចាប់ផ្តើម chatbot ដោយមិនចាំបាច់កំណត់ TELEGRAM_BOT_TOKEN ក្នុង .env។",
       "botUsername": "ឈ្មោះអ្នកប្រើបូត Telegram សាធារណៈ។",
       "destinations": "ក្រុមឬឆានែល Telegram ដែលទទួលការជូនដំណឹង។",
       "sessionTimeout": "នាទីអសកម្មមុនពេលសម័យផុតកំណត់។",

@@ -352,6 +352,7 @@ const SETTINGS_FIELD_HELP: Record<string, string> = {
   'email.enabled': 'core.fieldHelp.enableEmail',
   'email.replyToEmail': 'core.fieldHelp.replyTo',
   'telegram.enabled': 'core.fieldHelp.enableTelegram',
+  'telegram.botToken': 'core.fieldHelp.botToken',
 }
 
 /** Administration system settings — Localization, Telegram, Security only. */
