@@ -408,11 +408,16 @@ class SettingService:
     async def update_app_config(self, patch: dict) -> dict:
         current = await self.repo.get_value("app_config") or _default_app_config()
         merged = _deep_merge(current, _mask_config(patch, write=True))
-        from app.services.telegram_context import normalize_telegram_config, validate_telegram_config
+        from app.services.telegram_context import (
+            normalize_telegram_config,
+            sync_user_telegram_ids_from_access,
+            validate_telegram_config,
+        )
 
         if "telegram" in merged:
             merged["telegram"] = normalize_telegram_config(merged["telegram"])
             validate_telegram_config(merged["telegram"])
+            await sync_user_telegram_ids_from_access(self.session, merged["telegram"])
         merged["updatedAt"] = utcnow().isoformat()
         await self.repo.put_value("app_config", merged, self.actor.id if self.actor else None)
         await self.audit.add(

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import AccessDeniedError, ValidationError
 from app.core.permissions import effective_permissions, user_has_permission
+from app.core.security import utcnow
 from app.models import User
 from app.repositories.admin import UserRepository
 
@@ -198,6 +199,60 @@ def _find_user_access(cfg: dict, *, user_id: int | None = None, chat_id: str | N
     return False
 
 
+def user_access_row_for_telegram(
+    cfg: dict,
+    telegram_user_id: str,
+    telegram_chat_id: str | None = None,
+) -> dict | None:
+    """Match a Settings → staff Chat User ID without requiring /link."""
+    rows = cfg.get("userAccess") or []
+    for row in rows:
+        chat = str(row.get("chatId") or "").strip()
+        if not chat:
+            continue
+        if telegram_ids_equal(chat, telegram_user_id):
+            return row
+        if telegram_chat_id and telegram_ids_equal(chat, telegram_chat_id):
+            return row
+    return None
+
+
+async def _user_from_access_row(session: AsyncSession, row: dict | None) -> User | None:
+    if not row:
+        return None
+    raw_id = row.get("userId")
+    if raw_id in (None, ""):
+        return None
+    try:
+        user_id = int(raw_id)
+    except (TypeError, ValueError):
+        return None
+    user = await UserRepository(session).get(user_id)
+    if user is None or user.status != "Active":
+        return None
+    return user
+
+
+async def sync_user_telegram_ids_from_access(session: AsyncSession, config: dict) -> None:
+    """Copy Settings Chat User IDs onto users so the bot works without /link."""
+    rows = config.get("userAccess") or []
+    users = UserRepository(session)
+    seen: set[str] = set()
+    for row in rows:
+        chat = str(row.get("chatId") or "").strip()
+        if not chat or chat in seen:
+            continue
+        user = await _user_from_access_row(session, row)
+        if user is None:
+            continue
+        seen.add(chat)
+        await users.clear_conflicting_telegram_link(user.id, chat, chat)
+        user.telegram_user_id = chat
+        user.telegram_chat_id = chat
+        if user.telegram_linked_at is None:
+            user.telegram_linked_at = utcnow()
+
+
 def _require_private_user_access(cfg: dict, user: User, telegram_chat_id: str) -> None:
     match = _find_user_access(cfg, user_id=user.id, chat_id=telegram_chat_id)
     if match is None:
@@ -213,8 +268,10 @@ async def _require_group_user_access(session: AsyncSession, cfg: dict, telegram_
     users = UserRepository(session)
     user = await users.get_by_telegram_user_id(telegram_user_id)
     if user is None:
+        user = await _user_from_access_row(session, user_access_row_for_telegram(cfg, telegram_user_id))
+    if user is None:
         raise AccessDeniedError("This Telegram user is not authorized for group access")
-    match = _find_user_access(cfg, user_id=user.id, chat_id=user.telegram_chat_id)
+    match = _find_user_access(cfg, user_id=user.id, chat_id=user.telegram_chat_id or telegram_user_id)
     if match is False or not match.get("groupEnabled", True):
         raise AccessDeniedError("Group chatbot access is disabled for this user")
 
@@ -281,6 +338,13 @@ async def build_telegram_context(
     if chat_type_norm == "private":
         users = UserRepository(session)
         user = await users.get_by_telegram_ids(telegram_user_id, telegram_chat_id)
+        if user is None:
+            user = await users.get_by_telegram_user_id(telegram_user_id)
+        if user is None:
+            user = await _user_from_access_row(
+                session,
+                user_access_row_for_telegram(cfg, telegram_user_id, telegram_chat_id),
+            )
         if user is None or user.status != "Active":
             if require_linked:
                 raise AccessDeniedError("Telegram account is not linked to an active user")

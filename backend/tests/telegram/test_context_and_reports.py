@@ -71,6 +71,21 @@ def test_user_access_matches_string_user_id():
     _require_private_user_access(cfg, SimpleNamespace(id=7), "1489002750")
 
 
+def test_user_access_row_matches_pasted_chat_id_without_link():
+    from app.services.telegram_context import user_access_row_for_telegram
+
+    cfg = {
+        "userAccess": [
+            {"userId": 1, "chatId": "6298333893", "chatbotEnabled": True},
+            {"userId": 2, "chatId": "1111111111", "chatbotEnabled": True},
+        ]
+    }
+    row = user_access_row_for_telegram(cfg, "6298333893", "6298333893")
+    assert row is not None
+    assert row["userId"] == 1
+    assert user_access_row_for_telegram(cfg, "999", "999") is None
+
+
 def test_validate_accepts_single_group_synced_from_chat_id():
     cfg = normalize_telegram_config({"chatId": "-5378646026"})
     validate_telegram_config(cfg)
