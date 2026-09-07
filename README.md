@@ -6,10 +6,20 @@ Motorcycle rental management - Nuxt frontend, FastAPI backend, Docker Compose st
 
 **One command** on a new PC (or to update an existing install). Requires Git and Docker Desktop.
 
-Paste in **PowerShell**:
+Paste in **Windows PowerShell** (the blue `powershell.exe` window):
 
 ```powershell
-irm https://raw.githubusercontent.com/Kimheang-code-IT/Rental_moto/main/scripts/install-client.ps1 | iex
+irm https://raw.githubusercontent.com/Kimheang-code-IT/Rental_moto/main/scripts/bootstrap-install.ps1 | iex
+```
+
+If GitHub has not been updated yet, download then run the installer:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+$p = "$env:TEMP\hollywing-install.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Kimheang-code-IT/Rental_moto/main/scripts/install-client.ps1" -OutFile $p -UseBasicParsing
+Set-ExecutionPolicy Bypass -Scope Process -Force
+& $p
 ```
 
 That will:

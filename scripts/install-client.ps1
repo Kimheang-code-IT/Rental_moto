@@ -11,8 +11,10 @@
   6. Wait until healthy and open the app (optional)
 
 .EXAMPLE
-  # New PC or update - paste in PowerShell (any folder):
-  irm https://raw.githubusercontent.com/Kimheang-code-IT/Rental_moto/main/scripts/install-client.ps1 | iex
+  # New PC or update - paste in Windows PowerShell (any folder):
+  irm https://raw.githubusercontent.com/Kimheang-code-IT/Rental_moto/main/scripts/bootstrap-install.ps1 | iex
+
+  # Do not pipe this file to iex. Windows PowerShell 5.1 cannot iex a param() block.
 
   # Already cloned:
   .\scripts\install-client.ps1
