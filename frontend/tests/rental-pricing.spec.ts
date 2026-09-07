@@ -9,6 +9,7 @@ import {
   latestLineDueDate,
   lineCharge,
   lineAmounts,
+  rentalBalance,
   rentalRateType,
   rentalReturnBalance,
 } from '../app/utils/rental/pricing'
@@ -114,6 +115,29 @@ describe('rentalReturnBalance', () => {
     expect(result.balanceDue).toBe(0)
     expect(result.suggestedPayment).toBe(0)
     expect(result.outstandingAfterPay).toBe(0)
+  })
+
+  it('credits deposit against remaining balance before suggesting payment', () => {
+    const result = rentalReturnBalance({ ...rental, deposit: 5, paid: 16.22 })
+    expect(result.balanceDue).toBe(8.78)
+    expect(rentalReturnBalance({ ...rental, deposit: 5, paid: 16.22 }, 0, 8.78).outstandingAfterPay).toBe(0)
+  })
+})
+
+describe('rentalBalance', () => {
+  it('credits deposit then payment against the remaining total', () => {
+    expect(rentalBalance({ totalDue: 10, deposit: 5, paid: 0 })).toEqual({
+      totalAfterDeposit: 5,
+      outstanding: 5,
+    })
+    expect(rentalBalance({ totalDue: 10, deposit: 5, paid: 5 })).toEqual({
+      totalAfterDeposit: 5,
+      outstanding: 0,
+    })
+    expect(rentalBalance({ totalDue: 10, deposit: 10, paid: 0 })).toEqual({
+      totalAfterDeposit: 0,
+      outstanding: 0,
+    })
   })
 })
 

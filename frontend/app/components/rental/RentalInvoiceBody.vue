@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { formatMoney } from '~/composables/module/useModule'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
+import { rentalBalance } from '~/utils/rental/pricing'
 
 const props = defineProps<{
   rental: Record<string, unknown> | null
@@ -44,8 +45,8 @@ const L = {
   outstanding: { km: 'នៅជំពាក់', en: 'Outstanding' },
   terms: { km: 'លក្ខខណ្ឌ', en: 'Terms & Conditions' },
   paymentTerms: {
-    km: 'ត្រូវបង់ប្រាក់តាមកិច្ចសន្យាជួល។ ប្រាក់កក់នឹងប្រគល់វិញបន្ទាប់ពីត្រួតពិនិត្យម៉ូតូរួច។',
-    en: 'Payment is due according to the rental agreement. The deposit is refundable after the motorcycle passes return inspection.',
+    km: 'ត្រូវបង់ប្រាក់តាមកិច្ចសន្យាជួល។ ប្រាក់កក់ត្រូវដកពីសរុប។ ប្រាក់កក់នៅសល់នឹងប្រគល់វិញបន្ទាប់ពីត្រួតពិនិត្យម៉ូតូរួច។',
+    en: 'Payment is due according to the rental agreement. The deposit is credited against the total. Any remaining deposit is refundable after the motorcycle passes return inspection.',
   },
   noItems: { km: 'មិនមានធាតុវិក្កយបត្រ', en: 'No invoice items' },
   thankYou: { km: 'អរគុណដែលបានជ្រើសរើស', en: 'Thank you for choosing' },
@@ -84,7 +85,6 @@ const depositDate = computed(() => {
 })
 const returnDate = computed(() => dateTime(props.rental?.returnDate || props.rental?.dueDate))
 const paidAmount = computed(() => Math.max(0, Number(props.rental?.paid || 0)))
-const outstandingAmount = computed(() => Math.max(0, Number(props.rental?.outstanding || 0)))
 
 const charges = computed(() => {
   if (!props.rental) return []
@@ -206,7 +206,14 @@ const tax = computed(() => {
   if (stored > 0) return stored
   return Math.max(Number(props.rental?.totalDue || 0) - (subtotal.value - discount.value), 0)
 })
-const total = computed(() => Number(props.rental?.totalDue || subtotal.value - discount.value + tax.value))
+const chargeTotal = computed(() => Number(props.rental?.totalDue || subtotal.value - discount.value + tax.value))
+const balance = computed(() => rentalBalance({
+  totalDue: chargeTotal.value,
+  deposit: depositAmount.value,
+  paid: paidAmount.value,
+}))
+const total = computed(() => balance.value.totalAfterDeposit)
+const outstandingAmount = computed(() => balance.value.outstanding)
 
 const companyName = 'HollyWing Motor'
 const companyAddress = DEFAULT_ADDRESS
@@ -401,24 +408,24 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
         </div>
         <div class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
-            <span class="block font-semibold">{{ L.deposit.km }}</span>
-            <span class="block text-[9px] text-slate-500">{{ L.deposit.en }}</span>
-          </dt>
-          <dd class="self-center font-medium tabular-nums">{{ money(depositAmount) }}</dd>
-        </div>
-        <div class="flex justify-between gap-3 py-1">
-          <dt class="leading-tight">
             <span class="block font-semibold">{{ L.discount.km }}</span>
             <span class="block text-[9px] text-slate-500">{{ L.discount.en }}</span>
           </dt>
           <dd class="self-center font-medium tabular-nums">{{ money(discount) }}</dd>
         </div>
-        <div class="flex justify-between gap-3 border-b border-[#172033] py-1">
+        <div class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
             <span class="block font-semibold">{{ L.tax.km }}</span>
             <span class="block text-[9px] text-slate-500">{{ L.tax.en }}</span>
           </dt>
           <dd class="self-center font-medium tabular-nums">{{ money(tax) }}</dd>
+        </div>
+        <div class="flex justify-between gap-3 border-b border-[#172033] py-1">
+          <dt class="leading-tight">
+            <span class="block font-semibold">{{ L.deposit.km }}</span>
+            <span class="block text-[9px] text-slate-500">{{ L.deposit.en }}</span>
+          </dt>
+          <dd class="self-center font-medium tabular-nums">{{ money(depositAmount > 0 ? -depositAmount : 0) }}</dd>
         </div>
         <div class="flex justify-between gap-3 py-2 text-[16px] font-extrabold">
           <dt class="leading-tight">

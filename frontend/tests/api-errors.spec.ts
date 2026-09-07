@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeApiError } from '../app/utils/api/errors'
+import { isAbortError, normalizeApiError } from '../app/utils/api/errors'
 
 describe('normalizeApiError', () => {
   it('normalizes FastAPI nested detail payloads', () => {
@@ -55,5 +55,14 @@ describe('normalizeApiError', () => {
     const error = normalizeApiError({ unexpected: true }, 500)
     expect(error.statusCode).toBe(500)
     expect(error.message).toContain('Something went wrong')
+  })
+})
+
+describe('isAbortError', () => {
+  it('detects DOM abort errors and ofetch-wrapped abort causes', () => {
+    expect(isAbortError({ name: 'AbortError' })).toBe(true)
+    expect(isAbortError({ name: 'FetchError', cause: { name: 'AbortError' } })).toBe(true)
+    expect(isAbortError({ name: 'FetchError', message: 'The operation was aborted.' })).toBe(true)
+    expect(isAbortError({ name: 'FetchError', message: 'Failed to fetch' })).toBe(false)
   })
 })

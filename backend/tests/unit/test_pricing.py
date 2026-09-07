@@ -10,6 +10,7 @@ from app.core.pricing import (
     line_amounts,
     line_charge,
     rate_type_for,
+    rental_balance,
     resolve_motorcycle_rates,
     suggested_deposit,
 )
@@ -98,6 +99,18 @@ def test_suggested_deposit():
     assert suggested_deposit(rates) == Decimal("80.00")
     rates_low = resolve_motorcycle_rates(2)
     assert suggested_deposit(rates_low) == Decimal("50.00")
+
+
+def test_rental_balance_credits_deposit_then_payment():
+    after_deposit = rental_balance(10, 5, 0)
+    assert after_deposit.total_after_deposit == Decimal("5.00")
+    assert after_deposit.outstanding == Decimal("5.00")
+    after_payment = rental_balance(10, 5, 5)
+    assert after_payment.total_after_deposit == Decimal("5.00")
+    assert after_payment.outstanding == Decimal("0.00")
+    covered = rental_balance(10, 10, 0)
+    assert covered.total_after_deposit == Decimal("0.00")
+    assert covered.outstanding == Decimal("0.00")
 
 
 def test_duration_days():

@@ -76,7 +76,7 @@ const projectedOutstanding = computed(() => closeBalance.value.outstandingAfterP
 const projectedTotalDue = computed(() => closeBalance.value.totalDue)
 const alreadyPaid = computed(() => closeBalance.value.alreadyPaid)
 
-/** Keep return payment amount = remaining balance (total due − paid + new charges). */
+/** Keep return payment amount = remaining balance (total due − deposit − paid + new charges). */
 watch(balanceDueBeforePay, (due) => {
   returnPaidAmount.value = Number(due.toFixed(2))
 }, { immediate: true })

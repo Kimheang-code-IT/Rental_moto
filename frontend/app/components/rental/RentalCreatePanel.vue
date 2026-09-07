@@ -20,6 +20,7 @@ import {
   lineAmounts,
   lineCharge,
   lineDueFromPlan,
+  rentalBalance,
   rentalRateType,
   todayDateTimeLocal,
   type RentalRatePlan,
@@ -274,6 +275,11 @@ const totals = computed(() => {
   }
 })
 
+const payableTotal = computed(() => rentalBalance({
+  totalDue: totals.value.total,
+  deposit: deposit.value,
+}).totalAfterDeposit)
+
 const depositError = computed(() => {
   if (deposit.value > totals.value.subtotal + 0.001) {
     return tx('rental.ui.depositExceedsSubtotal', 'Deposit cannot exceed subtotal.')
@@ -283,16 +289,20 @@ const depositError = computed(() => {
 
 const paidError = computed(() => {
   if (isDetail.value) return undefined
-  if (paidAmount.value > totals.value.total + 0.001) {
-    return tx('rental.ui.paidExceedsTotal', 'Paid now cannot exceed total.')
+  if (paidAmount.value > payableTotal.value + 0.001) {
+    return tx('rental.ui.paidExceedsTotal', 'Paid now cannot exceed remaining total after deposit.')
   }
   return undefined
 })
 
 const outstandingPreview = computed(() => {
   if (isFormReadOnly.value) return Math.max(0, Number(outstandingBalance.value) || 0)
-  if (isEditable.value) return Math.max(totals.value.total - existingPaid.value, 0)
-  return Math.max(totals.value.total - paidAmount.value, 0)
+  const paid = isEditable.value ? existingPaid.value : paidAmount.value
+  return rentalBalance({
+    totalDue: totals.value.total,
+    deposit: deposit.value,
+    paid,
+  }).outstanding
 })
 
 const rentalSiblingIds = computed(() => store.list('rentals').map(row => String(row.id)))
@@ -331,7 +341,7 @@ watch(() => totals.value.subtotal, (subtotal) => {
   if (deposit.value > subtotal) deposit.value = subtotal
 })
 
-watch(() => totals.value.total, (total) => {
+watch(() => payableTotal.value, (total) => {
   if (isFormReadOnly.value) return
   if (!isDetail.value && paidAmount.value > total) paidAmount.value = total
 })
@@ -428,7 +438,7 @@ const canCreate = computed(() => Boolean(
   && lines.value.every(line => line.motorcycleId && line.days > 0 && line.unitPrice > 0)
   && totals.value.total >= 0
   && deposit.value <= totals.value.subtotal + 0.001
-  && paidAmount.value <= totals.value.total + 0.001,
+  && paidAmount.value <= payableTotal.value + 0.001,
 ))
 
 const customerModalOpen = ref(false)
@@ -741,7 +751,7 @@ async function createRental() {
   const ok = await confirm({
     kind: 'submit',
     title: tx('rental.ui.confirmCreate', 'Create this rental?'),
-    description: `${selectedCustomer.value.fullName} · ${validLines.length} ${tx('rental.ui.motorcycles', 'motorcycles')} · ${tx('rental.ui.total', 'Total')}: ${formatMoney(totals.value.total, preferences.currency)}`,
+    description: `${selectedCustomer.value.fullName} · ${validLines.length} ${tx('rental.ui.motorcycles', 'motorcycles')} · ${tx('rental.ui.total', 'Total')}: ${formatMoney(payableTotal.value, preferences.currency)}`,
     confirmLabel: tx('rental.ui.createRental', 'Create Rental'),
   })
   if (!ok) return
@@ -1072,7 +1082,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
             <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <UFormField
                 :label="tx('rental.ui.deposit', 'Deposit amount')"
-                :help="help('deposit', 'Deposit amount held for this rental. Cannot exceed subtotal.')"
+                :help="help('deposit', 'Deposit is credited against the total. Cannot exceed subtotal.')"
                 :error="depositError"
               >
                 <UInputNumber
@@ -1142,13 +1152,13 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 :label="isDetail ? tx('rental.ui.paid', 'Paid') : tx('rental.ui.paidNow', 'Paid now')"
                 :help="isDetail
                   ? help('paidTotal', 'Total paid so far on this rental.')
-                  : help('paidAmount', 'Optional payment when creating. Leave 0 to pay later. Cannot exceed total.')"
+                  : help('paidAmount', 'Optional payment when creating. Leave 0 to pay later. Cannot exceed remaining total after deposit.')"
                 :error="paidError"
               >
                 <UInputNumber
                   v-model="paidAmount"
                   :min="0"
-                  :max="isDetail ? undefined : totals.total"
+                  :max="isDetail ? undefined : payableTotal"
                   :increment="false"
                   :decrement="false"
                   size="md"
@@ -1159,7 +1169,7 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
 
               <div class="flex items-center justify-between gap-4 border-t border-default pt-3 text-base sm:col-span-2">
                 <span class="font-semibold">{{ tx('rental.ui.total', 'Total') }}</span>
-                <span class="font-semibold tabular-nums">{{ money(totals.total) }}</span>
+                <span class="font-semibold tabular-nums">{{ money(payableTotal) }}</span>
               </div>
 
               <p class="text-xs text-muted sm:col-span-2">

@@ -15,6 +15,16 @@ export interface NormalizedApiError {
   payload: unknown
 }
 
+/** ofetch wraps DOM AbortError as FetchError; do not treat that as a dead server. */
+export function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const value = error as { name?: string, code?: string, message?: string, cause?: unknown }
+  if (value.name === 'AbortError' || value.code === 'ABORT_ERR') return true
+  if (typeof value.message === 'string' && /\babort(?:ed|error)\b/i.test(value.message)) return true
+  if (value.cause && value.cause !== error) return isAbortError(value.cause)
+  return false
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

@@ -2,7 +2,7 @@ import { useAuthStore } from '~/stores/auth'
 import { ref } from 'vue'
 import type { TableQueryParams } from '~/types/api'
 import { compactQuery } from '~/utils/api/query'
-import { normalizeApiError } from '~/utils/api/errors'
+import { isAbortError, normalizeApiError } from '~/utils/api/errors'
 import { getAccessToken, getRefreshToken, setAccessToken, setTokens as persistTokenPair } from '~/utils/auth/tokens'
 import { createAuthRefresher } from '~/utils/api/auth-refresher'
 import { isAutoApiBase, isSameOriginApiBase, resolveApiBase } from '~/utils/api/base-url'
@@ -38,6 +38,8 @@ type ApiFetchError = Error & {
 // request even when composables created separate useApi instances.
 const requestControllers = new Map<string, AbortController>()
 let authMeRefreshPromise: Promise<void> | null = null
+let lastConnectionToastAt = 0
+const CONNECTION_TOAST_COOLDOWN_MS = 4000
 
 function refreshCurrentUserAfterForbidden(baseURL: string, timeout: number): Promise<void> {
   if (authMeRefreshPromise) return authMeRefreshPromise
@@ -229,7 +231,7 @@ export function useApi() {
       }
       catch (err: unknown) {
         const fetchError = err as ApiFetchError
-        if (fetchError.name === 'AbortError') {
+        if (controller.signal.aborted || isAbortError(err)) {
           return Promise.reject(err)
         }
 
@@ -242,11 +244,15 @@ export function useApi() {
           && fetchError.statusCode !== 401
           && (fetchError.statusCode == null || fetchError.statusCode < 400)
         ) {
-          toast.add({
-            title: t('api.connectionErrorTitle'),
-            description: t('api.connectionErrorDescription'),
-            color: 'error'
-          })
+          const now = Date.now()
+          if (now - lastConnectionToastAt >= CONNECTION_TOAST_COOLDOWN_MS) {
+            lastConnectionToastAt = now
+            toast.add({
+              title: t('api.connectionErrorTitle'),
+              description: t('api.connectionErrorDescription'),
+              color: 'error'
+            })
+          }
         }
 
         throw err

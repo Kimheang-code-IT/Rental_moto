@@ -30,6 +30,12 @@ class DocumentTotals:
     total: Decimal
 
 
+@dataclass
+class RentalBalance:
+    total_after_deposit: Decimal
+    outstanding: Decimal
+
+
 def resolve_motorcycle_rates(
     daily_rate=None, three_day_rate=None, weekly_rate=None, monthly_rate=None
 ) -> MotorcycleRates:
@@ -146,3 +152,18 @@ def document_totals(line_totals: list[Decimal], discount=0, tax_percent=0) -> Do
 
 def suggested_deposit(rates: MotorcycleRates) -> Decimal:
     return money(max(rates.daily * 10, 50))
+
+
+def rental_balance(total_due=0, deposit=0, paid=0) -> RentalBalance:
+    """Remaining total after deposit is credited, then after payments.
+
+    Example: $10 total + $5 deposit → $5 due; then $5 payment → $0 outstanding.
+    """
+    due = max(money(total_due), Decimal("0.00"))
+    credited = max(money(deposit), Decimal("0.00"))
+    received = max(money(paid), Decimal("0.00"))
+    total_after_deposit = money(max(due - credited, Decimal("0.00")))
+    return RentalBalance(
+        total_after_deposit=total_after_deposit,
+        outstanding=money(max(total_after_deposit - received, Decimal("0.00"))),
+    )

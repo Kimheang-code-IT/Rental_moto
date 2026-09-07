@@ -22,6 +22,12 @@ export interface DocumentTotals {
   total: number
 }
 
+export interface RentalBalance {
+  /** Charge total after deposit is credited. */
+  totalAfterDeposit: number
+  outstanding: number
+}
+
 export type RentalRatePlan = '1d' | '3d' | '1w' | '1m' | 'custom'
 export type RentalRateType = 'Daily' | 'ThreeDay' | 'Weekly' | 'Monthly'
 
@@ -232,6 +238,25 @@ export function documentTotals(input: {
   }
 }
 
+/**
+ * Remaining total after deposit is credited, then after payments.
+ * Example: $10 total + $5 deposit → $5 due; then $5 payment → $0 outstanding.
+ */
+export function rentalBalance(input: {
+  totalDue: number
+  deposit?: number
+  paid?: number
+}): RentalBalance {
+  const totalDue = round2(Math.max(Number(input.totalDue) || 0, 0))
+  const deposit = round2(Math.max(Number(input.deposit) || 0, 0))
+  const paid = round2(Math.max(Number(input.paid) || 0, 0))
+  const totalAfterDeposit = round2(Math.max(totalDue - deposit, 0))
+  return {
+    totalAfterDeposit,
+    outstanding: round2(Math.max(totalAfterDeposit - paid, 0)),
+  }
+}
+
 export interface RentalReturnBalance {
   totalDue: number
   alreadyPaid: number
@@ -242,7 +267,7 @@ export interface RentalReturnBalance {
 
 /**
  * Return/close dialog totals.
- * Remaining and the suggested payment are `totalDue - paid` (plus new return charges).
+ * Remaining and the suggested payment are `totalDue - deposit - paid` (plus new return charges).
  * Already paid is the recorded amount only — it does not include the payment being collected now.
  */
 export function rentalReturnBalance(
@@ -262,7 +287,11 @@ export function rentalReturnBalance(
   )
   const baseTotal = Number.isFinite(storedTotal) ? Math.max(storedTotal, 0) : composedTotal
   const totalDue = round2(baseTotal + charges)
-  const balanceDue = round2(Math.max(totalDue - alreadyPaid, 0))
+  const balanceDue = rentalBalance({
+    totalDue,
+    deposit: asMoney(rental.deposit),
+    paid: alreadyPaid,
+  }).outstanding
   const payment = asMoney(returnPaidAmount)
   return {
     totalDue,

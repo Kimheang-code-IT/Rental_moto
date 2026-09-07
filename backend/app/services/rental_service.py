@@ -12,6 +12,7 @@ from app.core.pricing import (
     duration_days,
     line_charge,
     rate_type_for,
+    rental_balance,
     resolve_motorcycle_rates,
 )
 from app.models import (
@@ -149,7 +150,11 @@ def _apply_rental_header(rental: Rental, customer, built: list[dict], tax_percen
     rental.tax = tax
     rental.rental_charge = rental_charge
     rental.total_due = money(rental_charge + tax + rental.late_fee + rental.additional_charges)
-    rental.outstanding = money(max(rental.total_due - money(rental.paid), Decimal("0")))
+    _refresh_outstanding(rental)
+
+
+def _refresh_outstanding(rental: Rental) -> None:
+    rental.outstanding = rental_balance(rental.total_due, rental.deposit, rental.paid).outstanding
 
 
 class RentalService:
@@ -246,8 +251,9 @@ class RentalService:
             status="Active",
         )
         _apply_rental_header(rental, customer, built, request.tax_percent)
-        rental.paid = min(paid, money(rental.total_due))
-        rental.outstanding = money(max(rental.total_due - rental.paid, Decimal("0")))
+        payable = rental_balance(rental.total_due, rental.deposit).total_after_deposit
+        rental.paid = min(paid, payable)
+        _refresh_outstanding(rental)
         self.session.add(rental)
         await self.session.flush()
         await self._replace_rental_lines(rental, built)
@@ -484,7 +490,7 @@ class RentalService:
         rental.total_due = money(rental.rental_charge + rental.tax + rental.late_fee + rental.additional_charges)
         payments_sum = sum((p.amount for p in rental.payments), Decimal("0")) + final_payment_amount
         rental.paid = money(payments_sum)
-        rental.outstanding = money(max(rental.total_due - rental.paid, Decimal("0")))
+        _refresh_outstanding(rental)
         rental.payment_status = "Paid" if rental.outstanding <= 0 else "Partial"
         rental.status = "Completed"
         rental.completed_at = now
@@ -653,7 +659,7 @@ class RentalService:
         )
         self.session.add(payment)
         rental.paid = money(sum((p.amount for p in rental.payments), Decimal("0")) + payment.amount)
-        rental.outstanding = money(max(rental.total_due - rental.paid, Decimal("0")))
+        _refresh_outstanding(rental)
         rental.payment_method = payment_method
         if rental.status == "Completed":
             rental.payment_status = "Paid" if rental.outstanding <= 0 else "Partial"
@@ -719,7 +725,7 @@ class RentalService:
         if charge.charge_to_customer == "Yes" and rental.status != "Completed":
             rental.additional_charges = money(rental.additional_charges + charge.amount)
             rental.total_due = money(rental.rental_charge + rental.tax + rental.late_fee + rental.additional_charges)
-            rental.outstanding = money(rental.total_due - rental.paid)
+            _refresh_outstanding(rental)
         await self.audit.add(
             AuditLog(
                 user_id=self.actor.id if self.actor else None,

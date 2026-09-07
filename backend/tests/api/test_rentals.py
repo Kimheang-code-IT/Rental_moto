@@ -37,7 +37,7 @@ def _rental_payload(moto, customer, start=None, due=None, paid=0):
     due = due or now + timedelta(days=3)
     return {
         "customerId": customer["id"],
-        "lines": [{"motorcycleId": moto["id"], "startDate": start.isoformat(), "dueDate": due.isoformat(), "deposit": 100}],
+        "lines": [{"motorcycleId": moto["id"], "startDate": start.isoformat(), "dueDate": due.isoformat(), "deposit": 0}],
         "paidAmount": paid,
         "paymentMethod": "Cash",
     }
@@ -58,6 +58,41 @@ async def test_create_rental_sets_progressing_and_payment(client, admin_headers)
 
     moto_after = await client.get(f"/api/v2/motorcycles/{moto['id']}", headers=admin_headers)
     assert moto_after.json()["data"]["status"] == "Progressing"
+
+
+async def test_create_rental_credits_deposit_then_payment(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    now = datetime.now(timezone.utc)
+    payload = {
+        "customerId": customer["id"],
+        "lines": [
+            {
+                "motorcycleId": moto["id"],
+                "startDate": now.isoformat(),
+                "dueDate": (now + timedelta(days=1)).isoformat(),
+                "deposit": 5,
+            }
+        ],
+        "paidAmount": 0,
+        "paymentMethod": "Cash",
+    }
+    created = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
+    assert created.status_code == 201, created.text
+    rental = created.json()["data"][0]
+    assert rental["rentalCharge"] == "10.00"
+    assert rental["deposit"] == "5.00"
+    assert rental["paid"] == "0.00"
+    assert rental["outstanding"] == "5.00"
+
+    paid = await client.post(
+        "/api/v2/payments",
+        headers=admin_headers,
+        json={"rentalId": rental["id"], "amount": 5, "paymentMethod": "Cash"},
+    )
+    assert paid.status_code == 201, paid.text
+    updated = await client.get(f"/api/v2/rentals/{rental['id']}", headers=admin_headers)
+    assert updated.json()["data"]["paid"] == "5.00"
+    assert updated.json()["data"]["outstanding"] == "0.00"
 
 
 async def test_create_rental_applies_line_discount(client, admin_headers):
@@ -269,7 +304,7 @@ async def test_create_rental_multiple_motorcycles_one_row(client, admin_headers)
     assert rental["discount"] == "6.00"
     assert rental["rentalCharge"] == "48.00"
     assert rental["paid"] == "20.00"
-    assert rental["outstanding"] == "28.00"
+    assert rental["outstanding"] == "0.00"
     assert rental["deposit"] == "75.00"
     assert "Second Test Bike" in rental["motorcycle"]
     assert "PP-TEST-002" in (rental["plate"] or "")
@@ -287,7 +322,7 @@ async def test_create_rental_multiple_motorcycles_one_row(client, admin_headers)
     closed = await client.post(
         f"/api/v2/rentals/{rental['id']}/close",
         headers=admin_headers,
-        json={"condition": "Good", "finalPayment": {"amount": 28, "paymentMethod": "Cash"}},
+        json={"condition": "Good", "finalPayment": {"amount": 0, "paymentMethod": "Cash"}},
     )
     assert closed.status_code == 200, closed.text
     assert closed.json()["data"]["status"] == "Completed"
