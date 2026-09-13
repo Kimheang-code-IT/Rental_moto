@@ -159,7 +159,7 @@ Only **Active** customers appear in rental create form.
 | start_date, due_date                             | datetime | Earliest start / latest due across lines      |
 | duration_days                                    | int      | Computed from header dates                    |
 | rate_type                                        | enum     | Daily, Monthly                                |
-| rate_amount, deposit, discount, tax_percent, tax | decimal  | Header totals                                 |
+| rate_amount, deposit, discount, tax_percent, tax | decimal  | Header totals (`tax` always 0; header/extra `discount` unused — line discounts only; `deposit` credits the balance) |
 | rental_charge, late_fee, additional_charges      | decimal  |                                               |
 | total_due, paid, outstanding                     | decimal  | Balance                                       |
 | payment_method                                   | enum     | Cash, Bank Transfer, Card, QR Payment,other   |
@@ -228,7 +228,7 @@ Rate used:
 
 1. Validate: customer (Active) + at least 1 motorcycle line
 2. Generate one `RNT-{year}-{seq}` for the whole transaction
-3. For each motorcycle line, compute charge from pricing tiers and apply discount/tax share
+3. For each motorcycle line, compute charge from pricing tiers and apply **line** discount (document/extra discount unused; tax always 0). Deposit credits the balance and is editable on create/update.
 4. Save **one** `rentals` row (status = `Active`) plus `rental_lines` rows
 5. Set every selected motorcycle status → `Progressing`
 6. If paid > 0 → create one `rental_payment` on that rental

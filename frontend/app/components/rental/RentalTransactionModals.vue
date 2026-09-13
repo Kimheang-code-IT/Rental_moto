@@ -4,6 +4,15 @@ import { formatMoney } from '~/composables/module/useModule'
 import { PAYMENT_METHODS, RENTAL_CHARGE_TYPES } from '~/config/rental-options'
 import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
 import { toIsoZonedOrNow } from '~/utils/api/datetime'
+import {
+  DEFAULT_USD_KHR_RATE,
+  fromRentalCurrencyAmount,
+  invoiceKhrAmounts,
+  normalizeExchangeRate,
+  normalizePaymentCurrency,
+  toRentalCurrencyAmount,
+  type PaymentCurrency,
+} from '~/utils/rental/fx'
 import { rentalReturnBalance } from '~/utils/rental/pricing'
 import { useRentalCommands } from '~/repositories/index'
 
@@ -38,13 +47,22 @@ function tx(key: string, fallback: string) {
   return te(key) ? String(t(key)) : fallback
 }
 
-function help(key: string, fallback: string) {
-  if (te(`rental.fieldHelp.${key}`)) return String(t(`rental.fieldHelp.${key}`))
-  if (te(`core.fieldHelp.${key}`)) return String(t(`core.fieldHelp.${key}`))
-  return fallback
-}
-
 const money = (value: unknown) => formatMoney(value, String(props.rental.currency || preferences.currency))
+
+function moneyBoth(value: unknown, khrOverride?: number) {
+  const amount = Math.max(0, Number(value) || 0)
+  const primary = money(amount)
+  if (!showKhrTotals.value) return primary
+  const khr = khrOverride != null
+    ? Math.max(0, Math.round(khrOverride))
+    : fromRentalCurrencyAmount(
+      amount,
+      'KHR',
+      rentalCurrencyCode.value,
+      returnExchangeRate.value,
+    )
+  return `${primary} · ${formatMoney(khr, 'KHR')}`
+}
 
 const returnAt = ref(new Date().toISOString().slice(0, 16))
 
@@ -57,11 +75,25 @@ interface ReturnChargeLine {
 let chargeSeq = 1
 const returnCharges = ref<ReturnChargeLine[]>([])
 
-const paymentMethodOptions = useCreatableOptionList(PAYMENT_METHODS)
 const chargeTypeOptions = useCreatableOptionList(RENTAL_CHARGE_TYPES)
+const paymentMethodOptions = useCreatableOptionList(PAYMENT_METHODS)
 const returnPaymentMethod = ref<string>(PAYMENT_METHODS[0])
+const returnPaymentCurrency = ref<PaymentCurrency>(
+  normalizePaymentCurrency(props.rental.currency || preferences.currency),
+)
+const returnExchangeRate = ref(DEFAULT_USD_KHR_RATE)
+const returnTenderedAmount = ref(0)
 const returnPaidAmount = ref(0)
 const saving = ref(false)
+
+const rentalCurrencyCode = computed(() =>
+  normalizePaymentCurrency(props.rental.currency || preferences.currency),
+)
+
+const showKhrTotals = computed(() =>
+  normalizePaymentCurrency(returnPaymentCurrency.value) === 'KHR'
+  || rentalCurrencyCode.value === 'KHR',
+)
 
 const returnChargesTotal = computed(() =>
   returnCharges.value.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0),
@@ -74,26 +106,105 @@ const closeBalance = computed(() =>
 const balanceDueBeforePay = computed(() => closeBalance.value.balanceDue)
 const projectedOutstanding = computed(() => closeBalance.value.outstandingAfterPay)
 const projectedTotalDue = computed(() => closeBalance.value.totalDue)
+const depositAmount = computed(() => closeBalance.value.deposit)
 const alreadyPaid = computed(() => closeBalance.value.alreadyPaid)
 
-/** Keep return payment amount = remaining balance (total due − deposit − paid + new charges). */
-watch(balanceDueBeforePay, (due) => {
-  returnPaidAmount.value = Number(due.toFixed(2))
-}, { immediate: true })
+const rentalPayments = computed(() => {
+  const rentalId = String(props.rental.id || '')
+  if (!rentalId) return []
+  return store.list('rentalPayments').filter(row => String(row.rentalId) === rentalId)
+})
 
-function onCreateReturnPaymentMethod(item: string) {
-  const value = paymentMethodOptions.onCreate(item)
-  if (value) returnPaymentMethod.value = value
-}
+const paidTenderedKhr = computed(() =>
+  rentalPayments.value.reduce((sum, row) => {
+    if (normalizePaymentCurrency(row.currency) !== 'KHR') return sum
+    const tendered = Number(row.tenderedAmount || 0)
+    return sum + (tendered > 0 ? tendered : 0)
+  }, 0),
+)
+
+const returnKhr = computed(() => {
+  const rentalBaseTotal = Math.max(0, projectedTotalDue.value - returnChargesTotal.value)
+  const base = invoiceKhrAmounts({
+    subtotal: rentalBaseTotal,
+    deposit: depositAmount.value,
+    paid: alreadyPaid.value,
+    rentalCurrency: rentalCurrencyCode.value,
+    exchangeRate: returnExchangeRate.value,
+    depositTendered: Number(props.rental.depositTenderedAmount || 0),
+    depositCurrency: String(props.rental.depositCurrency || props.rental.paymentCurrency || rentalCurrencyCode.value),
+    paidTendered: paidTenderedKhr.value,
+    paidCurrency: paidTenderedKhr.value > 0 ? 'KHR' : rentalCurrencyCode.value,
+  })
+  const chargesKhr = fromRentalCurrencyAmount(
+    returnChargesTotal.value,
+    'KHR',
+    rentalCurrencyCode.value,
+    returnExchangeRate.value,
+  )
+  const totalDueKhr = base.subtotalKhr + chargesKhr
+  const balanceDueKhr = Math.max(0, base.outstandingKhr + chargesKhr)
+  const outstandingAfterPayKhr = normalizePaymentCurrency(returnPaymentCurrency.value) === 'KHR'
+    ? Math.max(0, balanceDueKhr - Math.round(Number(returnTenderedAmount.value) || 0))
+    : Math.max(0, balanceDueKhr - fromRentalCurrencyAmount(
+      returnPaidAmount.value,
+      'KHR',
+      rentalCurrencyCode.value,
+      returnExchangeRate.value,
+    ))
+  return {
+    totalDueKhr,
+    depositKhr: base.depositKhr,
+    paidKhr: base.paidKhr,
+    balanceDueKhr,
+    outstandingAfterPayKhr,
+    chargesKhr,
+  }
+})
+
+watch([returnTenderedAmount, returnPaymentCurrency, returnExchangeRate], () => {
+  returnPaidAmount.value = toRentalCurrencyAmount(
+    returnTenderedAmount.value,
+    returnPaymentCurrency.value,
+    rentalCurrencyCode.value,
+    returnExchangeRate.value,
+  )
+})
 
 function onCreateReturnChargeType(item: string, row: ReturnChargeLine) {
   const value = chargeTypeOptions.onCreate(item)
   if (value) row.chargeType = value
 }
 
+function onCreateReturnPaymentMethod(item: string) {
+  const value = paymentMethodOptions.onCreate(item)
+  if (value) returnPaymentMethod.value = value
+}
+
+function latestPaymentFx() {
+  return rentalPayments.value.find(row => Number(row.exchangeRate || 0) > 1)
+    || rentalPayments.value[0]
+    || null
+}
+
 function resetForm() {
   returnAt.value = new Date().toISOString().slice(0, 16)
   returnPaymentMethod.value = PAYMENT_METHODS[0]
+  const fx = latestPaymentFx()
+  if (fx) {
+    returnPaymentCurrency.value = normalizePaymentCurrency(fx.currency || rentalCurrencyCode.value)
+    returnExchangeRate.value = normalizeExchangeRate(fx.exchangeRate, DEFAULT_USD_KHR_RATE)
+  }
+  else if (props.rental.depositCurrency || props.rental.exchangeRate) {
+    returnPaymentCurrency.value = normalizePaymentCurrency(
+      props.rental.depositCurrency || props.rental.paymentCurrency || rentalCurrencyCode.value,
+    )
+    returnExchangeRate.value = normalizeExchangeRate(props.rental.exchangeRate, DEFAULT_USD_KHR_RATE)
+  }
+  else {
+    returnPaymentCurrency.value = rentalCurrencyCode.value
+    returnExchangeRate.value = DEFAULT_USD_KHR_RATE
+  }
   returnCharges.value = []
   chargeSeq = 1
   returnPaidAmount.value = rentalReturnBalance(props.rental, 0, 0).suggestedPayment
@@ -155,6 +266,9 @@ async function saveClose() {
           ? {
               amount: Number(returnPaidAmount.value),
               paymentMethod: returnPaymentMethod.value,
+              currency: returnPaymentCurrency.value,
+              exchangeRate: returnExchangeRate.value,
+              tenderedAmount: returnTenderedAmount.value,
               reference: null,
               note: tx('rental.ui.paymentOnReturn', 'Payment on return'),
               paidAt: toIsoZonedOrNow(returnAt.value),
@@ -192,29 +306,57 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
   >
     <template #body>
       <div class="space-y-4">
-        <div class="grid grid-cols-3 gap-2 rounded-md bg-elevated/60 p-3 text-sm">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <UFormField :label="tx('rental.ui.rentalNo', 'Rental Number')">
+            <UInput
+              :model-value="String(rental.rentalNo || rental.id || '—')"
+              size="md"
+              class="w-full"
+              disabled
+            />
+          </UFormField>
+          <UFormField :label="tx('rental.ui.customer', 'Customer')">
+            <UInput
+              :model-value="String(rental.customer || '—')"
+              size="md"
+              class="w-full"
+              disabled
+            />
+          </UFormField>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 rounded-md bg-elevated/60 p-3 text-sm sm:grid-cols-4">
           <div>
             <p class="text-xs text-muted">{{ tx('rental.ui.totalDue', 'Total Due') }}</p>
-            <p class="font-semibold">{{ money(projectedTotalDue) }}</p>
+            <p class="font-semibold tabular-nums">{{ moneyBoth(projectedTotalDue, returnKhr.totalDueKhr) }}</p>
+          </div>
+          <div>
+            <p class="text-xs text-muted">{{ tx('rental.ui.deposit', 'Deposit') }}</p>
+            <p class="font-semibold tabular-nums">{{ moneyBoth(depositAmount, returnKhr.depositKhr) }}</p>
           </div>
           <div>
             <p class="text-xs text-muted">{{ tx('rental.ui.alreadyPaid', 'Already Paid') }}</p>
-            <p class="font-semibold">{{ money(alreadyPaid) }}</p>
+            <p class="font-semibold tabular-nums">{{ moneyBoth(alreadyPaid, returnKhr.paidKhr) }}</p>
           </div>
           <div>
             <p class="text-xs text-muted">{{ tx('rental.ui.outstanding', 'Outstanding') }}</p>
-            <p class="font-semibold" :class="balanceDueBeforePay > 0 ? 'text-warning' : 'text-success'">
-              {{ money(balanceDueBeforePay) }}
+            <p class="font-semibold tabular-nums" :class="balanceDueBeforePay > 0 ? 'text-warning' : 'text-success'">
+              {{ moneyBoth(balanceDueBeforePay, returnKhr.balanceDueKhr) }}
             </p>
           </div>
         </div>
+        <p v-if="showKhrTotals" class="text-xs text-muted">
+          {{ tx('rental.ui.exchangeRate', 'Exchange rate') }}:
+          1 USD = {{ returnExchangeRate }} KHR
+        </p>
 
-        <UFormField :label="tx('rental.ui.actualReturn', 'Actual Return')" :help="help('returnAt', 'Actual date and time the motorcycle was returned.')" required>
+        <UFormField :label="tx('rental.ui.actualReturn', 'Actual Return')" required>
           <UInput
-v-model="returnAt"
-type="datetime-local"
-size="md"
-class="w-full max-w-sm" />
+            v-model="returnAt"
+            type="datetime-local"
+            size="md"
+            class="w-full max-w-sm"
+          />
         </UFormField>
 
         <div>
@@ -228,7 +370,6 @@ class="w-full max-w-sm" />
               @click="addReturnChargeLine"
             />
           </div>
-          <p class="mb-2 text-xs text-muted">{{ help('returnCharges', 'Add damage, cleaning, or other fines found on return.') }}</p>
           <div v-if="!returnCharges.length" class="rounded-md border border-dashed border-default px-3 py-4 text-center text-xs text-muted">
             {{ tx('rental.ui.noReturnCharges', 'No return charges') }}
           </div>
@@ -259,19 +400,21 @@ class="w-full max-w-sm" />
                   </td>
                   <td class="px-2 py-1.5">
                     <UInput
-v-model.number="row.amount"
-type="number"
-min="0"
-size="md"
-class="w-28 text-center" />
+                      v-model.number="row.amount"
+                      type="number"
+                      min="0"
+                      size="md"
+                      class="w-28 text-center"
+                    />
                   </td>
                   <td class="px-1 py-1.5">
                     <UButton
-size="xs"
-color="neutral"
-variant="ghost"
-icon="i-lucide-trash-2"
-@click="removeReturnChargeLine(row.key)" />
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      icon="i-lucide-trash-2"
+                      @click="removeReturnChargeLine(row.key)"
+                    />
                   </td>
                 </tr>
               </tbody>
@@ -279,13 +422,12 @@ icon="i-lucide-trash-2"
           </div>
           <p v-if="returnChargesTotal > 0" class="mt-2 text-center text-sm">
             {{ tx('rental.ui.chargesTotal', 'Charges total') }}:
-            <span class="font-semibold tabular-nums">{{ money(returnChargesTotal) }}</span>
+            <span class="font-semibold tabular-nums">{{ moneyBoth(returnChargesTotal, returnKhr.chargesKhr) }}</span>
           </p>
         </div>
 
-        <div class="grid grid-cols-2 gap-3 rounded-md border border-default p-3">
-          <p class="col-span-2 text-sm font-semibold">{{ tx('rental.ui.paymentOnReturn', 'Payment on return') }}</p>
-          <UFormField :label="tx('rental.ui.paymentMethod', 'Payment Method')" :help="help('paymentMethod', 'Choose a preset method or type a custom payment method.')">
+        <div class="space-y-3 rounded-md border border-default p-3">
+          <UFormField :label="tx('rental.ui.paymentMethod', 'Payment Method')">
             <UInputMenu
               v-model="returnPaymentMethod"
               create-item
@@ -295,25 +437,23 @@ icon="i-lucide-trash-2"
               @create="onCreateReturnPaymentMethod"
             />
           </UFormField>
-          <UFormField
-            :label="tx('rental.ui.amount', 'Amount')"
-            :help="help('returnPaidAmountAuto', 'Auto-fills remaining balance (total due minus already paid), including any return charges.')"
-          >
-            <UInput
-              :model-value="returnPaidAmount"
-              type="number"
-              min="0"
-              size="md"
-              class="w-full"
-              disabled
-            />
-          </UFormField>
-          <p class="col-span-2 text-xs text-muted">
+          <RentalPaymentCurrencyFields
+            v-model:payment-currency="returnPaymentCurrency"
+            v-model:exchange-rate="returnExchangeRate"
+            v-model:tendered-amount="returnTenderedAmount"
+            :rental-currency="rentalCurrencyCode"
+            :target-rental-amount="balanceDueBeforePay"
+          />
+          <p class="text-xs text-muted">
             {{ tx('rental.ui.balanceDue', 'Balance due') }}:
-            <span class="font-semibold text-highlighted">{{ money(balanceDueBeforePay) }}</span>
+            <span class="font-semibold text-highlighted tabular-nums">{{ moneyBoth(balanceDueBeforePay, returnKhr.balanceDueKhr) }}</span>
             ·
             {{ tx('rental.ui.outstandingAfterPay', 'Outstanding after payment') }}:
-            <span class="font-semibold text-highlighted">{{ money(projectedOutstanding) }}</span>
+            <span class="font-semibold text-highlighted tabular-nums">{{ moneyBoth(projectedOutstanding, returnKhr.outstandingAfterPayKhr) }}</span>
+          </p>
+          <p v-if="showKhrTotals" class="text-xs text-muted">
+            {{ tx('rental.ui.exchangeRate', 'Exchange rate') }}:
+            1 USD = {{ returnExchangeRate }} KHR
           </p>
         </div>
       </div>

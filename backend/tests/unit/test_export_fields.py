@@ -37,7 +37,7 @@ def test_rentals_field_map_covers_table_and_full_data_fields():
 def test_rental_reports_field_map_matches_report_table():
     assert codes("rental_reports") == [
         "rentalNo", "customer", "motorcycle", "plate", "startDate", "dueDate", "returnDate",
-        "rentalCharge", "lateFee", "additionalCharges", "totalDue", "paid", "outstanding",
+        "durationDays", "rentalCharge", "discount", "additionalCharges", "totalDue", "paid", "outstanding",
         "paymentStatus", "paymentMethod",
     ]
 

@@ -15,6 +15,10 @@ def test_normalize_telegram_config_defaults():
     assert cfg["allowedModules"]["motorcycles"] is True
     assert cfg["sensitiveFields"]["customerName"] is False
     assert cfg["userAccess"] == []
+    assert cfg["chatId"] == ""
+    assert cfg["deadlineReminderEnabled"] is True
+    assert cfg["deadlineReminderValue"] == 1
+    assert cfg["deadlineReminderUnit"] == "days"
 
 
 def test_report_repository_attributes_do_not_shadow_report_methods():

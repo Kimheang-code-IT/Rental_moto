@@ -416,10 +416,10 @@ const DURATION_UNITS = ['minutes', 'hours', 'days'] as const
 function asDuration(value: unknown): { value: number, unit: (typeof DURATION_UNITS)[number] } {
   const raw = value && typeof value === 'object' ? value as { value?: unknown, unit?: unknown } : {}
   const parsed = Number(raw.value)
-  const unit = String(raw.unit || 'hours')
+  const unit = String(raw.unit || 'days')
   return {
     value: Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 10_080) : 1,
-    unit: DURATION_UNITS.includes(unit as typeof DURATION_UNITS[number]) ? unit as typeof DURATION_UNITS[number] : 'hours',
+    unit: DURATION_UNITS.includes(unit as typeof DURATION_UNITS[number]) ? unit as typeof DURATION_UNITS[number] : 'days',
   }
 }
 
@@ -431,7 +431,7 @@ const durationValue = computed({
 const durationUnit = computed({
   get: () => asDuration(props.modelValue).unit,
   set: (unit: string | { value?: string } | undefined) => {
-    const next = unit && typeof unit === 'object' ? String(unit.value || 'hours') : String(unit || 'hours')
+    const next = unit && typeof unit === 'object' ? String(unit.value || 'days') : String(unit || 'days')
     emit('update:modelValue', { ...asDuration(props.modelValue), unit: next })
   },
 })

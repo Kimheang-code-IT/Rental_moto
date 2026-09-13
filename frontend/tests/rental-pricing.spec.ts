@@ -119,6 +119,9 @@ describe('rentalReturnBalance', () => {
 
   it('credits deposit against remaining balance before suggesting payment', () => {
     const result = rentalReturnBalance({ ...rental, deposit: 5, paid: 16.22 })
+    expect(result.deposit).toBe(5)
+    expect(result.alreadyPaid).toBe(16.22)
+    expect(result.alreadyCredited).toBe(21.22)
     expect(result.balanceDue).toBe(8.78)
     expect(rentalReturnBalance({ ...rental, deposit: 5, paid: 16.22 }, 0, 8.78).outstandingAfterPay).toBe(0)
   })

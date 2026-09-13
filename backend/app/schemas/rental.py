@@ -18,11 +18,15 @@ class RentalLineInput(CamelModel):
 class RentalCreateRequest(CamelModel):
     customer_id: str
     lines: list[RentalLineInput] = Field(min_length=1)
-    discount: Decimal = Decimal("0")
-    tax_percent: Decimal = Decimal("0")
+    discount: Decimal = Decimal("0")  # Ignored; document/extra discount is not used.
+    tax_percent: Decimal = Decimal("0")  # Ignored; tax is always stored as 0.
     paid_amount: Decimal = Decimal("0")
     payment_method: str | None = Field(default=None, max_length=40)
     currency: str = "USD"
+    payment_currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
+    deposit_tendered_amount: Decimal | None = None
     note: str | None = None
 
 
@@ -36,6 +40,9 @@ class CloseChargeInput(CamelModel):
 class FinalPaymentInput(CamelModel):
     amount: Decimal = Field(ge=0)
     payment_method: str = Field(default="Cash", min_length=1, max_length=40)
+    currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
     reference: str | None = None
     note: str | None = None
     paid_at: datetime | None = None
@@ -61,8 +68,14 @@ class RentalUpdateRequest(CamelModel):
     start_date: datetime | None = None
     due_date: datetime | None = None
     deposit: Decimal | None = None
-    discount: Decimal | None = None
-    tax_percent: Decimal | None = None
+    discount: Decimal | None = None  # Ignored; document/extra discount is not used.
+    tax_percent: Decimal | None = None  # Ignored; tax is always stored as 0.
+    paid_amount: Decimal | None = None
+    payment_method: str | None = Field(default=None, max_length=40)
+    payment_currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
+    deposit_tendered_amount: Decimal | None = None
     note: str | None = None
     lines: list[RentalLineInput] | None = None
 
@@ -71,6 +84,9 @@ class PaymentRecordRequest(CamelModel):
     rental_id: str
     amount: Decimal = Field(gt=0)
     payment_method: str = Field(default="Cash", min_length=1, max_length=40)
+    currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
     paid_at: datetime | None = None
     reference: str | None = None
     note: str | None = None
@@ -79,6 +95,9 @@ class PaymentRecordRequest(CamelModel):
 class PaymentUpdateRequest(CamelModel):
     amount: Decimal | None = None
     payment_method: str | None = Field(default=None, min_length=1, max_length=40)
+    currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
     paid_at: datetime | None = None
     reference: str | None = None
     note: str | None = None
@@ -123,6 +142,8 @@ class PaymentResponse(CamelModel):
     customer: str | None = None
     amount: Decimal
     currency: str
+    tendered_amount: Decimal | None = None
+    exchange_rate: Decimal = Decimal("1")
     payment_method: str
     paid_at: datetime
     reference: str | None = None
@@ -194,10 +215,13 @@ class RentalResponse(CamelModel):
     rate_type: str
     rate_amount: Decimal
     deposit: Decimal
+    deposit_tendered_amount: Decimal | None = None
+    deposit_currency: str | None = None
     discount: Decimal
     tax_percent: Decimal
     tax: Decimal
     currency: str
+    exchange_rate: Decimal | None = None
     rental_charge: Decimal
     late_fee: Decimal
     additional_charges: Decimal

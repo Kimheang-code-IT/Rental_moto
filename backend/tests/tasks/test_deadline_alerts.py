@@ -9,6 +9,11 @@ def test_reminder_delta_uses_configured_duration():
     assert reminder_delta({"deadlineReminderValue": 3, "deadlineReminderUnit": "days"}) == timedelta(days=3)
 
 
+def test_reminder_delta_defaults_to_one_day():
+    assert reminder_delta({}) == timedelta(days=1)
+    assert reminder_delta({"deadlineReminderValue": 1}) == timedelta(days=1)
+
+
 def test_reminder_delta_can_be_disabled():
     assert reminder_delta({"deadlineReminderEnabled": False}) is None
     assert reminder_delta({"enabled": False}) is None

@@ -9,6 +9,13 @@ import { listTableRowMetaColumn } from '~/utils/table/list-columns'
 import { useServerExport } from '~/composables/common/useServerExport'
 import { downloadCsv } from '~/utils/export/csv'
 import { latestRentalPaymentMethods } from '~/utils/rental/payments'
+import { daysBetween } from '~/utils/rental/pricing'
+import {
+  LIST_SORT_PRESETS,
+  listSortItemLabel,
+  sortListRows,
+  type ListSortMode,
+} from '~/utils/table/list-sort'
 
 definePageMeta({ titleKey: 'rental.nav.rentalReports', permission: 'reports.view' })
 
@@ -24,7 +31,7 @@ const invoiceRow = ref<Record<string, unknown> | null>(null)
 const chargesReviewRental = ref<Record<string, unknown> | null>(null)
 const chargesReviewOpen = ref(false)
 const canPrintInvoice = computed(() =>
-  auth.canAccessPage('reports.print'),
+  auth.canAccessPage('reports.print') || auth.canAccessPage('rental.rentals.print'),
 )
 
 onBeforeUnmount(clear)
@@ -42,12 +49,18 @@ const money = (value: unknown, currency?: string) =>
   formatMoney(value, currency || preferences.currency)
 
 const q = ref('')
-const motorcycle = ref<string[]>([])
 const paymentStatus = ref<string[]>([])
 const paymentMethod = ref<string[]>([])
 const dateFrom = ref('')
 const dateTo = ref('')
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
+
+const reportSortPreset = LIST_SORT_PRESETS.rentalReports
+const sortMode = ref<ListSortMode>(reportSortPreset.defaultMode)
+const sortItems = computed(() => reportSortPreset.modes.map((mode: ListSortMode) => {
+  const label = listSortItemLabel(mode)
+  return { label: tx(label.key, label.fallback), value: mode }
+}))
 
 const paymentMethods = computed(() => latestRentalPaymentMethods(store.list('rentalPayments')))
 const completed = computed<Array<Record<string, unknown>>>(() => {
@@ -89,12 +102,14 @@ watch([q, dateFrom, dateTo], () => {
   reloadReports()
 })
 
-const selectItems = (values: string[]) => [...new Set(values.filter(Boolean))].map(value => ({
-  label: value,
-  value,
-}))
+watch(sortMode, () => {
+  pagination.value = { ...pagination.value, pageIndex: 0 }
+})
 
-const motorcycleItems = computed(() => selectItems(completed.value.map(row => String(row.motorcycle || ''))))
+const selectItems = (values: string[]) => [...new Set(values.filter(Boolean))]
+  .sort((a, b) => a.localeCompare(b))
+  .map(value => ({ label: value, value }))
+
 const paymentStatusItems = computed(() => [...new Set(
   completed.value.map(row => String(row.paymentStatus || (Number(row.outstanding) > 0 ? 'Partial' : 'Paid'))).filter(Boolean),
 )].map(value => ({
@@ -103,19 +118,22 @@ const paymentStatusItems = computed(() => [...new Set(
 })))
 const paymentMethodItems = computed(() => selectItems(completed.value.map(row => String(row.paymentMethod || ''))))
 
-const rows = computed(() => completed.value
-  .filter(row => !q.value || JSON.stringify(row).toLowerCase().includes(q.value.toLowerCase()))
-  .filter(row => !motorcycle.value.length || motorcycle.value.includes(String(row.motorcycle)))
-  .filter(row => !paymentStatus.value.length || paymentStatus.value.includes(String(row.paymentStatus || 'Paid')))
-  .filter(row => !paymentMethod.value.length || paymentMethod.value.includes(String(row.paymentMethod)))
-  .filter((row) => {
-    const day = String(row.returnDate || row.dueDate || '').slice(0, 10)
-    if (!dateFrom.value && !dateTo.value) return true
-    if (!day) return false
-    if (dateFrom.value && day < dateFrom.value) return false
-    if (dateTo.value && day > dateTo.value) return false
-    return true
-  }))
+const rows = computed(() => {
+  const filtered = completed.value
+    .filter(row => !q.value || JSON.stringify(row).toLowerCase().includes(q.value.toLowerCase()))
+    .filter(row => !paymentStatus.value.length || paymentStatus.value.includes(String(row.paymentStatus || 'Paid')))
+    .filter(row => !paymentMethod.value.length || paymentMethod.value.includes(String(row.paymentMethod)))
+    .filter((row) => {
+      const day = String(row.returnDate || row.dueDate || '').slice(0, 10)
+      if (!dateFrom.value && !dateTo.value) return true
+      if (!day) return false
+      if (dateFrom.value && day < dateFrom.value) return false
+      if (dateTo.value && day > dateTo.value) return false
+      return true
+    })
+
+  return sortListRows(filtered, sortMode.value, reportSortPreset)
+})
 
 function openChargesReview(row: Record<string, unknown>) {
   chargesReviewRental.value = row
@@ -128,6 +146,23 @@ function moneyCell(row: Record<string, unknown>, key: string) {
 
 function dateTimeCell(value: unknown) {
   return h('span', { class: 'whitespace-nowrap' }, formatDateTime(value))
+}
+
+/** Final rental length for completed returns: start → return, else stored durationDays. */
+function finalDurationDays(row: Record<string, unknown>) {
+  const start = String(row.startDate || '')
+  const returned = String(row.returnDate || '')
+  if (start && returned) {
+    const actual = daysBetween(start, returned)
+    if (actual > 0) return actual
+  }
+  const stored = Math.max(0, Number(row.durationDays) || 0)
+  return stored > 0 ? stored : null
+}
+
+function durationCell(row: Record<string, unknown>) {
+  const days = finalDurationDays(row)
+  return h('span', { class: 'block text-end tabular-nums' }, days == null ? '—' : String(days))
 }
 
 function additionalChargesCell(row: Record<string, unknown>) {
@@ -220,8 +255,14 @@ const columns = computed<TableColumn<Record<string, unknown>>[]>(() => {
     header: tx('rental.ui.returnDate', 'Returned'),
     cell: ({ row }) => dateTimeCell(row.original.returnDate),
   },
+  {
+    accessorKey: 'durationDays',
+    header: tx('rental.ui.duration', 'Duration'),
+    meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } },
+    cell: ({ row }) => durationCell(row.original),
+  },
   { accessorKey: 'rentalCharge', header: tx('rental.ui.rentalCharge', 'Rental Charge'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'rentalCharge') },
-  { accessorKey: 'lateFee', header: tx('rental.ui.lateFee', 'Late Fee'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'lateFee') },
+  { accessorKey: 'discount', header: tx('rental.ui.discount', 'Discount'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'discount') },
   { accessorKey: 'additionalCharges', header: tx('rental.ui.additionalCharges', 'Additional Charges'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => additionalChargesCell(row.original) },
   { accessorKey: 'totalDue', header: tx('rental.ui.totalDue', 'Total'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'totalDue') },
   { accessorKey: 'paid', header: tx('rental.ui.paid', 'Paid'), meta: { class: { td: 'text-end tabular-nums', th: 'text-end' } }, cell: ({ row }) => moneyCell(row.original, 'paid') },
@@ -279,8 +320,9 @@ const exportFields = computed<ExportFieldOption[]>(() => [
   { label: tx('rental.ui.startDate', 'Start'), value: 'startDate' },
   { label: tx('rental.ui.dueDate', 'Due'), value: 'dueDate' },
   { label: tx('rental.ui.returnDate', 'Returned'), value: 'returnDate' },
+  { label: tx('rental.ui.duration', 'Duration'), value: 'durationDays' },
   { label: tx('rental.ui.rentalCharge', 'Rental Charge'), value: 'rentalCharge' },
-  { label: tx('rental.ui.lateFee', 'Late Fee'), value: 'lateFee' },
+  { label: tx('rental.ui.discount', 'Discount'), value: 'discount' },
   { label: tx('rental.ui.additionalCharges', 'Additional Charges'), value: 'additionalCharges' },
   { label: tx('rental.ui.totalDue', 'Total'), value: 'totalDue' },
   { label: tx('rental.ui.paid', 'Paid'), value: 'paid' },
@@ -313,7 +355,6 @@ async function exportCsv(request: ExportRequest) {
     const query: Record<string, unknown> = {
       q: q.value || undefined,
       status: 'Completed',
-      motorcycle: [...motorcycle.value],
       paymentStatus: [...paymentStatus.value],
       paymentMethod: [...paymentMethod.value],
     }
@@ -341,7 +382,10 @@ async function exportCsv(request: ExportRequest) {
   downloadCsv({
     filename: `rental-reports-${new Date().toISOString().slice(0, 10)}.csv`,
     fields: exportFields.value.filter(field => selected.has(field.value)),
-    rows: exportRows as Array<Record<string, unknown>>,
+    rows: exportRows.map(row => ({
+      ...row,
+      durationDays: finalDurationDays(row) ?? row.durationDays,
+    })) as Array<Record<string, unknown>>,
   })
 }
 </script>
@@ -363,15 +407,9 @@ async function exportCsv(request: ExportRequest) {
       :data="rows"
       :columns="columns"
       :show-date-range="true"
-      :filters-active="Boolean(motorcycle.length || paymentStatus.length || paymentMethod.length || dateFrom || dateTo)"
+      :filters-active="Boolean(paymentStatus.length || paymentMethod.length || dateFrom || dateTo)"
     >
       <template #filters="{ compact }">
-        <CommonAppFilterSelect
-          v-model="motorcycle"
-          :items="motorcycleItems"
-          :placeholder="tx('rental.ui.motorcycle', 'Motorcycle')"
-          :class="compact ? 'w-full' : 'w-44'"
-        />
         <CommonAppFilterSelect
           v-model="paymentStatus"
           :items="paymentStatusItems"
@@ -383,6 +421,16 @@ async function exportCsv(request: ExportRequest) {
           :items="paymentMethodItems"
           :placeholder="tx('rental.ui.paymentMethod', 'Payment Method')"
           :class="compact ? 'w-full' : 'w-36'"
+        />
+      </template>
+      <template #actions>
+        <USelect
+          v-model="sortMode"
+          :items="sortItems"
+          :placeholder="tx('rental.ui.sort', 'Sort')"
+          icon="i-lucide-arrow-up-down"
+          size="sm"
+          class="w-44 shrink-0"
         />
       </template>
     </TableAppListTable>

@@ -9,6 +9,12 @@ import { useServerExport } from '~/composables/common/useServerExport'
 import type { FinanceSummary } from '~/repositories/contracts/entities'
 import { RENTAL_EXPENSE_TYPES } from '~/config/rental-options'
 import { downloadCsv } from '~/utils/export/csv'
+import {
+  LIST_SORT_PRESETS,
+  listSortItemLabel,
+  sortListRows,
+  type ListSortMode,
+} from '~/utils/table/list-sort'
 
 definePageMeta({ titleKey: 'rental.pages.incomeExpense', permission: 'rental.finance.view' })
 
@@ -40,6 +46,13 @@ const typeFilter = ref<string[]>([])
 const expenseModalOpen = ref(false)
 const pagination = ref({ pageIndex: 0, pageSize: 20 })
 const canCreateExpense = computed(() => auth.canAccessPage('rental.finance.create'))
+
+const financeSortPreset = LIST_SORT_PRESETS.incomeExpense
+const sortMode = ref<ListSortMode>(financeSortPreset.defaultMode)
+const sortItems = computed(() => financeSortPreset.modes.map((mode: ListSortMode) => {
+  const label = listSortItemLabel(mode)
+  return { label: tx(label.key, label.fallback), value: mode }
+}))
 
 const inPeriod = (day: string) => {
   if (dateFrom.value && day < dateFrom.value) return false
@@ -94,6 +107,10 @@ watch([dateFrom, dateTo], () => {
   void refreshData()
 })
 
+watch(sortMode, () => {
+  pagination.value = { ...pagination.value, pageIndex: 0 }
+})
+
 const totalIncome = computed(() => serverSummary.value ? serverSummary.value.income : incomeRows.value.reduce((sum, row) => sum + Number(row.amount || 0), 0))
 const totalExpense = computed(() => serverSummary.value ? serverSummary.value.expense : expenseRows.value.reduce((sum, row) => sum + Number(row.amount || 0), 0))
 const net = computed(() => serverSummary.value ? serverSummary.value.net : totalIncome.value - totalExpense.value)
@@ -116,13 +133,16 @@ const transactionDate = (row: Record<string, unknown>) => String(row.paidAt || r
 const transactionRows = computed<TxRow[]>(() => [
   ...incomeRows.value.map(row => ({ ...row, kind: 'income' as const })),
   ...expenseRows.value.map(row => ({ ...row, kind: 'expense' as const })),
-].sort((a, b) => transactionDate(b).localeCompare(transactionDate(a))))
+])
 
-const rows = computed(() => transactionRows.value.filter((row) => {
-  if (!typeFilter.value.length) return true
-  const type = row.kind === 'income' ? 'income' : String(row.expenseType || 'expense')
-  return typeFilter.value.includes(type)
-}))
+const rows = computed(() => {
+  const filtered = transactionRows.value.filter((row) => {
+    if (!typeFilter.value.length) return true
+    const type = row.kind === 'income' ? 'income' : String(row.expenseType || 'expense')
+    return typeFilter.value.includes(type)
+  })
+  return sortListRows(filtered, sortMode.value, financeSortPreset)
+})
 
 const typeFilterItems = computed(() => [
   { label: tx('rental.ui.income', 'Income'), value: 'income' },
@@ -274,6 +294,16 @@ async function exportCsv(request: ExportRequest) {
           :items="typeFilterItems"
           :placeholder="tx('rental.ui.type', 'Type')"
           :class="compact ? 'w-full' : 'w-40'"
+        />
+      </template>
+      <template #actions>
+        <USelect
+          v-model="sortMode"
+          :items="sortItems"
+          :placeholder="tx('rental.ui.sort', 'Sort')"
+          icon="i-lucide-arrow-up-down"
+          size="sm"
+          class="w-44 shrink-0"
         />
       </template>
     </TableAppListTable>

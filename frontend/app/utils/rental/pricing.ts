@@ -259,7 +259,10 @@ export function rentalBalance(input: {
 
 export interface RentalReturnBalance {
   totalDue: number
+  deposit: number
   alreadyPaid: number
+  /** Deposit + recorded payments already applied to the balance. */
+  alreadyCredited: number
   balanceDue: number
   suggestedPayment: number
   outstandingAfterPay: number
@@ -268,7 +271,7 @@ export interface RentalReturnBalance {
 /**
  * Return/close dialog totals.
  * Remaining and the suggested payment are `totalDue - deposit - paid` (plus new return charges).
- * Already paid is the recorded amount only — it does not include the payment being collected now.
+ * Already paid is the recorded payment amount only — it does not include deposit or the payment being collected now.
  */
 export function rentalReturnBalance(
   rental: Record<string, unknown>,
@@ -276,6 +279,7 @@ export function rentalReturnBalance(
   returnPaidAmount = 0,
 ): RentalReturnBalance {
   const charges = asMoney(returnChargesTotal)
+  const deposit = round2(asMoney(rental.deposit))
   const alreadyPaid = round2(asMoney(rental.paid))
   const storedTotal = Number(rental.totalDue)
   const composedTotal = Math.max(
@@ -289,13 +293,15 @@ export function rentalReturnBalance(
   const totalDue = round2(baseTotal + charges)
   const balanceDue = rentalBalance({
     totalDue,
-    deposit: asMoney(rental.deposit),
+    deposit,
     paid: alreadyPaid,
   }).outstanding
   const payment = asMoney(returnPaidAmount)
   return {
     totalDue,
+    deposit,
     alreadyPaid,
+    alreadyCredited: round2(deposit + alreadyPaid),
     balanceDue,
     suggestedPayment: balanceDue,
     outstandingAfterPay: round2(Math.max(balanceDue - payment, 0)),

@@ -260,6 +260,28 @@ describe('http rental command payloads', () => {
     expect(created[0]?.rentalNo).toBe('RNT-2026-000001')
   })
 
+  it('sends paidAmount and paymentMethod on rental update', async () => {
+    const captured = withFakeApi(() => ({
+      data: { id: 'rt-001', rentalNo: 'RNT-2026-000001', paid: '25.00', status: 'Active' },
+      meta: { page: 1, limit: 1, total: 1 },
+    }))
+    const repository = createHttpRentalCommandRepository()
+    const updated = await repository.update('rt-001', {
+      deposit: 5,
+      paidAmount: 25,
+      paymentMethod: 'Card',
+    })
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0]?.method).toBe('PUT')
+    expect(captured[0]?.url).toBe('/api/v2/rentals/rt-001')
+    const body = captured[0]?.body as Record<string, unknown>
+    expect(body.paidAmount).toBe(25)
+    expect(body.paymentMethod).toBe('Card')
+    expect(body.deposit).toBe(5)
+    expect(updated.paid).toBe('25.00')
+  })
+
   it('sends one atomic close request with charges and final payment', async () => {
     const captured = withFakeApi(() => ({
       data: { id: 'rt-001', status: 'Completed', outstanding: '0.00' },

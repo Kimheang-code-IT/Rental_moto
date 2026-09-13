@@ -7,6 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
+from app.core.fx import normalize_exchange_rate, normalize_payment_currency, resolve_payment_money
 from app.core.money import distribute_document_discount, money
 from app.core.pricing import (
     duration_days,
@@ -157,6 +158,34 @@ def _refresh_outstanding(rental: Rental) -> None:
     rental.outstanding = rental_balance(rental.total_due, rental.deposit, rental.paid).outstanding
 
 
+def _with_header_deposit(built: list[dict], deposit) -> list[dict]:
+    """Store the rental deposit on the first line; other lines keep zero deposit."""
+    amount = max(money(deposit), Decimal("0.00"))
+    rows: list[dict] = []
+    for index, row in enumerate(built):
+        rows.append({**row, "deposit": amount if index == 0 else Decimal("0.00")})
+    return rows
+
+
+def _apply_deposit_tendered(rental: Rental, request) -> None:
+    """Persist the entered deposit amount/currency so invoices can show exact KHR."""
+    payment_currency = normalize_payment_currency(
+        getattr(request, "payment_currency", None)
+        or getattr(request, "deposit_currency", None)
+        or rental.currency
+    )
+    rate = normalize_exchange_rate(getattr(request, "exchange_rate", None))
+    tendered = getattr(request, "deposit_tendered_amount", None)
+    if tendered is None:
+        if payment_currency == normalize_payment_currency(rental.currency):
+            tendered = rental.deposit
+    if tendered is not None:
+        rental.deposit_tendered_amount = money(tendered)
+        rental.deposit_currency = payment_currency
+    if getattr(request, "exchange_rate", None) is not None or payment_currency == "KHR":
+        rental.exchange_rate = rate
+
+
 class RentalService:
     def __init__(self, session: AsyncSession, actor: User | None = None) -> None:
         self.session = session
@@ -224,13 +253,24 @@ class RentalService:
         if not_available:
             raise ConflictError(f"Motorcycles not Available: {', '.join(not_available)}")
 
-        built = _apply_line_discounts(
+        priced = _apply_line_discounts(
             _price_line_rows(moto_map, request.lines),
-            max(money(request.discount), Decimal("0")),
+            Decimal("0"),
         )
-        paid = money(request.paid_amount)
+        deposit = money(sum((money(getattr(line, "deposit", 0)) for line in request.lines), Decimal("0")))
+        built = _with_header_deposit(priced, deposit)
+        paid_credit, paid_tendered, paid_rate, paid_currency = resolve_payment_money(
+            rental_currency=request.currency,
+            payment_currency=getattr(request, "payment_currency", None) or request.currency,
+            amount=request.paid_amount,
+            tendered_amount=getattr(request, "tendered_amount", None),
+            exchange_rate=getattr(request, "exchange_rate", None),
+        )
+        paid = paid_credit
         initial_payment_method = (
-            normalize_payment_method(request.payment_method or "Cash") if paid > 0 else None
+            normalize_payment_method(request.payment_method or "Cash")
+            if paid > 0 or deposit > 0
+            else None
         )
 
         year = now.year
@@ -250,7 +290,11 @@ class RentalService:
             created_by_user_id=self.actor.id if self.actor else None,
             status="Active",
         )
-        _apply_rental_header(rental, customer, built, request.tax_percent)
+        _apply_rental_header(rental, customer, built, Decimal("0"), deposit)
+        if rental.deposit > rental.total_due:
+            rental.deposit = rental.total_due
+            built = _with_header_deposit(built, rental.deposit)
+        _apply_deposit_tendered(rental, request)
         payable = rental_balance(rental.total_due, rental.deposit).total_after_deposit
         rental.paid = min(paid, payable)
         _refresh_outstanding(rental)
@@ -267,7 +311,9 @@ class RentalService:
                     payment_no=payment_no,
                     rental_id=rental.id,
                     amount=rental.paid,
-                    currency=request.currency,
+                    currency=paid_currency,
+                    tendered_amount=paid_tendered,
+                    exchange_rate=paid_rate,
                     payment_method=initial_payment_method or "Cash",
                     paid_at=now,
                     note="Initial payment",
@@ -380,17 +426,18 @@ class RentalService:
         if not_available:
             raise ConflictError(f"Motorcycles not Available: {', '.join(not_available)}")
 
-        doc_discount = (
-            Decimal("0")
-            if not request.lines and request.discount is not None and len(line_inputs) == 1
-            else max(money(request.discount if request.discount is not None else 0), Decimal("0"))
-        )
-        if request.lines is None and request.discount is None:
-            doc_discount = Decimal("0")
-        built = _apply_line_discounts(_price_line_rows(moto_map, line_inputs), doc_discount)
-        tax_percent = request.tax_percent if request.tax_percent is not None else rental.tax_percent
-        deposit = request.deposit if request.deposit is not None else rental.deposit
-        _apply_rental_header(rental, customer, built, tax_percent, deposit)
+        doc_discount = Decimal("0")
+        priced = _apply_line_discounts(_price_line_rows(moto_map, line_inputs), doc_discount)
+        if request.deposit is not None:
+            deposit = money(request.deposit)
+        else:
+            deposit = money(sum((money(getattr(line, "deposit", 0)) for line in line_inputs), Decimal("0")))
+        built = _with_header_deposit(priced, deposit)
+        _apply_rental_header(rental, customer, built, Decimal("0"), deposit)
+        if rental.deposit > rental.total_due:
+            rental.deposit = rental.total_due
+            built = _with_header_deposit(built, rental.deposit)
+        _apply_deposit_tendered(rental, request)
         await self._replace_rental_lines(rental, built)
 
         for moto_id in set(previous_ids) - set(moto_ids):
@@ -405,6 +452,29 @@ class RentalService:
         if rental.status == "Overdue" and rental.due_date > datetime.now(timezone.utc):
             rental.status = "Active"
 
+        if request.paid_amount is not None:
+            paid_credit, paid_tendered, paid_rate, paid_currency = resolve_payment_money(
+                rental_currency=rental.currency,
+                payment_currency=getattr(request, "payment_currency", None) or rental.currency,
+                amount=request.paid_amount,
+                tendered_amount=getattr(request, "tendered_amount", None),
+                exchange_rate=getattr(request, "exchange_rate", None),
+            )
+            await self._sync_rental_paid(
+                rental,
+                paid_credit,
+                request.payment_method,
+                currency=paid_currency,
+                exchange_rate=paid_rate,
+                tendered_amount=paid_tendered,
+            )
+        elif request.payment_method is not None:
+            rental.payment_method = normalize_payment_method(request.payment_method)
+        else:
+            payable = rental_balance(rental.total_due, rental.deposit).total_after_deposit
+            if rental.paid > payable:
+                await self._sync_rental_paid(rental, payable, rental.payment_method)
+
         await self.audit.add(
             AuditLog(
                 user_id=self.actor.id if self.actor else None,
@@ -413,7 +483,12 @@ class RentalService:
                 entity_type="rental",
                 entity_id=rental.id,
                 entity_label=rental.rental_no,
-                details={"customer": rental.customer, "motorcycle": rental.motorcycle, "totalDue": float(rental.total_due)},
+                details={
+                    "customer": rental.customer,
+                    "motorcycle": rental.motorcycle,
+                    "totalDue": float(rental.total_due),
+                    "paid": float(rental.paid),
+                },
             )
         )
         await self.session.commit()
@@ -457,27 +532,38 @@ class RentalService:
                 new_charges_total += amount
 
         late_fee = money(request.late_fee)
-        final_payment_amount = money(request.final_payment.amount) if request.final_payment else Decimal("0.00")
-        if request.final_payment and final_payment_amount > 0:
-            payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
-            payment_id = await self._next_entity_id("rp", RentalPayment)
-            paid_at = request.final_payment.paid_at or now
-            final_payment_method = normalize_payment_method(request.final_payment.payment_method)
-            self.session.add(
-                RentalPayment(
-                    id=payment_id,
-                    payment_no=payment_no,
-                    rental_id=rental.id,
-                    amount=final_payment_amount,
-                    currency=rental.currency,
-                    payment_method=final_payment_method,
-                    paid_at=paid_at,
-                    reference=request.final_payment.reference,
-                    note=request.final_payment.note,
-                    created_by=_actor_label(self.actor),
-                    created_by_user_id=self.actor.id if self.actor else None,
-                )
+        final_payment_amount = Decimal("0.00")
+        if request.final_payment:
+            final_credit, final_tendered, final_rate, final_currency = resolve_payment_money(
+                rental_currency=rental.currency,
+                payment_currency=getattr(request.final_payment, "currency", None) or rental.currency,
+                amount=request.final_payment.amount,
+                tendered_amount=getattr(request.final_payment, "tendered_amount", None),
+                exchange_rate=getattr(request.final_payment, "exchange_rate", None),
             )
+            final_payment_amount = final_credit
+            if final_payment_amount > 0:
+                payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
+                payment_id = await self._next_entity_id("rp", RentalPayment)
+                paid_at = request.final_payment.paid_at or now
+                final_payment_method = normalize_payment_method(request.final_payment.payment_method)
+                self.session.add(
+                    RentalPayment(
+                        id=payment_id,
+                        payment_no=payment_no,
+                        rental_id=rental.id,
+                        amount=final_payment_amount,
+                        currency=final_currency,
+                        tendered_amount=final_tendered,
+                        exchange_rate=final_rate,
+                        payment_method=final_payment_method,
+                        paid_at=paid_at,
+                        reference=request.final_payment.reference,
+                        note=request.final_payment.note,
+                        created_by=_actor_label(self.actor),
+                        created_by_user_id=self.actor.id if self.actor else None,
+                    )
+                )
 
         existing_charges = sum(
             (c.amount for c in rental.charges if c.charge_to_customer == "Yes"), Decimal("0")
@@ -487,6 +573,7 @@ class RentalService:
         rental.return_date = return_date
         rental.condition = request.condition
         rental.return_note = request.return_note
+        rental.duration_days = max(duration_days(rental.start_date, return_date), 1)
         rental.total_due = money(rental.rental_charge + rental.tax + rental.late_fee + rental.additional_charges)
         payments_sum = sum((p.amount for p in rental.payments), Decimal("0")) + final_payment_amount
         rental.paid = money(payments_sum)
@@ -644,12 +731,21 @@ class RentalService:
         payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
         payment_id = await self._next_entity_id("rp", RentalPayment)
         payment_method = normalize_payment_method(request.payment_method)
+        credited, tendered, rate, payment_currency = resolve_payment_money(
+            rental_currency=rental.currency,
+            payment_currency=getattr(request, "currency", None) or rental.currency,
+            amount=request.amount,
+            tendered_amount=getattr(request, "tendered_amount", None),
+            exchange_rate=getattr(request, "exchange_rate", None),
+        )
         payment = RentalPayment(
             id=payment_id,
             payment_no=payment_no,
             rental_id=rental.id,
-            amount=money(request.amount),
-            currency=rental.currency,
+            amount=credited,
+            currency=payment_currency,
+            tendered_amount=tendered,
+            exchange_rate=rate,
             payment_method=payment_method,
             paid_at=request.paid_at or now,
             reference=request.reference,
@@ -808,6 +904,104 @@ class RentalService:
         await self.session.commit()
         await self.session.refresh(expense)
         return expense
+
+    async def _sync_rental_paid(
+        self,
+        rental: Rental,
+        paid_amount,
+        payment_method: str | None = None,
+        *,
+        currency: str | None = None,
+        exchange_rate=None,
+        tendered_amount=None,
+    ) -> None:
+        """Set rental.paid to the requested total and keep rental_payments in sync."""
+        now = datetime.now(timezone.utc)
+        payable = rental_balance(rental.total_due, rental.deposit).total_after_deposit
+        target = min(max(money(paid_amount), Decimal("0")), payable)
+        method = normalize_payment_method(payment_method or rental.payment_method or "Cash")
+        pay_currency = currency or rental.currency
+        pay_rate = normalize_exchange_rate(exchange_rate if exchange_rate is not None else Decimal("1"))
+        pay_tendered = money(tendered_amount) if tendered_amount is not None else target
+
+        payments = sorted(
+            list(rental.payments or []),
+            key=lambda row: (row.paid_at or now, row.id),
+        )
+        current = money(sum((row.amount for row in payments), Decimal("0")))
+
+        def _apply_fx(payment: RentalPayment, amount) -> None:
+            credited = money(amount)
+            payment.amount = credited
+            payment.currency = pay_currency
+            payment.exchange_rate = pay_rate
+            payment.tendered_amount = (
+                pay_tendered
+                if credited == target
+                else money((pay_tendered / target) * credited if target > 0 else 0)
+            )
+            payment.payment_method = method
+
+        if target > current:
+            if len(payments) == 1:
+                _apply_fx(payments[0], target)
+            else:
+                amount = target if not payments else money(target - current)
+                tendered = pay_tendered if not payments else (
+                    money((pay_tendered / target) * amount) if target > 0 else amount
+                )
+                payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
+                payment_id = await self._next_entity_id("rp", RentalPayment)
+                self.session.add(
+                    RentalPayment(
+                        id=payment_id,
+                        payment_no=payment_no,
+                        rental_id=rental.id,
+                        amount=amount,
+                        currency=pay_currency,
+                        tendered_amount=tendered,
+                        exchange_rate=pay_rate,
+                        payment_method=method,
+                        paid_at=now,
+                        note="Payment update" if payments else "Initial payment",
+                        created_by=_actor_label(self.actor),
+                        created_by_user_id=self.actor.id if self.actor else None,
+                    )
+                )
+        elif target < current:
+            remaining_cut = money(current - target)
+            for payment in reversed(payments):
+                if remaining_cut <= 0:
+                    break
+                if payment.amount <= remaining_cut:
+                    remaining_cut = money(remaining_cut - payment.amount)
+                    await self.session.delete(payment)
+                else:
+                    remaining = money(payment.amount - remaining_cut)
+                    _apply_fx(payment, remaining)
+                    remaining_cut = Decimal("0")
+        elif payments and (
+            payment_method is not None
+            or currency is not None
+            or tendered_amount is not None
+            or exchange_rate is not None
+        ):
+            if len(payments) == 1:
+                _apply_fx(payments[0], target)
+            else:
+                latest = payments[-1]
+                if payment_method is not None:
+                    latest.payment_method = method
+                if currency is not None or tendered_amount is not None or exchange_rate is not None:
+                    latest.currency = pay_currency
+                    latest.exchange_rate = pay_rate
+                    latest.tendered_amount = pay_tendered
+
+        rental.paid = target
+        if target > 0 or payment_method is not None:
+            rental.payment_method = method
+        _refresh_outstanding(rental)
+        self.session.expire(rental, ["payments"])
 
     async def _next_entity_id(self, prefix: str, model_cls) -> str:
         return await self.sequences.next_value(f"{prefix.upper()}_ID", prefix, 3, None)

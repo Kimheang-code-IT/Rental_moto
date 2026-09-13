@@ -18,12 +18,12 @@ def reminder_delta(config: dict) -> timedelta | None:
     except (TypeError, ValueError):
         value = 1
     value = min(max(value, 1), 10_080)
-    unit = config.get("deadlineReminderUnit", "hours")
+    unit = config.get("deadlineReminderUnit", "days")
     if unit == "minutes":
         return timedelta(minutes=value)
-    if unit == "days":
-        return timedelta(days=value)
-    return timedelta(hours=value)
+    if unit == "hours":
+        return timedelta(hours=value)
+    return timedelta(days=value)
 
 
 def reminder_value(config: dict) -> int:
@@ -50,7 +50,7 @@ async def enqueue_deadline_alerts(session, batch_limit: int = 100) -> dict:
         return {"alerted": 0, "status": "disabled"}
     window_end = now + lead_time
     configured_value = reminder_value(telegram_config)
-    configured_unit = telegram_config.get("deadlineReminderUnit", "hours")
+    configured_unit = telegram_config.get("deadlineReminderUnit", "days")
     result = await session.execute(
         select(Rental)
         .where(

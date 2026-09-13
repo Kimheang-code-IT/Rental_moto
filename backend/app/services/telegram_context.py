@@ -102,8 +102,10 @@ def normalize_telegram_config(config: dict | None) -> dict:
     cfg.setdefault("userAccess", [])
     cfg.setdefault("deadlineReminderEnabled", True)
     cfg.setdefault("deadlineReminderValue", 1)
-    cfg.setdefault("deadlineReminderUnit", "hours")
+    cfg.setdefault("deadlineReminderUnit", "days")
+    cfg.setdefault("chatId", "")
     chat_id = str(cfg.get("chatId") or "").strip()
+    cfg["chatId"] = chat_id
     if chat_id:
         cfg["interactiveGroupId"] = chat_id
         cfg["interactiveGroupEnabled"] = True
@@ -286,7 +288,7 @@ def validate_telegram_config(config: dict) -> None:
         raise ValidationError("Deadline reminder duration must be a whole number") from exc
     if not 1 <= reminder_value <= 10_080:
         raise ValidationError("Deadline reminder duration must be between 1 and 10080")
-    if config.get("deadlineReminderUnit", "hours") not in DEADLINE_REMINDER_UNITS:
+    if config.get("deadlineReminderUnit", "days") not in DEADLINE_REMINDER_UNITS:
         raise ValidationError("Deadline reminder unit must be minutes, hours, or days")
 
 

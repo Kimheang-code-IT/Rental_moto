@@ -8,6 +8,7 @@ import { useConfirm } from '~/composables/common/useConfirm'
 import { usePageSeo } from '~/composables/usePageSeo'
 import {
   formatModuleCell,
+  formatMoney,
   moduleStatusBadge,
   statusLabel,
   useModuleLabel,
@@ -21,10 +22,25 @@ import { limitFilterSelects, parseFilterQuery } from '~/utils/filter/values'
 import { isFilterValueActive } from '~/utils/filter/select-ui'
 import { listTableRowMetaColumn, listTableSelectColumn } from '~/utils/table/list-columns'
 import { listTablePageSummary, listTableSelectedIds } from '~/utils/table/list-table'
+import {
+  LIST_SORT_PRESETS,
+  listSortItemLabel,
+  sortListRows,
+  type ListSortMode,
+  type ListSortPreset,
+} from '~/utils/table/list-sort'
 import { documentSequenceTypeLabel } from '~/utils/document-sequences'
 import { ApiEndpoints } from '~/utils/constants/api-endpoints'
 import { normalizeAuditLog, resolveAuditEntityPath } from '~/utils/module/audit-logs'
 import { latestRentalPaymentMethods } from '~/utils/rental/payments'
+import {
+  DEFAULT_USD_KHR_RATE,
+  fromRentalCurrencyAmount,
+  normalizeExchangeRate,
+  normalizePaymentCurrency,
+  toRentalCurrencyAmount,
+  type PaymentCurrency,
+} from '~/utils/rental/fx'
 import { useRentalCommands } from '~/repositories/index'
 import { PAYMENT_METHODS, RENTAL_CHARGE_TYPES } from '~/config/rental-options'
 import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionList'
@@ -66,13 +82,50 @@ const financeModalBusy = ref(false)
 const paymentMethodOptions = useCreatableOptionList(PAYMENT_METHODS)
 const chargeTypeOptions = useCreatableOptionList(RENTAL_CHARGE_TYPES)
 const financePaymentMethod = ref<string>(PAYMENT_METHODS[0])
-const financePaymentAmount = ref<number | undefined>()
+const financePaymentCurrency = ref<PaymentCurrency>('USD')
+const financeExchangeRate = ref(DEFAULT_USD_KHR_RATE)
+const financeTenderedAmount = ref(0)
+const financePaymentAmount = ref(0)
 const financePaymentReference = ref('')
 const financeChargeType = ref<string>(RENTAL_CHARGE_TYPES[0])
 const financeChargeDescription = ref('')
 const financeChargeAmount = ref<number | undefined>()
+const financePaymentTarget = computed(() => Number(rentalPaymentRow.value?.outstanding || 0))
+const financeRentalCurrency = computed(() =>
+  normalizePaymentCurrency(rentalPaymentRow.value?.currency || preferences.currency),
+)
+const financeShowKhrTotals = computed(() =>
+  normalizePaymentCurrency(financePaymentCurrency.value) === 'KHR'
+  || financeRentalCurrency.value === 'KHR',
+)
+const financeOutstandingKhr = computed(() =>
+  fromRentalCurrencyAmount(
+    financePaymentTarget.value,
+    'KHR',
+    financeRentalCurrency.value,
+    financeExchangeRate.value,
+  ),
+)
+const financeCreditedKhr = computed(() =>
+  fromRentalCurrencyAmount(
+    financePaymentAmount.value,
+    'KHR',
+    financeRentalCurrency.value,
+    financeExchangeRate.value,
+  ),
+)
+
+watch([financeTenderedAmount, financePaymentCurrency, financeExchangeRate], () => {
+  financePaymentAmount.value = toRentalCurrencyAmount(
+    financeTenderedAmount.value,
+    financePaymentCurrency.value,
+    financeRentalCurrency.value,
+    financeExchangeRate.value,
+  )
+})
 const dateFrom = ref('')
 const dateTo = ref('')
+const sortMode = ref<ListSortMode>('date_desc')
 
 const current = computed(() => module.value)
 const isHttpMode = computed(() => store.isHttpMode)
@@ -114,6 +167,21 @@ const dateField = computed(() => {
     || current.value?.columns.find(column => /date/i.test(column.key))?.key
 })
 
+const sortPreset = computed((): ListSortPreset | null => {
+  const collection = current.value?.collection || ''
+  return (LIST_SORT_PRESETS as Record<string, ListSortPreset>)[collection] || null
+})
+const sortItems = computed(() => {
+  if (!sortPreset.value) return []
+  return sortPreset.value.modes.map((mode: ListSortMode) => {
+    const label = listSortItemLabel(mode)
+    return {
+      label: te(label.key) ? String(t(label.key)) : label.fallback,
+      value: mode,
+    }
+  })
+})
+
 const result = computed(() => {
   if (!current.value) return { rows: [], total: 0, all: [] }
   const queried = store.query(current.value, {
@@ -124,9 +192,10 @@ const result = computed(() => {
     dateFrom: dateFrom.value,
     dateTo: dateTo.value,
   })
+  let all = queried.all
   if (current.value?.collection === 'rentals') {
     const paymentMethods = latestRentalPaymentMethods(store.list('rentalPayments'))
-    const all = queried.all
+    all = queried.all
       .filter(row => ['Active', 'Overdue'].includes(String(row.status)))
       .map((row) => {
         const ms = new Date(String(row.dueDate || '')).getTime() - new Date(String(row.startDate || '')).getTime()
@@ -137,9 +206,11 @@ const result = computed(() => {
           paymentMethod: paymentMethods.get(String(row.id || '')) || row.paymentMethod || '—',
         }
       })
-    return { rows: all, total: all.length, all }
   }
-  return queried
+  if (sortPreset.value) {
+    all = sortListRows(all, sortMode.value, sortPreset.value)
+  }
+  return { rows: all, total: all.length, all }
 })
 const selectedIds = computed(() => listTableSelectedIds(rowSelection.value))
 
@@ -164,6 +235,8 @@ watch(current, (value) => {
   for (const filter of value.filters || []) {
     filters[filter.key] = parseFilterQuery(route.query[filter.key])
   }
+  const preset = (LIST_SORT_PRESETS as Record<string, ListSortPreset>)[value.collection]
+  sortMode.value = preset?.defaultMode || 'date_desc'
 }, { immediate: true })
 
 onBeforeUnmount(clear)
@@ -172,7 +245,7 @@ usePageSeo({
   title: () => current.value ? moduleTitle(current.value) : t('app.pages.dashboard'),
 })
 
-watch([q, filters, dateFrom, dateTo], () => {
+watch([q, filters, dateFrom, dateTo, sortMode], () => {
   rowSelection.value = {}
   pagination.value = { ...pagination.value, pageIndex: 0 }
 }, { deep: true })
@@ -279,6 +352,13 @@ function rowMenuItems(row: Record<string, unknown>): DropdownMenuItem[][] {
   }
   if (collection === 'rentals') {
     const status = String(row.status || '')
+    if (auth.canAccessPage('rental.rentals.print')) {
+      items.push({
+        label: t('rental.ui.printInvoice', 'Print Invoice'),
+        icon: 'i-lucide-printer',
+        onSelect: () => { rentalInvoiceRow.value = row },
+      })
+    }
     if (auth.canAccessPage('rental.rentals.return') && ['Active', 'Overdue'].includes(status)) {
       items.push({ label: t('rental.ui.closeRental'), icon: 'i-lucide-circle-check', color: 'success', onSelect: () => { rentalModalRow.value = row; rentalCloseOpen.value = true } })
     }
@@ -755,9 +835,20 @@ function onCreateChargeType(item: string) {
 
 function _openRentalPayment(row: Record<string, unknown>) {
   rentalPaymentRow.value = row
-  financePaymentAmount.value = Number(row.outstanding || 0) || undefined
   financePaymentMethod.value = PAYMENT_METHODS[0]
+  const rentalId = String(row.id || '')
+  const payments = store.list('rentalPayments').filter(item => String(item.rentalId) === rentalId)
+  const fx = payments.find(item => Number(item.exchangeRate || 0) > 1) || payments[0]
+  if (fx) {
+    financePaymentCurrency.value = normalizePaymentCurrency(fx.currency || row.currency || preferences.currency)
+    financeExchangeRate.value = normalizeExchangeRate(fx.exchangeRate, DEFAULT_USD_KHR_RATE)
+  }
+  else {
+    financePaymentCurrency.value = normalizePaymentCurrency(row.currency || preferences.currency)
+    financeExchangeRate.value = DEFAULT_USD_KHR_RATE
+  }
   financePaymentReference.value = ''
+  financePaymentAmount.value = Number(row.outstanding || 0) || 0
 }
 
 async function submitRentalPayment() {
@@ -779,6 +870,9 @@ async function submitRentalPayment() {
     await store.createRemote('rentalPayments', {
       rentalId: String(rental.id),
       amount: Number(financePaymentAmount.value),
+      currency: financePaymentCurrency.value,
+      exchangeRate: financeExchangeRate.value,
+      tenderedAmount: financeTenderedAmount.value,
       paymentMethod: financePaymentMethod.value,
       paidAt: toIsoZonedOrNow(),
       reference: financePaymentReference.value || null,
@@ -962,6 +1056,15 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
         />
       </template>
       <template #actions>
+        <USelect
+          v-if="sortPreset"
+          v-model="sortMode"
+          :items="sortItems"
+          :placeholder="te('rental.ui.sort') ? String(t('rental.ui.sort')) : 'Sort'"
+          icon="i-lucide-arrow-up-down"
+          size="sm"
+          class="w-44 shrink-0"
+        />
         <template v-if="selectedIds.length && (canEdit || canDelete)">
           <UButton
             :color="deactivationOnly ? 'warning' : 'error'"
@@ -1010,16 +1113,21 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
       <template #body>
         <div class="space-y-3">
           <p class="text-sm text-muted">{{ rentalPaymentRow?.rentalNo }} · {{ rentalPaymentRow?.customer }}</p>
-          <UFormField :label="t('rental.ui.amount', 'Amount')" required>
-            <UInputNumber
-              v-model="financePaymentAmount"
-              :min="0"
-              :step="0.01"
-              :increment="false"
-              :decrement="false"
-              class="w-full"
-            />
-          </UFormField>
+          <div class="rounded-md bg-elevated/60 p-3 text-sm">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-muted">{{ t('rental.ui.outstanding', 'Outstanding') }}</span>
+              <span class="text-right font-semibold tabular-nums">
+                <span class="block">{{ formatMoney(financePaymentTarget, financeRentalCurrency) }}</span>
+                <span v-if="financeShowKhrTotals" class="block text-xs font-medium text-muted">
+                  {{ formatMoney(financeOutstandingKhr, 'KHR') }}
+                </span>
+              </span>
+            </div>
+            <p v-if="financeShowKhrTotals" class="mt-2 text-xs text-muted">
+              {{ t('rental.ui.exchangeRate', 'Exchange rate') }}:
+              1 USD = {{ financeExchangeRate }} KHR
+            </p>
+          </div>
           <UFormField
             :label="t('rental.ui.paymentMethod', 'Payment Method')"
             :help="t('rental.fieldHelp.paymentMethod', 'Choose a preset method or type a custom payment method.')"
@@ -1032,6 +1140,20 @@ function filterItems(filter: { options?: readonly ModuleSelectOption[] | ModuleS
               @create="onCreatePaymentMethod"
             />
           </UFormField>
+          <RentalPaymentCurrencyFields
+            v-model:payment-currency="financePaymentCurrency"
+            v-model:exchange-rate="financeExchangeRate"
+            v-model:tendered-amount="financeTenderedAmount"
+            :rental-currency="financeRentalCurrency"
+            :target-rental-amount="financePaymentTarget"
+          />
+          <p v-if="financeShowKhrTotals" class="text-xs text-muted">
+            {{ t('rental.ui.creditedInRentalCurrency', 'Credited to rental') }}:
+            <span class="font-semibold text-highlighted tabular-nums">
+              {{ formatMoney(financePaymentAmount, financeRentalCurrency) }}
+            </span>
+            · {{ formatMoney(financeCreditedKhr, 'KHR') }}
+          </p>
           <UFormField :label="t('rental.ui.reference', 'Reference')">
             <UInput v-model="financePaymentReference" class="w-full" />
           </UFormField>

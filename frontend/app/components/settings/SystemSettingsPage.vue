@@ -72,7 +72,7 @@ function fieldValue(key: string): unknown {
     const unit = model.value.telegram.deadlineReminderUnit
     return {
       value: Number.isFinite(value) && value >= 1 ? Math.min(Math.trunc(value), 10_080) : 1,
-      unit: unit === 'minutes' || unit === 'days' ? unit : 'hours',
+      unit: unit === 'minutes' || unit === 'hours' ? unit : 'days',
     }
   }
 
@@ -116,8 +116,8 @@ async function setFieldValue(key: string, value: unknown) {
     const duration = value && typeof value === 'object' ? value as { value?: unknown, unit?: unknown } : {}
     const parsed = Number(duration.value)
     setByPath(model.value, 'telegram.deadlineReminderValue', Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 10_080) : 1)
-    const unit = String(duration.unit || 'hours')
-    setByPath(model.value, 'telegram.deadlineReminderUnit', unit === 'minutes' || unit === 'days' ? unit : 'hours')
+    const unit = String(duration.unit || 'days')
+    setByPath(model.value, 'telegram.deadlineReminderUnit', unit === 'minutes' || unit === 'hours' ? unit : 'days')
     return
   }
 

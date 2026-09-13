@@ -38,7 +38,7 @@ const pickerIcon = computed(() =>
 )
 
 /** ERPNext-style display pattern from System Settings (e.g. DD-MM-YYYY). */
-const displayPattern = computed(() => localization.value.dateFormat || 'YYYY-MM-DD')
+const displayPattern = computed(() => localization.value.dateFormat || 'DD/MM/YYYY')
 
 function pad(value: number) {
   return String(value).padStart(2, '0')

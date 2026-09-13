@@ -26,6 +26,16 @@ import {
   type RentalRatePlan,
 } from '~/utils/rental/pricing'
 import { toIsoZoned } from '~/utils/api/datetime'
+import {
+  DEFAULT_USD_KHR_RATE,
+  fromRentalCurrencyAmount,
+  invoiceKhrAmounts,
+  needsExchangeRate,
+  normalizeExchangeRate,
+  normalizePaymentCurrency,
+  toRentalCurrencyAmount,
+  type PaymentCurrency,
+} from '~/utils/rental/fx'
 import { useRentalCommands } from '~/repositories/index'
 
 const props = withDefaults(defineProps<{
@@ -93,18 +103,51 @@ onMounted(() => {
 const customerId = ref('')
 const startDate = ref(todayDateTimeLocal())
 const dueDate = ref(addDaysToDateTime(todayDateTimeLocal(), 1))
-const depositDate = ref(todayDateTimeLocal().slice(0, 10))
-const deposit = ref(0)
-const headerDiscount = ref(0)
-const taxPercent = ref(0)
 const paymentMethodOptions = useCreatableOptionList(PAYMENT_METHODS)
 const paymentMethod = ref<string>(PAYMENT_METHODS[0])
-const paidAmount = ref(0)
+const paymentCurrency = ref<PaymentCurrency>(normalizePaymentCurrency(preferences.currency))
+const exchangeRate = ref(DEFAULT_USD_KHR_RATE)
+const tenderedAmount = ref(0)
+/** Deposit as entered in the selected payment currency. */
+const deposit = ref(0)
 const existingPaid = ref(0)
 const outstandingBalance = ref(0)
 const rentalNo = ref('')
 const rentalStatus = ref('Active')
 const currency = ref(preferences.currency)
+const paidAmount = computed(() =>
+  toRentalCurrencyAmount(
+    tenderedAmount.value,
+    paymentCurrency.value,
+    currency.value,
+    exchangeRate.value,
+  ),
+)
+/** Deposit credited in rental accounting currency. */
+const depositInRental = computed(() =>
+  toRentalCurrencyAmount(
+    deposit.value,
+    paymentCurrency.value,
+    currency.value,
+    exchangeRate.value,
+  ),
+)
+const depositMax = computed(() =>
+  fromRentalCurrencyAmount(
+    totals.value.subtotal,
+    paymentCurrency.value,
+    currency.value,
+    exchangeRate.value,
+  ),
+)
+const depositStep = computed(() =>
+  normalizePaymentCurrency(paymentCurrency.value) === 'KHR' ? 100 : 0.01,
+)
+const depositHelpText = computed(() => {
+  const base = help('deposit', 'Deposit is credited against the total. Cannot exceed subtotal.')
+  if (!needsExchangeRate(paymentCurrency.value, currency.value)) return base
+  return `${base} ${tx('rental.ui.creditedInRentalCurrency', 'Credited to rental')}: ${formatMoney(depositInRental.value, currency.value)}.`
+})
 const lateFee = ref(0)
 const additionalCharges = ref(0)
 const saving = ref(false)
@@ -176,11 +219,6 @@ const customerNameItems = computed(() => customers.value.map(row => ({
   value: String(row.id),
 })))
 
-const customerPassportItems = computed(() => customers.value.map(row => ({
-  label: String(row.identityNumber || ''),
-  value: String(row.id),
-})))
-
 const detailCustomerNameItems = computed(() => {
   if (!selectedCustomer.value) return customerNameItems.value
   const id = String(selectedCustomer.value.id)
@@ -188,12 +226,9 @@ const detailCustomerNameItems = computed(() => {
   return [{ label: String(selectedCustomer.value.fullName || ''), value: id }, ...customerNameItems.value]
 })
 
-const detailCustomerPassportItems = computed(() => {
-  if (!selectedCustomer.value) return customerPassportItems.value
-  const id = String(selectedCustomer.value.id)
-  if (customerPassportItems.value.some(item => item.value === id)) return customerPassportItems.value
-  return [{ label: String(selectedCustomer.value.identityNumber || ''), value: id }, ...customerPassportItems.value]
-})
+const selectedIdentityNumber = computed(() =>
+  String(selectedCustomer.value?.identityNumber || '').trim() || '—',
+)
 
 const modelItems = computed(() => {
   const models = [...new Set([
@@ -264,8 +299,8 @@ const lineComputed = computed(() => lines.value.map(line => {
 const totals = computed(() => {
   const base = documentTotals({
     lineTotals: lineComputed.value.map(row => row.amount),
-    discount: headerDiscount.value,
-    taxPercent: taxPercent.value,
+    discount: 0,
+    taxPercent: 0,
   })
   if (!isDetail.value || isEditable.value) return base
   const extras = Math.max(0, Number(lateFee.value) || 0) + Math.max(0, Number(additionalCharges.value) || 0)
@@ -277,31 +312,42 @@ const totals = computed(() => {
 
 const payableTotal = computed(() => rentalBalance({
   totalDue: totals.value.total,
-  deposit: deposit.value,
+  deposit: depositInRental.value,
 }).totalAfterDeposit)
 
-const depositError = computed(() => {
-  if (deposit.value > totals.value.subtotal + 0.001) {
-    return tx('rental.ui.depositExceedsSubtotal', 'Deposit cannot exceed subtotal.')
-  }
-  return undefined
-})
+const showKhrTotals = computed(() =>
+  normalizePaymentCurrency(paymentCurrency.value) === 'KHR'
+  || normalizePaymentCurrency(currency.value) === 'KHR',
+)
 
-const paidError = computed(() => {
-  if (isDetail.value) return undefined
-  if (paidAmount.value > payableTotal.value + 0.001) {
-    return tx('rental.ui.paidExceedsTotal', 'Paid now cannot exceed remaining total after deposit.')
+const formKhrTotals = computed(() =>
+  invoiceKhrAmounts({
+    subtotal: totals.value.subtotal,
+    deposit: depositInRental.value,
+    paid: isFormReadOnly.value ? existingPaid.value : paidAmount.value,
+    rentalCurrency: currency.value,
+    exchangeRate: exchangeRate.value,
+    depositTendered: deposit.value,
+    depositCurrency: paymentCurrency.value,
+    paidTendered: tenderedAmount.value,
+    paidCurrency: paymentCurrency.value,
+  }),
+)
+
+const depositError = computed(() => {
+  if (isFormReadOnly.value) return undefined
+  if (depositInRental.value > totals.value.subtotal + 0.001) {
+    return tx('rental.ui.depositExceedsSubtotal', 'Deposit cannot exceed subtotal.')
   }
   return undefined
 })
 
 const outstandingPreview = computed(() => {
   if (isFormReadOnly.value) return Math.max(0, Number(outstandingBalance.value) || 0)
-  const paid = isEditable.value ? existingPaid.value : paidAmount.value
   return rentalBalance({
     totalDue: totals.value.total,
-    deposit: deposit.value,
-    paid,
+    deposit: depositInRental.value,
+    paid: paidAmount.value,
   }).outstanding
 })
 
@@ -338,12 +384,30 @@ const createCustomerButtons = computed(() => {
 
 watch(() => totals.value.subtotal, (subtotal) => {
   if (isFormReadOnly.value) return
-  if (deposit.value > subtotal) deposit.value = subtotal
+  if (depositInRental.value > subtotal) {
+    deposit.value = fromRentalCurrencyAmount(
+      subtotal,
+      paymentCurrency.value,
+      currency.value,
+      exchangeRate.value,
+    )
+  }
 })
 
-watch(() => payableTotal.value, (total) => {
-  if (isFormReadOnly.value) return
-  if (!isDetail.value && paidAmount.value > total) paidAmount.value = total
+watch(paymentCurrency, (next, prev) => {
+  if (next === prev) return
+  const credited = toRentalCurrencyAmount(
+    deposit.value,
+    prev,
+    currency.value,
+    exchangeRate.value,
+  )
+  deposit.value = fromRentalCurrencyAmount(
+    credited,
+    next,
+    currency.value,
+    exchangeRate.value,
+  )
 })
 
 const ratePlanItems = computed(() => [
@@ -427,7 +491,7 @@ const canEditRental = computed(() => Boolean(
   && dueDate.value
   && lines.value.every(line => line.motorcycleId && line.days > 0 && line.unitPrice > 0)
   && totals.value.total >= 0
-  && deposit.value <= totals.value.subtotal + 0.001,
+  && depositInRental.value <= totals.value.subtotal + 0.001,
 ))
 
 const canCreate = computed(() => Boolean(
@@ -437,8 +501,7 @@ const canCreate = computed(() => Boolean(
   && dueDate.value
   && lines.value.every(line => line.motorcycleId && line.days > 0 && line.unitPrice > 0)
   && totals.value.total >= 0
-  && deposit.value <= totals.value.subtotal + 0.001
-  && paidAmount.value <= payableTotal.value + 0.001,
+  && depositInRental.value <= totals.value.subtotal + 0.001,
 ))
 
 const customerModalOpen = ref(false)
@@ -541,11 +604,7 @@ function hydrateDetail() {
   syncingDates.value = true
   startDate.value = String(found.startDate || '')
   dueDate.value = String(found.dueDate || '')
-  depositDate.value = String(found.depositDate || String(found.startDate || '').slice(0, 10))
-  deposit.value = Number(found.deposit || 0)
-  taxPercent.value = Number(found.taxPercent || 0)
   existingPaid.value = Number(found.paid || 0)
-  paidAmount.value = existingPaid.value
   outstandingBalance.value = Number(found.outstanding || 0)
   currency.value = String(found.currency || preferences.currency)
   lateFee.value = Number(found.lateFee || 0)
@@ -554,13 +613,63 @@ function hydrateDetail() {
   const payments = store.list('rentalPayments')
     .filter(row => String(row.rentalId) === String(found.id))
     .sort((a, b) => String(b.paidAt || '').localeCompare(String(a.paidAt || '')))
-  const lastMethod = String(payments[0]?.paymentMethod || '')
+  const lastMethod = String(payments[0]?.paymentMethod || found.paymentMethod || '')
   if (lastMethod) {
     paymentMethod.value = lastMethod
     if (!paymentMethodOptions.items.value.includes(lastMethod)) {
       paymentMethodOptions.items.value.push(lastMethod)
     }
   }
+  const fxPayment = payments.find(row => Number(row.exchangeRate || 0) > 1) || payments[0]
+  if (fxPayment) {
+    paymentCurrency.value = normalizePaymentCurrency(fxPayment.currency || found.currency)
+    exchangeRate.value = normalizeExchangeRate(fxPayment.exchangeRate, DEFAULT_USD_KHR_RATE)
+  }
+  else if (found.depositCurrency || found.exchangeRate) {
+    paymentCurrency.value = normalizePaymentCurrency(found.depositCurrency || found.currency || preferences.currency)
+    exchangeRate.value = normalizeExchangeRate(found.exchangeRate, DEFAULT_USD_KHR_RATE)
+  }
+  else {
+    paymentCurrency.value = normalizePaymentCurrency(found.currency || preferences.currency)
+    exchangeRate.value = normalizeExchangeRate(found.exchangeRate, DEFAULT_USD_KHR_RATE)
+  }
+
+  const depositRental = Math.max(0, Number(found.deposit || 0))
+  const storedDepositTendered = Number(found.depositTenderedAmount || 0)
+  if (storedDepositTendered > 0) {
+    deposit.value = storedDepositTendered
+    if (found.depositCurrency) {
+      paymentCurrency.value = normalizePaymentCurrency(found.depositCurrency)
+    }
+  }
+  else {
+    deposit.value = fromRentalCurrencyAmount(
+      depositRental,
+      paymentCurrency.value,
+      currency.value,
+      exchangeRate.value,
+    )
+  }
+
+  const paidRental = Math.max(0, Number(found.paid || 0))
+  const tenderedFromPayments = payments.reduce((sum, row) => {
+    const tendered = Number(row.tenderedAmount || 0)
+    if (tendered > 0) return sum + tendered
+    return sum + fromRentalCurrencyAmount(
+      Number(row.amount || 0),
+      paymentCurrency.value,
+      currency.value,
+      exchangeRate.value,
+    )
+  }, 0)
+  tenderedAmount.value = tenderedFromPayments > 0
+    ? tenderedFromPayments
+    : fromRentalCurrencyAmount(
+      paidRental,
+      paymentCurrency.value,
+      currency.value,
+      exchangeRate.value,
+    )
 
   const savedLines = Array.isArray(found.lines) ? found.lines as Array<Record<string, unknown>> : []
   if (savedLines.length) {
@@ -595,8 +704,6 @@ function hydrateDetail() {
     }]
   }
   for (const line of lines.value) repriceLine(line)
-  // Detail stores discount on the rental line; keep header extra at 0 so totals do not double-count.
-  headerDiscount.value = 0
   void nextTick(() => {
     refreshHeaderDueFromLines()
     syncingDates.value = false
@@ -607,6 +714,20 @@ watch(
   [() => props.mode, () => props.rentalId, () => (props.rentalId ? store.get('rentals', props.rentalId) : null)],
   loadDetail,
   { immediate: true },
+)
+
+watch(
+  () => {
+    if (!isDetail.value || !props.rentalId) return ''
+    return store.list('rentalPayments')
+      .filter(row => String(row.rentalId) === String(props.rentalId))
+      .map(row => `${row.id}:${row.currency}:${row.exchangeRate}:${row.tenderedAmount}:${row.amount}`)
+      .join('|')
+  },
+  (signature, previous) => {
+    if (!isDetail.value || !signature || signature === previous) return
+    hydrateDetail()
+  },
 )
 
 const rentalsListLabel = computed(() => tx('rental.pages.rentals', 'Rentals'))
@@ -637,7 +758,18 @@ usePageSeo({ title: () => headerTitle.value })
 function buildInvoicePayload(): Record<string, unknown> | null {
   if (isDetail.value && props.rentalId) {
     const found = store.get('rentals', props.rentalId)
-    return found ? { ...found } : null
+    if (!found) return null
+    const relatedPayments = store.list('rentalPayments')
+      .filter(row => String(row.rentalId || '') === String(props.rentalId))
+      .sort((a, b) => String(b.paidAt || '').localeCompare(String(a.paidAt || '')))
+    const latestFx = relatedPayments.find(row => Number(row.exchangeRate || 0) > 1)
+    const customer = store.list('rentalCustomers').find(row => String(row.id) === String(found.customerId || ''))
+    return {
+      ...found,
+      identityNumber: customer?.identityNumber || found.identityNumber || '',
+      exchangeRate: Number(latestFx?.exchangeRate || found.exchangeRate || DEFAULT_USD_KHR_RATE),
+      paymentCurrency: String(latestFx?.currency || found.paymentCurrency || found.currency || 'USD'),
+    }
   }
   if (!selectedCustomer.value || !lineComputed.value.some(row => row.moto || row.line.motorcycleId)) return null
   const first = lineComputed.value[0]
@@ -660,6 +792,7 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     customerId: selectedCustomer.value.id,
     customer: selectedCustomer.value.fullName,
     phone: selectedCustomer.value.phone,
+    identityNumber: selectedCustomer.value.identityNumber || '',
     motorcycleId: first?.line.motorcycleId || '',
     motorcycle: first?.line.model || moto?.model || '',
     plate: moto?.plate || '',
@@ -668,17 +801,21 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     durationDays: first?.line.days || 1,
     rateType: rentalRateType(first?.line.days || 1, startDate.value, dueDate.value),
     rateAmount: first?.gross || first?.line.unitPrice || 0,
-    deposit: deposit.value,
-    depositDate: depositDate.value,
-    discount: Number((lineDiscountTotal + headerDiscount.value).toFixed(2)),
-    taxPercent: taxPercent.value,
-    tax: totals.value.tax,
+    deposit: depositInRental.value,
+    discount: Number(lineDiscountTotal.toFixed(2)),
+    taxPercent: 0,
+    tax: 0,
     currency: moto?.currency || preferences.currency,
+    exchangeRate: exchangeRate.value,
+    paymentCurrency: paymentCurrency.value,
+    depositTenderedAmount: deposit.value,
+    depositCurrency: paymentCurrency.value,
+    tenderedAmount: tenderedAmount.value,
     rentalCharge: first?.amount || totals.value.subtotal,
     lateFee: 0,
     additionalCharges: 0,
     totalDue: totals.value.total,
-    paid: paidAmount.value,
+    paid: isDetail.value ? existingPaid.value : paidAmount.value,
     outstanding: outstandingPreview.value,
     paymentMethod: paymentMethod.value,
     status: 'Draft',
@@ -764,15 +901,19 @@ async function createRental() {
           motorcycleId: String(row.line.motorcycleId),
           startDate: toIsoZoned(startDate.value)!,
           dueDate: toIsoZoned(row.due || lineDueDate(row.line))!,
-          deposit: index === 0 ? Number(deposit.value || 0) : 0,
+          deposit: index === 0 ? Number(depositInRental.value || 0) : 0,
           discount: Number(row.line.discount || 0),
           note: null,
         })),
-        discount: headerDiscount.value,
-        taxPercent: taxPercent.value,
+        discount: 0,
+        taxPercent: 0,
         paidAmount: paidAmount.value,
         paymentMethod: paymentMethod.value,
         currency: currency.value,
+        paymentCurrency: paymentCurrency.value,
+        exchangeRate: exchangeRate.value,
+        tenderedAmount: tenderedAmount.value,
+        depositTenderedAmount: deposit.value,
         note: null,
       })
       await store.fetchList('motorcycles')
@@ -811,20 +952,27 @@ async function updateRental() {
       customerId: customerId.value,
       startDate: toIsoZoned(startDate.value)!,
       dueDate: toIsoZoned(dueDate.value)!,
-      deposit: deposit.value,
-      discount: headerDiscount.value,
-      taxPercent: taxPercent.value,
+      deposit: depositInRental.value,
+      discount: 0,
+      taxPercent: 0,
+      paidAmount: paidAmount.value,
+      paymentMethod: paymentMethod.value,
+      paymentCurrency: paymentCurrency.value,
+      exchangeRate: exchangeRate.value,
+      tenderedAmount: tenderedAmount.value,
+      depositTenderedAmount: deposit.value,
       note: null,
       lines: validLines.map((row, index) => ({
         motorcycleId: String(row.line.motorcycleId),
         startDate: toIsoZoned(startDate.value)!,
         dueDate: toIsoZoned(row.due || lineDueDate(row.line))!,
-        deposit: index === 0 ? Number(deposit.value || 0) : 0,
+        deposit: index === 0 ? Number(depositInRental.value || 0) : 0,
         discount: Number(row.line.discount || 0),
         note: null,
       })),
     })
     await store.fetchOne('rentals', String(props.rentalId))
+    await store.fetchList('rentalPayments', { rentalId: String(props.rentalId) })
     await store.fetchList('motorcycles')
     toast.add({ title: tx('rental.ui.rentalUpdated', 'Rental updated'), color: 'success' })
     await navigateTo('/rentals')
@@ -903,16 +1051,14 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
             </UFormField>
             <UFormField
               :label="tx('app.modules.rentalCustomers.fields.identityNumber', 'Identity Number')"
-              :help="help('customerPassport', 'Select customer by identity number.')"
-              required
+              :help="help('customerPassport', 'Filled automatically when you select a customer name.')"
             >
-              <USelect
-                v-model="customerId"
-                :items="isDetail ? detailCustomerPassportItems : customerPassportItems"
+              <UInput
+                :model-value="selectedIdentityNumber"
                 placeholder="—"
                 size="md"
                 class="w-full"
-                :disabled="isFormReadOnly"
+                disabled
               />
             </UFormField>
             <UFormField
@@ -942,18 +1088,6 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 class="w-full"
                 :disabled="isFormReadOnly"
                 @update:model-value="onHeaderDueChange"
-              />
-            </UFormField>
-            <UFormField
-              :label="tx('rental.ui.depositDate', 'Deposit date')"
-              :help="help('depositDate', 'Date the deposit was received.')"
-            >
-              <CommonAppInputDate
-                v-model="depositDate"
-                granularity="day"
-                size="md"
-                class="w-full"
-                :disabled="isFormReadOnly"
               />
             </UFormField>
           </div>
@@ -1079,139 +1213,97 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
             </div>
             <p class="mt-2 text-xs text-muted">{{ help('lines', 'Select model, then plate. Each motorcycle has its own rate package and days. Amount uses that motorcycle package rate minus any line discount.') }}</p>
 
-            <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <UFormField
-                :label="tx('rental.ui.deposit', 'Deposit amount')"
-                :help="help('deposit', 'Deposit is credited against the total. Cannot exceed subtotal.')"
-                :error="depositError"
-              >
-                <UInputNumber
-                  v-model="deposit"
-                  :min="0"
-                  :max="totals.subtotal"
-                  :increment="false"
-                  :decrement="false"
-                  size="md"
-                  class="w-full"
-                  :disabled="isFormReadOnly"
-                />
-              </UFormField>
-
-              <div class="flex items-center justify-between gap-4 rounded-md bg-elevated/40 px-3 py-2.5 text-sm">
-                <span class="text-muted">{{ tx('rental.ui.subtotal', 'Subtotal') }}</span>
-                <span class="font-semibold tabular-nums">{{ money(totals.subtotal) }}</span>
-              </div>
-
-              <UFormField
-                :label="tx('rental.ui.extraDiscount', 'Extra discount')"
-                :help="help('headerDiscount', 'Optional document-level discount shared across motorcycles, applied after each line discount.')"
-              >
-                <UInputNumber
-                  v-model="headerDiscount"
-                  :min="0"
-                  :max="totals.subtotal"
-                  :increment="false"
-                  :decrement="false"
-                  size="md"
-                  class="w-full"
-                  :disabled="isFormReadOnly"
-                />
-              </UFormField>
-
-              <UFormField
-                :label="tx('rental.ui.taxPercent', 'Tax %')"
-                :help="help('taxPercent', 'Sales tax percent applied after discount.')"
-              >
-                <UInputNumber
-                  v-model="taxPercent"
-                  :min="0"
-                  :increment="false"
-                  :decrement="false"
-                  size="md"
-                  class="w-full"
-                  :disabled="isFormReadOnly"
-                />
-              </UFormField>
-
-              <UFormField
-                :label="tx('rental.ui.paymentMethod', 'Payment Method')"
-                :help="help('paymentMethod', 'Choose a preset method or type a custom payment method.')"
-              >
-                <UInputMenu
-                  v-model="paymentMethod"
-                  create-item
-                  :items="paymentMethodOptions.items.value"
-                  size="md"
-                  class="w-full"
-                  :disabled="isFormReadOnly"
-                  @create="onCreatePaymentMethod"
-                />
-              </UFormField>
-
-              <UFormField
-                :label="isDetail ? tx('rental.ui.paid', 'Paid') : tx('rental.ui.paidNow', 'Paid now')"
-                :help="isDetail
-                  ? help('paidTotal', 'Total paid so far on this rental.')
-                  : help('paidAmount', 'Optional payment when creating. Leave 0 to pay later. Cannot exceed remaining total after deposit.')"
-                :error="paidError"
-              >
-                <UInputNumber
-                  v-model="paidAmount"
-                  :min="0"
-                  :max="isDetail ? undefined : payableTotal"
-                  :increment="false"
-                  :decrement="false"
-                  size="md"
-                  class="w-full"
-                  :disabled="isDetail"
-                />
-              </UFormField>
-
-              <div class="flex items-center justify-between gap-4 border-t border-default pt-3 text-base sm:col-span-2">
-                <span class="font-semibold">{{ tx('rental.ui.total', 'Total') }}</span>
-                <span class="font-semibold tabular-nums">{{ money(payableTotal) }}</span>
-              </div>
-
-              <p class="text-xs text-muted sm:col-span-2">
-                {{ isDetail
-                  ? tx('rental.ui.outstanding', 'Outstanding')
-                  : tx('rental.ui.outstandingAfterPay', 'Outstanding after payment') }}:
-                <span class="font-semibold text-highlighted">{{ money(outstandingPreview) }}</span>
-              </p>
-
-              <template v-if="isDetail">
-                <div class="rounded-md border border-default bg-elevated/30 p-3 sm:col-span-2">
-                  <p class="mb-2 text-xs font-medium uppercase tracking-wide text-muted">
-                    {{ tx('rental.ui.balanceSummary', 'Balance summary') }}
-                  </p>
-                  <div class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                    <div class="flex items-center justify-between gap-3">
-                      <span class="text-muted">{{ tx('rental.ui.rentalCharge', 'Rental Charge') }}</span>
-                      <span class="tabular-nums font-medium">{{ money(Number(detailRental?.rentalCharge || 0)) }}</span>
-                    </div>
-                    <div class="flex items-center justify-between gap-3">
-                      <span class="text-muted">{{ tx('rental.ui.lateFee', 'Late Fee') }}</span>
-                      <span class="tabular-nums font-medium">{{ money(lateFee) }}</span>
-                    </div>
-                    <div class="flex items-center justify-between gap-3">
-                      <span class="text-muted">{{ tx('rental.ui.additionalCharges', 'Additional Charges') }}</span>
-                      <UButton
-                        v-if="additionalCharges > 0"
-                        variant="link"
-                        color="primary"
-                        class="p-0 font-medium tabular-nums"
-                        :label="money(additionalCharges)"
-                        @click="chargesReviewOpen = true"
-                      />
-                      <span v-else class="tabular-nums font-medium">{{ money(additionalCharges) }}</span>
-                    </div>
-                    <div class="flex items-center justify-between gap-3">
-                      <span class="text-muted">{{ tx('rental.ui.paid', 'Paid') }}</span>
-                      <span class="tabular-nums font-medium">{{ money(existingPaid) }}</span>
-                    </div>
-                  </div>
+            <div class="mt-4 flex justify-end">
+              <div class="flex w-full max-w-sm flex-col gap-4">
+                <div class="flex items-center justify-between gap-4 rounded-md bg-elevated/40 px-3 py-2.5 text-sm">
+                  <span class="text-muted">{{ tx('rental.ui.subtotal', 'Subtotal') }}</span>
+                  <span class="text-right font-semibold tabular-nums">
+                    <span class="block">{{ money(totals.subtotal) }}</span>
+                    <span v-if="showKhrTotals" class="block text-xs font-medium text-muted">
+                      {{ formatMoney(formKhrTotals.subtotalKhr, 'KHR') }}
+                    </span>
+                  </span>
                 </div>
-              </template>
+
+                <UFormField
+                  :label="tx('rental.ui.paymentMethod', 'Payment Method')"
+                  :help="help('paymentMethod', 'Choose a preset method or type a custom payment method.')"
+                >
+                  <UInputMenu
+                    v-model="paymentMethod"
+                    create-item
+                    :items="paymentMethodOptions.items.value"
+                    size="md"
+                    class="w-full"
+                    :disabled="isFormReadOnly"
+                    @create="onCreatePaymentMethod"
+                  />
+                </UFormField>
+
+                <RentalPaymentCurrencyFields
+                  v-model:payment-currency="paymentCurrency"
+                  v-model:exchange-rate="exchangeRate"
+                  v-model:tendered-amount="tenderedAmount"
+                  :rental-currency="currency"
+                  :disabled="isFormReadOnly"
+                  :amount-label="tx('rental.ui.amountPaid', 'Amount paid')"
+                />
+
+                <UFormField
+                  :label="tx('rental.ui.deposit', 'Deposit')"
+                  :help="depositHelpText"
+                  :error="depositError"
+                >
+                  <UInputNumber
+                    v-model="deposit"
+                    :min="0"
+                    :max="depositMax"
+                    :step="depositStep"
+                    :increment="false"
+                    :decrement="false"
+                    size="md"
+                    class="w-full"
+                    :disabled="isFormReadOnly"
+                  />
+                </UFormField>
+
+                <div class="flex items-center justify-between gap-4 border-t border-default pt-3 text-base">
+                  <span class="font-semibold">{{ tx('rental.ui.total', 'Total') }}</span>
+                  <span class="text-right font-semibold tabular-nums">
+                    <span class="block">{{ money(payableTotal) }}</span>
+                    <span v-if="showKhrTotals" class="block text-sm font-medium text-muted">
+                      {{ formatMoney(formKhrTotals.totalKhr, 'KHR') }}
+                    </span>
+                  </span>
+                </div>
+
+                <p class="text-xs text-muted">
+                  {{ tx('rental.ui.outstanding', 'Outstanding') }}:
+                  <span class="font-semibold text-highlighted">{{ money(outstandingPreview) }}</span>
+                  <span v-if="showKhrTotals" class="font-semibold text-highlighted">
+                    · {{ formatMoney(formKhrTotals.outstandingKhr, 'KHR') }}
+                  </span>
+                </p>
+                <p v-if="showKhrTotals" class="text-xs text-muted">
+                  {{ tx('rental.ui.exchangeRate', 'Exchange rate') }}:
+                  1 USD = {{ exchangeRate }} KHR
+                </p>
+
+                <template v-if="isDetail">
+                  <div class="flex items-center justify-between gap-3 border-t border-default pt-3 text-sm">
+                    <span class="text-muted">{{ tx('rental.ui.additionalCharges', 'Additional Charges') }}</span>
+                    <UButton
+                      v-if="additionalCharges > 0"
+                      variant="link"
+                      color="primary"
+                      class="p-0 font-medium tabular-nums"
+                      :label="money(additionalCharges)"
+                      @click="chargesReviewOpen = true"
+                    />
+                    <span v-else class="tabular-nums font-medium">{{ money(additionalCharges) }}</span>
+                  </div>
+                </template>
+              </div>
             </div>
           </div>
         </div>

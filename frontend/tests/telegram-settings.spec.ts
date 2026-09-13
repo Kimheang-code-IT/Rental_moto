@@ -101,4 +101,13 @@ describe('telegram settings', () => {
     expect(duration?.type).toBe('duration')
     expect(duration?.options?.map(option => option.value)).toEqual(['minutes', 'hours', 'days'])
   })
+
+  it('exposes bot token and group id as editable UI fields (not env-only)', () => {
+    const botToken = telegramFields.find(field => field.key === 'telegram.botToken')
+    const groupId = telegramFields.find(field => field.key === 'telegram.chatId')
+    expect(botToken?.type).toBe('secret')
+    expect(botToken?.readOnly).toBeFalsy()
+    expect(groupId?.type).toBe('text')
+    expect(groupId?.readOnly).toBeFalsy()
+  })
 })

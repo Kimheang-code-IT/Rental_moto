@@ -75,12 +75,15 @@ async def test_create_rental_credits_deposit_then_payment(client, admin_headers)
         ],
         "paidAmount": 0,
         "paymentMethod": "Cash",
+        "taxPercent": 10,
     }
     created = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
     assert created.status_code == 201, created.text
     rental = created.json()["data"][0]
     assert rental["rentalCharge"] == "10.00"
     assert rental["deposit"] == "5.00"
+    assert rental["taxPercent"] == "0.00"
+    assert rental["tax"] == "0.00"
     assert rental["paid"] == "0.00"
     assert rental["outstanding"] == "5.00"
 
@@ -103,10 +106,11 @@ async def test_create_rental_applies_line_discount(client, admin_headers):
     response = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
     assert response.status_code == 201, response.text
     rental = response.json()["data"][0]
-    # 3-day package 27 - line 5 - document share 2 = 20
+    # 3-day package 27 - line discount 5; document/extra discount is ignored
     assert rental["rateAmount"] == "27.00"
-    assert rental["discount"] == "7.00"
-    assert rental["rentalCharge"] == "20.00"
+    assert rental["discount"] == "5.00"
+    assert rental["rentalCharge"] == "22.00"
+    assert rental["tax"] == "0.00"
 
 
 async def test_double_rental_blocked(client, admin_headers):
@@ -239,6 +243,82 @@ async def test_rental_update_active(client, admin_headers):
     assert data["durationDays"] == 7
 
 
+async def test_rental_update_paid_amount(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    created = await client.post(
+        "/api/v2/rentals",
+        headers=admin_headers,
+        json=_rental_payload(moto, customer, paid=10),
+    )
+    rental = created.json()["data"][0]
+    assert rental["paid"] == "10.00"
+    assert rental["outstanding"] == "17.00"
+
+    increased = await client.put(
+        f"/api/v2/rentals/{rental['id']}",
+        headers=admin_headers,
+        json={"paidAmount": 20, "paymentMethod": "QR Payment"},
+    )
+    assert increased.status_code == 200, increased.text
+    data = increased.json()["data"]
+    assert data["paid"] == "20.00"
+    assert data["outstanding"] == "7.00"
+    assert data["paymentMethod"] == "QR Payment"
+
+    payments = await client.get(
+        "/api/v2/payments",
+        headers=admin_headers,
+        params={"rentalId": rental["id"]},
+    )
+    assert payments.status_code == 200, payments.text
+    payment_rows = payments.json()["data"]
+    assert len(payment_rows) == 1
+    assert payment_rows[0]["amount"] == "20.00"
+    assert payment_rows[0]["paymentMethod"] == "QR Payment"
+
+    khr_update = await client.put(
+        f"/api/v2/rentals/{rental['id']}",
+        headers=admin_headers,
+        json={
+            "paidAmount": 5,
+            "paymentCurrency": "KHR",
+            "exchangeRate": 4100,
+            "tenderedAmount": 20500,
+            "paymentMethod": "Cash",
+        },
+    )
+    assert khr_update.status_code == 200, khr_update.text
+    khr_data = khr_update.json()["data"]
+    assert khr_data["paid"] == "5.00"
+    khr_payments = await client.get(
+        "/api/v2/payments",
+        headers=admin_headers,
+        params={"rentalId": rental["id"]},
+    )
+    khr_rows = khr_payments.json()["data"]
+    assert len(khr_rows) == 1
+    assert khr_rows[0]["currency"] == "KHR"
+    assert khr_rows[0]["tenderedAmount"] == "20500.00"
+    assert float(khr_rows[0]["exchangeRate"]) == 4100.0
+
+    cleared = await client.put(
+        f"/api/v2/rentals/{rental['id']}",
+        headers=admin_headers,
+        json={"paidAmount": 0},
+    )
+    assert cleared.status_code == 200, cleared.text
+    cleared_data = cleared.json()["data"]
+    assert cleared_data["paid"] == "0.00"
+    assert cleared_data["outstanding"] == "27.00"
+
+    payments_after = await client.get(
+        "/api/v2/payments",
+        headers=admin_headers,
+        params={"rentalId": rental["id"]},
+    )
+    assert payments_after.json()["data"] == []
+
+
 async def test_rental_delete_only_when_cancelled(client, admin_headers):
     moto, customer = await _setup(client, admin_headers)
     created = await client.post("/api/v2/rentals", headers=admin_headers, json=_rental_payload(moto, customer))
@@ -299,13 +379,15 @@ async def test_create_rental_multiple_motorcycles_one_row(client, admin_headers)
     assert rental["rentalNo"].startswith("RNT-2026-")
     assert len(rental["lines"]) == 2
     assert {line["motorcycleId"] for line in rental["lines"]} == {moto_a["id"], moto_b["id"]}
-    # 27 + 27 gross, line discount 2 + document 4 = 6, charge 48, paid 20
+    # 27 + 27 gross, line discount 2 only (document/extra discount ignored).
+    # Line deposits 50+25 are capped to total due 52.
     assert rental["rateAmount"] == "54.00"
-    assert rental["discount"] == "6.00"
-    assert rental["rentalCharge"] == "48.00"
+    assert rental["discount"] == "2.00"
+    assert rental["rentalCharge"] == "52.00"
     assert rental["paid"] == "20.00"
+    assert rental["deposit"] == "52.00"
     assert rental["outstanding"] == "0.00"
-    assert rental["deposit"] == "75.00"
+    assert rental["tax"] == "0.00"
     assert "Second Test Bike" in rental["motorcycle"]
     assert "PP-TEST-002" in (rental["plate"] or "")
 

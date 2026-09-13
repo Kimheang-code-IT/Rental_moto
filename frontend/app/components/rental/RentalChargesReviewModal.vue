@@ -60,9 +60,23 @@ watch(open, (isOpen) => {
   >
     <template #body>
       <div class="space-y-4">
-        <div class="rounded-md bg-elevated/60 px-3 py-2 text-sm text-muted">
-          <span class="font-medium text-highlighted">{{ rental?.rentalNo || '—' }}</span>
-          <span v-if="rental?.customer"> · {{ rental.customer }}</span>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <UFormField :label="tx('rental.ui.rentalNo', 'Rental Number')">
+            <UInput
+              :model-value="String(rental?.rentalNo || '—')"
+              size="md"
+              class="w-full"
+              disabled
+            />
+          </UFormField>
+          <UFormField :label="tx('rental.ui.customer', 'Customer')">
+            <UInput
+              :model-value="String(rental?.customer || '—')"
+              size="md"
+              class="w-full"
+              disabled
+            />
+          </UFormField>
         </div>
 
         <div v-if="loading" class="flex justify-center py-8">

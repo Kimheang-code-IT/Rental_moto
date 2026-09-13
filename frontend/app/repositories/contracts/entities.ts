@@ -50,6 +50,10 @@ export interface RentalCreateInput {
   paidAmount?: number
   paymentMethod?: string
   currency?: string
+  paymentCurrency?: string
+  exchangeRate?: number
+  tenderedAmount?: number
+  depositTenderedAmount?: number
   note?: string | null
 }
 
@@ -69,6 +73,9 @@ export interface RentalCloseInput {
   finalPayment?: {
     amount: number
     paymentMethod: string
+    currency?: string
+    exchangeRate?: number
+    tenderedAmount?: number
     reference?: string | null
     note?: string | null
     paidAt?: string
@@ -84,6 +91,12 @@ export interface RentalUpdateInput {
   deposit?: number
   discount?: number
   taxPercent?: number
+  paidAmount?: number
+  paymentMethod?: string
+  paymentCurrency?: string
+  exchangeRate?: number
+  tenderedAmount?: number
+  depositTenderedAmount?: number
   note?: string | null
   lines?: RentalLineInput[]
 }

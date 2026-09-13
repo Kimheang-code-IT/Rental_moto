@@ -1,17 +1,21 @@
 import type { AppConfigLocalization } from '~/types/rental/settings'
 
-/** Defaults aligned with mock settings seed and System Settings → Localization. */
+/** Defaults aligned with backend seed and System Settings → Localization (Cambodia). */
 export const DEFAULT_FORMAT_CONFIG: AppConfigLocalization = {
   defaultLanguage: 'en',
   availableLanguages: ['en', 'km'],
   timezone: 'Asia/Phnom_Penh',
-  dateFormat: 'YYYY-MM-DD',
+  dateFormat: 'DD/MM/YYYY',
   timeFormat: 'HH:mm',
   firstDayOfWeek: 1,
   numberFormat: '1,234.56',
   currency: 'USD',
   locale: 'en-US',
 }
+
+/** Printed rental invoices always use dd/mm/yyyy hh:mm. */
+export const INVOICE_DATE_FORMAT = 'DD/MM/YYYY'
+export const INVOICE_TIME_FORMAT = 'HH:mm'
 
 const NUMBER_FORMAT_LOCALES: Record<string, string> = {
   '1,234.56': 'en-US',
@@ -133,6 +137,29 @@ export function formatDateTime(value: unknown, fallback = '—') {
   return `${formatDate(value, fallback)} ${formatTime(value, '')}`.trim()
 }
 
+/** Invoice dates: always `dd/mm/yyyy hh:mm` in the configured business timezone. */
+export function formatInvoiceDateTime(value: unknown, fallback = '—') {
+  const date = validDate(value)
+  if (!date) return fallback
+  try {
+    const parts = configuredDateParts(date, activeConfig.timezone)
+    const dateLabel = formatPattern(parts, INVOICE_DATE_FORMAT, activeConfig.locale)
+    const timeParts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: activeConfig.timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(date)
+    const read = (type: Intl.DateTimeFormatPartTypes) =>
+      timeParts.find(part => part.type === type)?.value || ''
+    const timeLabel = `${read('hour')}:${read('minute')}`
+    return `${dateLabel} ${timeLabel}`.trim()
+  }
+  catch {
+    return fallback
+  }
+}
+
 export function formatDatePart(
   value: unknown,
   options: Intl.DateTimeFormatOptions,
@@ -163,7 +190,20 @@ export function formatNumber(value: unknown, options: Intl.NumberFormatOptions =
 }
 
 export function formatCurrency(value: unknown, currency = activeConfig.currency) {
-  return formatNumber(value, { style: 'currency', currency })
+  const code = String(currency || 'USD').trim().toUpperCase() || 'USD'
+  const amount = Number(value)
+  const safe = Number.isFinite(amount) ? amount : 0
+  // Cambodian Riel is a whole-number currency in practice (no sen/decimals).
+  if (code === 'KHR') {
+    const whole = Math.round(safe)
+    try {
+      return `៛${formatNumber(whole, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+    }
+    catch {
+      return `៛${whole.toLocaleString('en-US')}`
+    }
+  }
+  return formatNumber(safe, { style: 'currency', currency: code })
 }
 
 /** Money display: record currency when provided, otherwise System Settings default. */
@@ -175,6 +215,9 @@ export function formatMoney(value: unknown, currency?: string) {
   catch {
     const amount = Number(value)
     const safe = Number.isFinite(amount) ? amount : 0
+    if (String(code).toUpperCase() === 'KHR') {
+      return `៛${Math.round(safe).toLocaleString('en-US')}`
+    }
     return `${code} ${formatNumber(safe, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 }
