@@ -36,6 +36,13 @@ class RentalBalance:
     outstanding: Decimal
 
 
+@dataclass
+class SecurityDepositSettlement:
+    applied_to_charges: Decimal
+    refund_to_customer: Decimal
+    customer_pays: Decimal
+
+
 def resolve_motorcycle_rates(
     daily_rate=None, three_day_rate=None, weekly_rate=None, monthly_rate=None
 ) -> MotorcycleRates:
@@ -155,15 +162,23 @@ def suggested_deposit(rates: MotorcycleRates) -> Decimal:
 
 
 def rental_balance(total_due=0, deposit=0, paid=0) -> RentalBalance:
-    """Remaining total after deposit is credited, then after payments.
-
-    Example: $10 total + $5 deposit → $5 due; then $5 payment → $0 outstanding.
-    """
+    """Rental balance excludes the separately held security deposit."""
     due = max(money(total_due), Decimal("0.00"))
-    credited = max(money(deposit), Decimal("0.00"))
     received = max(money(paid), Decimal("0.00"))
-    total_after_deposit = money(max(due - credited, Decimal("0.00")))
+    total_after_deposit = due
     return RentalBalance(
         total_after_deposit=total_after_deposit,
         outstanding=money(max(total_after_deposit - received, Decimal("0.00"))),
+    )
+
+
+def security_deposit_settlement(deposit=0, charges=0) -> SecurityDepositSettlement:
+    """Apply held security only to return charges, then refund or collect the difference."""
+    held = max(money(deposit), Decimal("0.00"))
+    charge_total = max(money(charges), Decimal("0.00"))
+    applied = money(min(held, charge_total))
+    return SecurityDepositSettlement(
+        applied_to_charges=applied,
+        refund_to_customer=money(held - applied),
+        customer_pays=money(charge_total - applied),
     )

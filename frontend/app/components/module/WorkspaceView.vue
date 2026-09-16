@@ -282,6 +282,13 @@ function fieldTypeForKey(key: string) {
 
 function cellText(row: Record<string, unknown>, key: string) {
   const source = current.value?.collection === 'auditLogs' ? normalizeAuditLog(row as AppRecord) : row
+  if (current.value?.collection === 'rentals' && key === 'deposit') {
+    const tendered = Number(source.depositTenderedAmount || 0)
+    return formatMoney(
+      tendered > 0 ? tendered : source.deposit,
+      String(tendered > 0 ? (source.depositCurrency || source.currency || 'USD') : (source.currency || 'USD')),
+    )
+  }
   if (current.value?.collection === 'documentSequences' && key === 'documentType') {
     const code = String(source[key] || '')
     const label = documentSequenceTypeLabel(code)
@@ -300,7 +307,9 @@ function cellText(row: Record<string, unknown>, key: string) {
   return formatModuleCell(
     source[key],
     key,
-    isMoneyKey(key) ? String(source.currency || preferences.currency) : undefined,
+    isMoneyKey(key)
+      ? String(source.currency || (current.value?.collection === 'motorcycles' ? 'USD' : preferences.currency))
+      : undefined,
     fieldTypeForKey(key),
   )
 }

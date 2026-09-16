@@ -455,6 +455,16 @@ const { formatMoney } = useAppLocalization()
 
 const documentCurrency = computed(() => String(recordAccess?.get('currency') || '').trim() || undefined)
 
+/** Number fields tagged with `currencyField` show the currency of that sibling field. */
+const isCurrencyNumber = computed(() => props.field.type === 'number' && Boolean(props.field.currencyField))
+
+const fieldCurrency = computed(() => {
+  const key = props.field.currencyField
+  if (!key) return documentCurrency.value || 'USD'
+  const raw = String(recordAccess?.get(key) ?? '').trim()
+  return raw || documentCurrency.value || 'USD'
+})
+
 function moneyAmount(key: string) {
   return asNumber(recordAccess?.get(key))
 }
@@ -937,6 +947,14 @@ function removeDestination(id: string) {
           size="md"
           class="w-full"
           :class="field.key === 'telegram.messageTemplate' ? 'font-mono text-sm' : ''"
+        />
+        <RentalMoneyInput
+          v-else-if="isCurrencyNumber"
+          v-model="numberValue"
+          :currency="fieldCurrency"
+          :disabled="disabled || field.readOnly"
+          size="md"
+          class="w-full"
         />
         <UInputNumber
           v-else-if="field.type === 'number'"

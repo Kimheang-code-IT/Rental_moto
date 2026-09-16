@@ -189,6 +189,29 @@ export function formatNumber(value: unknown, options: Intl.NumberFormatOptions =
   }
 }
 
+/** Display symbol for a currency code (៛ for KHR, $ for USD). */
+export function currencySymbol(currency?: string) {
+  const code = String(currency || activeConfig.currency || 'USD').trim().toUpperCase() || 'USD'
+  if (code === 'KHR') return '៛'
+  try {
+    const parts = new Intl.NumberFormat(numberLocale(), { style: 'currency', currency: code }).formatToParts(0)
+    return parts.find(part => part.type === 'currency')?.value || code
+  }
+  catch {
+    return code
+  }
+}
+
+/**
+ * Symbol placement by currency grammar: USD-style symbols lead the amount,
+ * while the Cambodian Riel sign follows it (e.g. 1,000៛).
+ */
+export function currencySymbolPosition(currency?: string): 'prefix' | 'suffix' {
+  return String(currency || activeConfig.currency || 'USD').trim().toUpperCase() === 'KHR'
+    ? 'suffix'
+    : 'prefix'
+}
+
 export function formatCurrency(value: unknown, currency = activeConfig.currency) {
   const code = String(currency || 'USD').trim().toUpperCase() || 'USD'
   const amount = Number(value)
@@ -197,10 +220,10 @@ export function formatCurrency(value: unknown, currency = activeConfig.currency)
   if (code === 'KHR') {
     const whole = Math.round(safe)
     try {
-      return `៛${formatNumber(whole, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+      return `${formatNumber(whole, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}៛`
     }
     catch {
-      return `៛${whole.toLocaleString('en-US')}`
+      return `${whole.toLocaleString('en-US')}៛`
     }
   }
   return formatNumber(safe, { style: 'currency', currency: code })
@@ -216,7 +239,7 @@ export function formatMoney(value: unknown, currency?: string) {
     const amount = Number(value)
     const safe = Number.isFinite(amount) ? amount : 0
     if (String(code).toUpperCase() === 'KHR') {
-      return `៛${Math.round(safe).toLocaleString('en-US')}`
+      return `${Math.round(safe).toLocaleString('en-US')}៛`
     }
     return `${code} ${formatNumber(safe, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }

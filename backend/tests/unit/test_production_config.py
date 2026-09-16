@@ -41,8 +41,8 @@ def test_development_settings_allow_defaults():
     Settings(environment="development").assert_safe_for_production()
 
 
-def test_session_lifetime_defaults_to_seven_day_refresh():
-    assert Settings.model_fields["access_token_expire_minutes"].default == 15
+def test_session_lifetime_defaults_to_24h_access_and_7day_refresh():
+    assert Settings.model_fields["access_token_expire_minutes"].default == 1440
     assert Settings.model_fields["refresh_token_expire_days"].default == 7
 
 

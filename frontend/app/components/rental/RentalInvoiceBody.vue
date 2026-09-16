@@ -4,6 +4,7 @@ import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { formatInvoiceDateTime } from '~/utils/format/format-service'
 import {
   DEFAULT_USD_KHR_RATE,
+  fromRentalCurrencyAmount,
   normalizeExchangeRate,
   normalizePaymentCurrency,
 } from '~/utils/rental/fx'
@@ -57,9 +58,7 @@ const L = {
   identityNumber: { km: 'លេខអត្តសញ្ញាណ', en: 'Identity Number' },
 } as const
 
-const currencyCode = computed(() => normalizePaymentCurrency(props.rental?.currency || preferences.currency || 'USD'))
-const showExchangeRate = computed(() => currencyCode.value === 'KHR')
-const money = (value: unknown) => formatMoney(value, currencyCode.value)
+const rentalCurrency = computed(() => normalizePaymentCurrency(props.rental?.currency || preferences.currency || 'USD'))
 
 const invoiceNo = computed(() =>
   String(props.rental?.invoiceNo || `INV-${String(props.rental?.rentalNo || '').replace('RNT-', '')}`),
@@ -80,6 +79,38 @@ const invoiceExchangeRate = computed(() => {
   return DEFAULT_USD_KHR_RATE
 })
 
+/** Currency the customer actually paid in (KHR or USD), falling back to the rental currency. */
+const displayCurrency = computed(() => {
+  const explicit = String(props.rental?.paymentCurrency || '').trim()
+  if (explicit) return normalizePaymentCurrency(explicit)
+  const fxPayment = [...payments.value].reverse().find(row => Number(row.exchangeRate || 0) > 1)
+  if (fxPayment?.currency) return normalizePaymentCurrency(fxPayment.currency)
+  const lastPayment = payments.value[payments.value.length - 1]
+  if (lastPayment?.currency) return normalizePaymentCurrency(lastPayment.currency)
+  if (props.rental?.depositCurrency) return normalizePaymentCurrency(props.rental.depositCurrency)
+  return rentalCurrency.value
+})
+
+const depositCurrency = computed(() => normalizePaymentCurrency(
+  props.rental?.depositCurrency || rentalCurrency.value,
+))
+const showExchangeRate = computed(() =>
+  displayCurrency.value !== rentalCurrency.value
+  || depositCurrency.value !== rentalCurrency.value,
+)
+const money = (value: unknown) => formatMoney(value, displayCurrency.value)
+const depositMoney = (value: unknown) => formatMoney(value, depositCurrency.value)
+
+/** Convert a rental-currency amount into the display (payment) currency. */
+function toDisplay(value: unknown) {
+  return fromRentalCurrencyAmount(
+    Number(value) || 0,
+    displayCurrency.value,
+    rentalCurrency.value,
+    invoiceExchangeRate.value,
+  )
+}
+
 function dateTime(value: unknown) {
   return formatInvoiceDateTime(value)
 }
@@ -91,6 +122,17 @@ const paymentMethod = computed(() => {
 
 const createdAt = computed(() => dateTime(props.rental?.createdAt || props.rental?.startDate))
 const depositAmount = computed(() => Math.max(0, Number(props.rental?.deposit || 0)))
+/** Prefer the exact tendered deposit so KHR invoices don't drift through conversion. */
+const depositDisplay = computed(() => {
+  const tendered = Math.max(0, Number(props.rental?.depositTenderedAmount || 0))
+  if (tendered > 0) return tendered
+  return fromRentalCurrencyAmount(
+    depositAmount.value,
+    depositCurrency.value,
+    rentalCurrency.value,
+    invoiceExchangeRate.value,
+  )
+})
 const returnDate = computed(() => dateTime(props.rental?.returnDate || props.rental?.dueDate))
 const identityNumber = computed(() => {
   const fromRental = String(props.rental?.identityNumber || '').trim()
@@ -378,9 +420,9 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
           <td class="border border-slate-200 px-2 py-2 leading-snug">{{ item.motorcycle }}</td>
           <td class="border border-slate-200 px-2 py-2 tabular-nums">{{ item.plate }}</td>
           <td class="border border-slate-200 px-2 py-2 text-center tabular-nums">{{ item.days }}</td>
-          <td class="border border-slate-200 px-2 py-2 text-right tabular-nums">{{ money(item.unitPrice) }}</td>
-          <td class="border border-slate-200 px-2 py-2 text-right tabular-nums">{{ money(item.discount) }}</td>
-          <td class="border border-slate-200 px-2 py-2 text-right font-semibold tabular-nums">{{ money(item.amount) }}</td>
+          <td class="border border-slate-200 px-2 py-2 text-right tabular-nums">{{ money(toDisplay(item.unitPrice)) }}</td>
+          <td class="border border-slate-200 px-2 py-2 text-right tabular-nums">{{ money(toDisplay(item.discount)) }}</td>
+          <td class="border border-slate-200 px-2 py-2 text-right font-semibold tabular-nums">{{ money(toDisplay(item.amount)) }}</td>
         </tr>
         <tr v-if="!lineItems.length">
           <td colspan="7" class="border border-slate-200 px-3 py-5 text-center text-slate-400">
@@ -401,7 +443,7 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
         <p class="mt-1">{{ L.paymentTerms.en }}</p>
       </div>
 
-      <dl class="border-t border-[#172033] pt-3 text-[12px]">
+      <dl class=" pt-3 text-[12px]">
         <div v-if="showExchangeRate" class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
             <span class="block font-semibold">{{ L.exchangeRate.km }}</span>
@@ -414,28 +456,28 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
             <span class="block font-semibold">{{ L.rentalFee.km }}</span>
             <span class="block text-[9px] text-slate-500">{{ L.rentalFee.en }}</span>
           </dt>
-          <dd class="self-center text-right font-medium tabular-nums">{{ money(subtotal) }}</dd>
+          <dd class="self-center text-right font-medium tabular-nums">{{ money(toDisplay(subtotal)) }}</dd>
         </div>
         <div v-if="discount > 0" class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
             <span class="block font-semibold">{{ L.discount.km }}</span>
             <span class="block text-[9px] text-slate-500">{{ L.discount.en }}</span>
           </dt>
-          <dd class="self-center text-right font-medium tabular-nums">-{{ money(discount) }}</dd>
+          <dd class="self-center text-right font-medium tabular-nums">-{{ money(toDisplay(discount)) }}</dd>
         </div>
         <div class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
             <span class="block font-semibold">{{ L.deposit.km }}</span>
             <span class="block text-[9px] text-slate-500">{{ L.deposit.en }}</span>
           </dt>
-          <dd class="self-center text-right font-medium tabular-nums">{{ money(depositAmount) }}</dd>
+          <dd class="self-center text-right font-medium tabular-nums">{{ depositMoney(depositDisplay) }}</dd>
         </div>
-        <div class="flex justify-between gap-3 border-b border-[#172033] py-2 text-[16px] font-extrabold">
+        <div class="flex justify-between gap-3 border-t border-[#1c263c] py-2 text-[16px] font-extrabold">
           <dt class="leading-tight">
             <span class="block">{{ L.total.km }}</span>
             <span class="block text-[11px] font-bold uppercase tracking-wide">{{ L.total.en }}</span>
           </dt>
-          <dd class="self-center text-right tabular-nums">{{ money(total) }}</dd>
+          <dd class="self-center text-right tabular-nums">{{ money(toDisplay(total)) }}</dd>
         </div>
       </dl>
     </section>

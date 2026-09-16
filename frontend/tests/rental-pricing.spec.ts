@@ -12,6 +12,7 @@ import {
   rentalBalance,
   rentalRateType,
   rentalReturnBalance,
+  securityDepositSettlement,
 } from '../app/utils/rental/pricing'
 
 const moto = {
@@ -117,29 +118,55 @@ describe('rentalReturnBalance', () => {
     expect(result.outstandingAfterPay).toBe(0)
   })
 
-  it('credits deposit against remaining balance before suggesting payment', () => {
+  it('keeps the security deposit separate from rental payment', () => {
     const result = rentalReturnBalance({ ...rental, deposit: 5, paid: 16.22 })
     expect(result.deposit).toBe(5)
     expect(result.alreadyPaid).toBe(16.22)
-    expect(result.alreadyCredited).toBe(21.22)
-    expect(result.balanceDue).toBe(8.78)
-    expect(rentalReturnBalance({ ...rental, deposit: 5, paid: 16.22 }, 0, 8.78).outstandingAfterPay).toBe(0)
+    expect(result.alreadyCredited).toBe(16.22)
+    expect(result.balanceDue).toBe(13.78)
+    expect(rentalReturnBalance({ ...rental, deposit: 5, paid: 16.22 }, 0, 13.78).outstandingAfterPay).toBe(0)
   })
 })
 
 describe('rentalBalance', () => {
-  it('credits deposit then payment against the remaining total', () => {
+  it('does not credit the security deposit toward rent', () => {
     expect(rentalBalance({ totalDue: 10, deposit: 5, paid: 0 })).toEqual({
-      totalAfterDeposit: 5,
-      outstanding: 5,
+      totalAfterDeposit: 10,
+      outstanding: 10,
     })
     expect(rentalBalance({ totalDue: 10, deposit: 5, paid: 5 })).toEqual({
-      totalAfterDeposit: 5,
-      outstanding: 0,
+      totalAfterDeposit: 10,
+      outstanding: 5,
     })
     expect(rentalBalance({ totalDue: 10, deposit: 10, paid: 0 })).toEqual({
-      totalAfterDeposit: 0,
-      outstanding: 0,
+      totalAfterDeposit: 10,
+      outstanding: 10,
+    })
+  })
+})
+
+describe('securityDepositSettlement', () => {
+  it('refunds all deposit when there are no return charges', () => {
+    expect(securityDepositSettlement(25, 0)).toEqual({
+      appliedToCharges: 0,
+      refundToCustomer: 25,
+      customerPays: 0,
+    })
+  })
+
+  it('deducts charges and refunds the remainder', () => {
+    expect(securityDepositSettlement(25, 10)).toEqual({
+      appliedToCharges: 10,
+      refundToCustomer: 15,
+      customerPays: 0,
+    })
+  })
+
+  it('collects only charges above the deposit', () => {
+    expect(securityDepositSettlement(25, 30)).toEqual({
+      appliedToCharges: 25,
+      refundToCustomer: 0,
+      customerPays: 5,
     })
   })
 })

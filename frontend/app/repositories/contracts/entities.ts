@@ -69,6 +69,7 @@ export interface RentalCloseInput {
   condition?: string | null
   returnNote?: string | null
   lateFee?: number
+  depositRefund?: number
   charges?: RentalCloseChargeInput[]
   finalPayment?: {
     amount: number
@@ -93,6 +94,7 @@ export interface RentalUpdateInput {
   taxPercent?: number
   paidAmount?: number
   paymentMethod?: string
+  currency?: string
   paymentCurrency?: string
   exchangeRate?: number
   tenderedAmount?: number

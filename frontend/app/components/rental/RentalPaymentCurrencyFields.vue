@@ -2,6 +2,7 @@
 import { RENTAL_CURRENCY_OPTIONS } from '~/config/rental-options'
 import {
   DEFAULT_USD_KHR_RATE,
+  exchangeRateForCurrencies,
   fromRentalCurrencyAmount,
   needsExchangeRate,
   normalizeExchangeRate,
@@ -42,6 +43,11 @@ function tx(key: string, fallback: string) {
 
 const rentalCurrency = computed(() => normalizePaymentCurrency(props.rentalCurrency))
 const showRate = computed(() => needsExchangeRate(paymentCurrency.value, rentalCurrency.value))
+
+watch([paymentCurrency, rentalCurrency, exchangeRate], ([payment, rental, rate]) => {
+  const next = exchangeRateForCurrencies(rate, payment, rental, DEFAULT_USD_KHR_RATE)
+  if (next !== rate) exchangeRate.value = next
+})
 
 const creditedAmount = computed(() =>
   toRentalCurrencyAmount(
@@ -117,11 +123,10 @@ watch(exchangeRate, (rate) => {
     <UFormField
       v-if="showRate"
       :label="tx('rental.ui.exchangeRate', 'Exchange rate')"
-      :help="tx('rental.ui.exchangeRateHelp', 'KHR per 1 USD')"
     >
       <UInputNumber
         v-model="exchangeRate"
-        :min="1"
+        :min="2"
         :step="1"
         :increment="false"
         :decrement="false"
@@ -136,13 +141,10 @@ watch(exchangeRate, (rate) => {
       :label="amountLabel || tx('rental.ui.amountPaid', 'Amount paid')"
       class="sm:col-span-2"
     >
-      <UInputNumber
+      <RentalMoneyInput
         v-model="tenderedAmount"
+        :currency="paymentCurrency"
         :min="0"
-        :step="paymentCurrency === 'KHR' ? 100 : 0.01"
-        :increment="false"
-        :decrement="false"
-        size="md"
         class="w-full"
         :disabled="disabled || amountDisabled"
       />

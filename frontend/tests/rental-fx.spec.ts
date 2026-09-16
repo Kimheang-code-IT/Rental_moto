@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  currencyInputStep,
   DEFAULT_USD_KHR_RATE,
+  exchangeRateForCurrencies,
   fromRentalCurrencyAmount,
   invoiceKhrAmounts,
   needsExchangeRate,
+  roundCurrencyAmount,
   toRentalCurrencyAmount,
 } from '../app/utils/rental/fx'
 
@@ -32,6 +35,23 @@ describe('rental fx', () => {
     expect(DEFAULT_USD_KHR_RATE).toBe(4100)
   })
 
+  it('repairs rate 1 when USD and KHR differ', () => {
+    expect(exchangeRateForCurrencies(1, 'KHR', 'USD')).toBe(4100)
+    expect(exchangeRateForCurrencies(4200, 'KHR', 'USD')).toBe(4200)
+    expect(exchangeRateForCurrencies(1, 'USD', 'USD')).toBe(1)
+  })
+
+  it('steps entered amounts by currency subunit', () => {
+    expect(currencyInputStep('KHR')).toBe(1)
+    expect(currencyInputStep('USD')).toBe(0.01)
+  })
+
+  it('rounds entered amounts to the currency smallest unit', () => {
+    expect(roundCurrencyAmount(2550.6, 'KHR')).toBe(2551)
+    expect(roundCurrencyAmount(12.345, 'USD')).toBe(12.35)
+    expect(roundCurrencyAmount(-5, 'USD')).toBe(0)
+  })
+
   it('keeps invoice KHR amounts equal to entered tendered riels', () => {
     // 10000/4100 → $2.44; reversing would show 10004 without tendered storage.
     expect(toRentalCurrencyAmount(10000, 'KHR', 'USD', 4100)).toBe(2.44)
@@ -51,7 +71,7 @@ describe('rental fx', () => {
     expect(amounts.subtotalKhr).toBe(41000)
     expect(amounts.depositKhr).toBe(10000)
     expect(amounts.paidKhr).toBe(20000)
-    expect(amounts.totalKhr).toBe(31000)
-    expect(amounts.outstandingKhr).toBe(11000)
+    expect(amounts.totalKhr).toBe(41000)
+    expect(amounts.outstandingKhr).toBe(21000)
   })
 })

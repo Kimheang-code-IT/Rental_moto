@@ -27,10 +27,12 @@ import {
 import { toIsoZoned } from '~/utils/api/datetime'
 import {
   DEFAULT_USD_KHR_RATE,
+  exchangeRateForCurrencies,
   fromRentalCurrencyAmount,
   needsExchangeRate,
   normalizeExchangeRate,
   normalizePaymentCurrency,
+  roundCurrencyAmount,
   toRentalCurrencyAmount,
   type PaymentCurrency,
 } from '~/utils/rental/fx'
@@ -111,7 +113,11 @@ const deposit = ref(0)
 const existingPaid = ref(0)
 const rentalNo = ref('')
 const rentalStatus = ref('Active')
-const currency = ref(preferences.currency)
+/**
+ * Accounting currency for motorcycle rates and the rental ledger.
+ * This is deliberately independent from the currency tendered by the customer.
+ */
+const currency = ref<PaymentCurrency>(normalizePaymentCurrency(preferences.currency))
 const paidAmount = computed(() =>
   toRentalCurrencyAmount(
     tenderedAmount.value,
@@ -129,9 +135,6 @@ const depositInRental = computed(() =>
     exchangeRate.value,
   ),
 )
-const depositStep = computed(() =>
-  normalizePaymentCurrency(paymentCurrency.value) === 'KHR' ? 100 : 0.01,
-)
 const depositHelpText = computed(() => {
   const base = help('deposit', 'Deposit is recorded for reference only. It does not affect the total.')
   if (!needsExchangeRate(paymentCurrency.value, currency.value)) return base
@@ -141,6 +144,7 @@ const lateFee = ref(0)
 const additionalCharges = ref(0)
 const saving = ref(false)
 const syncingDates = ref(false)
+const hydratingDetail = ref(false)
 const notFound = ref(false)
 const invoiceRental = ref<Record<string, unknown> | null>(null)
 const chargesReviewOpen = ref(false)
@@ -259,9 +263,11 @@ function onSelectModel(line: RentalLine, model: string | number) {
   }
 }
 
-function syncRentalCurrencyFromMoto(moto: Record<string, unknown> | null | undefined) {
-  const code = String(moto?.currency || '').trim().toUpperCase()
-  if (code === 'USD' || code === 'KHR') currency.value = code
+function syncRentalCurrencyFromSelectedMotorcycles() {
+  const firstSelected = lines.value
+    .map(line => motoById(line.motorcycleId))
+    .find(moto => moto != null)
+  currency.value = normalizePaymentCurrency(firstSelected?.currency || 'USD')
 }
 
 function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
@@ -272,7 +278,7 @@ function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
   line.model = String(moto.model || line.model)
   if (!line.days) line.days = daysForRatePlan(line.ratePlan, daysBetween(startDate.value, dueDate.value) || 1)
   repriceLine(line)
-  syncRentalCurrencyFromMoto(moto)
+  syncRentalCurrencyFromSelectedMotorcycles()
 }
 
 const lineComputed = computed(() => lines.value.map(line => {
@@ -306,7 +312,6 @@ const totals = computed(() => {
 })
 
 const totalDue = computed(() => totals.value.total)
-const showExchangeRate = computed(() => normalizePaymentCurrency(currency.value) === 'KHR')
 
 const rentalSiblingIds = computed(() => store.list('rentals').map(row => String(row.id)))
 const rentalSiblingIndex = computed(() => rentalSiblingIds.value.indexOf(String(props.rentalId || '')))
@@ -340,7 +345,7 @@ const createCustomerButtons = computed(() => {
 })
 
 watch(paymentCurrency, (next, prev) => {
-  if (next === prev) return
+  if (next === prev || hydratingDetail.value) return
   const credited = toRentalCurrencyAmount(
     deposit.value,
     prev,
@@ -426,6 +431,7 @@ function addLine() {
 function removeLine(key: string) {
   if (isFormReadOnly.value || lines.value.length <= 1) return
   lines.value = lines.value.filter(row => row.key !== key)
+  syncRentalCurrencyFromSelectedMotorcycles()
   refreshHeaderDueFromLines()
 }
 
@@ -436,7 +442,6 @@ const canEditRental = computed(() => Boolean(
   && dueDate.value
   && lines.value.every(line => line.motorcycleId && line.days > 0 && line.unitPrice > 0)
   && totals.value.total >= 0
-  && depositInRental.value <= totals.value.subtotal + 0.001,
 ))
 
 const canCreate = computed(() => Boolean(
@@ -446,7 +451,6 @@ const canCreate = computed(() => Boolean(
   && dueDate.value
   && lines.value.every(line => line.motorcycleId && line.days > 0 && line.unitPrice > 0)
   && totals.value.total >= 0
-  && depositInRental.value <= totals.value.subtotal + 0.001,
 ))
 
 const customerModalOpen = ref(false)
@@ -543,6 +547,8 @@ function hydrateDetail() {
   notFound.value = !found
   if (!found) return
 
+  // Loading persisted values must not run user-edit currency conversion logic.
+  hydratingDetail.value = true
   rentalNo.value = String(found.rentalNo || '')
   rentalStatus.value = String(found.status || 'Active')
   customerId.value = String(found.customerId || '')
@@ -550,7 +556,7 @@ function hydrateDetail() {
   startDate.value = String(found.startDate || '')
   dueDate.value = String(found.dueDate || '')
   existingPaid.value = Number(found.paid || 0)
-  currency.value = String(found.currency || preferences.currency)
+  currency.value = normalizePaymentCurrency(found.currency || preferences.currency)
   lateFee.value = Number(found.lateFee || 0)
   additionalCharges.value = Number(found.additionalCharges || 0)
 
@@ -564,14 +570,36 @@ function hydrateDetail() {
       paymentMethodOptions.items.value.push(lastMethod)
     }
   }
+  const hasTenderedDeposit = Number(found.depositTenderedAmount || 0) > 0
   const fxPayment = payments.find(row => Number(row.exchangeRate || 0) > 1) || payments[0]
-  if (fxPayment) {
+  // Deposit currency/rate owns this form. Automatic rental payment records are
+  // stored in accounting currency with rate 1 and must not overwrite it.
+  if (hasTenderedDeposit || found.depositCurrency) {
+    paymentCurrency.value = normalizePaymentCurrency(found.depositCurrency || found.currency || preferences.currency)
+    exchangeRate.value = exchangeRateForCurrencies(
+      found.exchangeRate,
+      paymentCurrency.value,
+      currency.value,
+      DEFAULT_USD_KHR_RATE,
+    )
+  }
+  else if (fxPayment) {
     paymentCurrency.value = normalizePaymentCurrency(fxPayment.currency || found.currency)
-    exchangeRate.value = normalizeExchangeRate(fxPayment.exchangeRate, DEFAULT_USD_KHR_RATE)
+    exchangeRate.value = exchangeRateForCurrencies(
+      fxPayment.exchangeRate,
+      paymentCurrency.value,
+      currency.value,
+      DEFAULT_USD_KHR_RATE,
+    )
   }
   else if (found.depositCurrency || found.exchangeRate) {
     paymentCurrency.value = normalizePaymentCurrency(found.depositCurrency || found.currency || preferences.currency)
-    exchangeRate.value = normalizeExchangeRate(found.exchangeRate, DEFAULT_USD_KHR_RATE)
+    exchangeRate.value = exchangeRateForCurrencies(
+      found.exchangeRate,
+      paymentCurrency.value,
+      currency.value,
+      DEFAULT_USD_KHR_RATE,
+    )
   }
   else {
     paymentCurrency.value = normalizePaymentCurrency(found.currency || preferences.currency)
@@ -581,7 +609,7 @@ function hydrateDetail() {
   const depositRental = Math.max(0, Number(found.deposit || 0))
   const storedDepositTendered = Number(found.depositTenderedAmount || 0)
   if (storedDepositTendered > 0) {
-    deposit.value = storedDepositTendered
+    deposit.value = roundCurrencyAmount(storedDepositTendered, found.depositCurrency || paymentCurrency.value)
     if (found.depositCurrency) {
       paymentCurrency.value = normalizePaymentCurrency(found.depositCurrency)
     }
@@ -652,6 +680,7 @@ function hydrateDetail() {
     refreshHeaderDueFromLines()
     syncingDates.value = false
   })
+  markFormClean(true)
 }
 
 watch(
@@ -672,6 +701,69 @@ watch(
     if (!isDetail.value || !signature || signature === previous) return
     hydrateDetail()
   },
+)
+
+/** Comparable snapshot of editable rental fields, used to detect unsaved edits. */
+function formSignature() {
+  return JSON.stringify({
+    customerId: customerId.value,
+    startDate: startDate.value,
+    dueDate: dueDate.value,
+    paymentMethod: paymentMethod.value,
+    paymentCurrency: paymentCurrency.value,
+    exchangeRate: exchangeRate.value,
+    deposit: deposit.value,
+    tenderedAmount: tenderedAmount.value,
+    lateFee: lateFee.value,
+    additionalCharges: additionalCharges.value,
+    lines: lines.value.map(line => ({
+      motorcycleId: line.motorcycleId,
+      ratePlan: line.ratePlan,
+      days: line.days,
+      unitPrice: line.unitPrice,
+      discount: line.discount,
+    })),
+  })
+}
+
+const savedSignature = ref('')
+let baselineTimer: ReturnType<typeof setTimeout> | null = null
+let baselineGeneration = 0
+
+/** Snapshot the current form as the saved state so later edits re-enable update. */
+function markFormClean(finishHydration = false) {
+  const generation = ++baselineGeneration
+  if (baselineTimer) clearTimeout(baselineTimer)
+  void nextTick(() => {
+    if (generation !== baselineGeneration) return
+    baselineTimer = setTimeout(() => {
+      if (generation !== baselineGeneration) return
+      savedSignature.value = formSignature()
+      if (finishHydration) hydratingDetail.value = false
+    }, 0)
+  })
+}
+
+const hasUnsavedChanges = computed(() =>
+  !hydratingDetail.value
+  && savedSignature.value !== ''
+  && formSignature() !== savedSignature.value,
+)
+
+const showHeaderSave = computed(() =>
+  (!isDetail.value && auth.canAccessPage('rental.rentals.create')) || isEditable.value,
+)
+
+const saveDisabled = computed(() => {
+  if (saving.value) return true
+  if (!isDetail.value) return !canCreate.value
+  return !canEditRental.value || !hasUnsavedChanges.value
+})
+
+const headerSaveLabel = computed(() =>
+  isDetail.value
+    ? tx('rental.ui.saveChanges', 'Save Changes')
+    : tx('core.confirm.submit', 'Submit'),
 )
 
 const rentalsListLabel = computed(() => tx('rental.pages.rentals', 'Rentals'))
@@ -902,6 +994,7 @@ async function updateRental() {
       taxPercent: 0,
       paidAmount: paidAmount.value,
       paymentMethod: paymentMethod.value,
+      currency: currency.value,
       paymentCurrency: paymentCurrency.value,
       exchangeRate: exchangeRate.value,
       tenderedAmount: tenderedAmount.value,
@@ -919,6 +1012,7 @@ async function updateRental() {
     await store.fetchOne('rentals', String(props.rentalId))
     await store.fetchList('rentalPayments', { rentalId: String(props.rentalId) })
     await store.fetchList('motorcycles')
+    markFormClean()
     toast.add({ title: tx('rental.ui.rentalUpdated', 'Rental updated'), color: 'success' })
     await navigateTo('/rentals')
   }
@@ -939,7 +1033,13 @@ async function saveRental() {
   else await createRental()
 }
 
-const money = (value: unknown) => formatMoney(value, currency.value || preferences.currency)
+/** Motorcycle rates and ledger totals always remain in the rental currency. */
+const displayCurrency = computed(() => normalizePaymentCurrency(paymentCurrency.value))
+const showExchangeRate = computed(() => needsExchangeRate(paymentCurrency.value, currency.value))
+const toDisplay = (value: unknown) =>
+  fromRentalCurrencyAmount(Number(value) || 0, displayCurrency.value, currency.value, exchangeRate.value)
+const rentalMoney = (value: unknown) => formatMoney(value, currency.value || preferences.currency)
+const paymentMoney = (value: unknown) => formatMoney(value, displayCurrency.value)
 </script>
 
 <template>
@@ -953,7 +1053,9 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
       :can-navigate-previous="canNavigatePrevious"
       :can-navigate-next="canNavigateNext"
       :list-navigation-direction="listNavigationDirection"
-      :show-save="(!isDetail && canCreate) || (isEditable && canEditRental)"
+      :show-save="showHeaderSave"
+      :save-label="headerSaveLabel"
+      :save-disabled="saveDisabled"
       :is-create="!isDetail"
       :saving="saving"
       :show-cancel="true"
@@ -1114,32 +1216,26 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                       />
                     </td>
                     <td class="px-2 py-2">
-                      <UInputNumber
+                      <RentalMoneyInput
                         v-model="row.line.unitPrice"
+                        :currency="currency"
                         :min="0"
-                        :step="0.01"
-                        :increment="false"
-                        :decrement="false"
-                        size="md"
                         class="ml-auto w-32"
                         :disabled="isFormReadOnly"
                       />
                     </td>
                     <td class="px-2 py-2">
-                      <UInputNumber
+                      <RentalMoneyInput
                         v-model="row.line.discount"
+                        :currency="currency"
                         :min="0"
                         :max="Math.max(row.gross, 0)"
-                        :step="0.01"
-                        :increment="false"
-                        :decrement="false"
-                        size="md"
                         class="ml-auto w-28"
                         :disabled="isFormReadOnly"
                       />
                     </td>
                     <td class="px-2 py-2 text-right font-semibold tabular-nums">
-                      {{ money(row.amount) }}
+                      {{ rentalMoney(row.amount) }}
                     </td>
                     <td class="px-1 py-2">
                       <UButton
@@ -1161,12 +1257,16 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
               <div class="flex w-full max-w-sm flex-col gap-4">
                 <div class="flex items-center justify-between gap-4 rounded-md bg-elevated/40 px-3 py-2.5 text-sm">
                   <span class="text-muted">{{ tx('rental.ui.rentalFee', 'Rental fee') }}</span>
-                  <span class="text-right font-semibold tabular-nums">{{ money(totals.subtotal) }}</span>
+                  <span class="text-right font-semibold tabular-nums">
+                    <span class="block">{{ rentalMoney(totals.subtotal) }}</span>
+                    <span v-if="showExchangeRate" class="block text-xs font-medium text-muted">
+                      {{ paymentMoney(toDisplay(totals.subtotal)) }}
+                    </span>
+                  </span>
                 </div>
 
                 <UFormField
                   :label="tx('rental.ui.paymentMethod', 'Payment Method')"
-                  :help="help('paymentMethod', 'Choose a preset method or type a custom payment method.')"
                 >
                   <UInputMenu
                     v-model="paymentMethod"
@@ -1192,12 +1292,10 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                   :label="tx('rental.ui.deposit', 'Deposit')"
                   :help="depositHelpText"
                 >
-                  <UInputNumber
+                  <RentalMoneyInput
                     v-model="deposit"
-                    :step="depositStep"
-                    :increment="false"
-                    :decrement="false"
-                    size="md"
+                    :currency="paymentCurrency"
+                    :min="0"
                     class="w-full"
                     :disabled="isFormReadOnly"
                   />
@@ -1205,13 +1303,13 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
 
                 <div class="flex items-center justify-between gap-4 border-t border-default pt-3 text-base">
                   <span class="font-semibold">{{ tx('rental.ui.total', 'Total') }}</span>
-                  <span class="text-right font-semibold tabular-nums">{{ money(totalDue) }}</span>
+                  <span class="text-right font-semibold tabular-nums">
+                    <span class="block">{{ rentalMoney(totalDue) }}</span>
+                    <span v-if="showExchangeRate" class="block text-xs font-medium text-muted">
+                      {{ paymentMoney(toDisplay(totalDue)) }}
+                    </span>
+                  </span>
                 </div>
-
-                <p v-if="showExchangeRate" class="text-xs text-muted">
-                  {{ tx('rental.ui.exchangeRate', 'Exchange rate') }}:
-                  1 USD = {{ exchangeRate }} KHR
-                </p>
 
                 <template v-if="isDetail">
                   <div class="flex items-center justify-between gap-3 border-t border-default pt-3 text-sm">
@@ -1221,10 +1319,10 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                       variant="link"
                       color="primary"
                       class="p-0 font-medium tabular-nums"
-                      :label="money(additionalCharges)"
+                      :label="rentalMoney(additionalCharges)"
                       @click="chargesReviewOpen = true"
                     />
-                    <span v-else class="tabular-nums font-medium">{{ money(additionalCharges) }}</span>
+                    <span v-else class="tabular-nums font-medium">{{ rentalMoney(additionalCharges) }}</span>
                   </div>
                 </template>
               </div>

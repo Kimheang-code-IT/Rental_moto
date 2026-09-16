@@ -6,14 +6,13 @@ import { useCreatableOptionList } from '~/composables/rental/useCreatableOptionL
 import { toIsoZonedOrNow } from '~/utils/api/datetime'
 import {
   DEFAULT_USD_KHR_RATE,
+  exchangeRateForCurrencies,
   fromRentalCurrencyAmount,
-  invoiceKhrAmounts,
   normalizeExchangeRate,
   normalizePaymentCurrency,
-  toRentalCurrencyAmount,
   type PaymentCurrency,
 } from '~/utils/rental/fx'
-import { rentalReturnBalance } from '~/utils/rental/pricing'
+import { rentalReturnBalance, securityDepositSettlement } from '~/utils/rental/pricing'
 import { useRentalCommands } from '~/repositories/index'
 
 const props = defineProps<{
@@ -64,6 +63,22 @@ function moneyBoth(value: unknown, khrOverride?: number) {
   return `${primary} · ${formatMoney(khr, 'KHR')}`
 }
 
+/** Format a payment-currency amount, with a KHR equivalent when relevant. */
+function moneyTender(value: unknown, khrOverride?: number) {
+  const amount = Math.max(0, Number(value) || 0)
+  const primary = formatMoney(amount, returnPaymentCurrency.value)
+  if (!showKhrTotals.value || normalizePaymentCurrency(returnPaymentCurrency.value) === 'KHR') return primary
+  const khr = khrOverride != null
+    ? Math.max(0, Math.round(khrOverride))
+    : fromRentalCurrencyAmount(
+      amount,
+      'KHR',
+      returnPaymentCurrency.value,
+      returnExchangeRate.value,
+    )
+  return `${primary} · ${formatMoney(khr, 'KHR')}`
+}
+
 const returnAt = ref(new Date().toISOString().slice(0, 16))
 
 interface ReturnChargeLine {
@@ -82,8 +97,8 @@ const returnPaymentCurrency = ref<PaymentCurrency>(
   normalizePaymentCurrency(props.rental.currency || preferences.currency),
 )
 const returnExchangeRate = ref(DEFAULT_USD_KHR_RATE)
-const returnTenderedAmount = ref(0)
-const returnPaidAmount = ref(0)
+const returnSettlementInput = ref(0)
+const settlementTouched = ref(false)
 const saving = ref(false)
 
 const rentalCurrencyCode = computed(() =>
@@ -95,18 +110,79 @@ const showKhrTotals = computed(() =>
   || rentalCurrencyCode.value === 'KHR',
 )
 
+/** Signed currency conversion (no zero clamping) for charge and settlement values. */
+function convertSigned(amount: unknown, from: string, to: string, rate: number) {
+  const value = Number(amount) || 0
+  const r = normalizeExchangeRate(rate)
+  const f = normalizePaymentCurrency(from)
+  const t = normalizePaymentCurrency(to)
+  if (f === t) return Number(value.toFixed(2))
+  if (f === 'USD' && t === 'KHR') return Math.round(value * r)
+  if (f === 'KHR' && t === 'USD') return Number((value / r).toFixed(2))
+  return Number(value.toFixed(2))
+}
+
+/** Return charges are entered in the selected payment currency. */
 const returnChargesTotal = computed(() =>
   returnCharges.value.reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0),
 )
 
-const closeBalance = computed(() =>
-  rentalReturnBalance(props.rental, returnChargesTotal.value, returnPaidAmount.value),
+/** Return charges converted into the rental currency for balance math. */
+const returnChargesRental = computed(() =>
+  Number(returnCharges.value.reduce((sum, row) =>
+    sum + convertSigned(
+      Math.max(0, Number(row.amount) || 0),
+      returnPaymentCurrency.value,
+      rentalCurrencyCode.value,
+      returnExchangeRate.value,
+    ), 0).toFixed(2)),
 )
 
-const projectedOutstanding = computed(() => closeBalance.value.outstandingAfterPay)
-const projectedTotalDue = computed(() => closeBalance.value.totalDue)
-const depositAmount = computed(() => closeBalance.value.deposit)
-const alreadyPaid = computed(() => closeBalance.value.alreadyPaid)
+/** Base rental balance before return charges and deposit refunds. */
+const baseBalance = computed(() => rentalReturnBalance(props.rental, 0, 0))
+const depositAmount = computed(() => baseBalance.value.deposit)
+const depositTenderAmount = computed(() => {
+  const storedTendered = Math.max(0, Number(props.rental.depositTenderedAmount) || 0)
+  const storedCurrency = normalizePaymentCurrency(
+    props.rental.depositCurrency || rentalCurrencyCode.value,
+  )
+  if (storedTendered > 0 && storedCurrency === returnPaymentCurrency.value) {
+    return storedTendered
+  }
+  return convertSigned(
+    depositAmount.value,
+    rentalCurrencyCode.value,
+    returnPaymentCurrency.value,
+    returnExchangeRate.value,
+  )
+})
+const existingSecurityCharges = computed(() =>
+  Number((Math.max(0, Number(props.rental.lateFee) || 0)
+    + Math.max(0, Number(props.rental.additionalCharges) || 0)).toFixed(2)),
+)
+const existingSecurityChargesTender = computed(() => convertSigned(
+  existingSecurityCharges.value,
+  rentalCurrencyCode.value,
+  returnPaymentCurrency.value,
+  returnExchangeRate.value,
+))
+const depositSettlementTender = computed(() => securityDepositSettlement(
+  depositTenderAmount.value,
+  existingSecurityChargesTender.value + returnChargesTotal.value,
+))
+const baseRentalOutstanding = computed(() =>
+  Number(Math.max(baseBalance.value.balanceDue - existingSecurityCharges.value, 0).toFixed(2)),
+)
+
+/** Security covers charges only; unpaid rent remains payable separately. */
+const netSettlement = computed(() =>
+  Number((baseRentalOutstanding.value + convertSigned(
+    depositSettlementTender.value.customerPays,
+    returnPaymentCurrency.value,
+    rentalCurrencyCode.value,
+    returnExchangeRate.value,
+  )).toFixed(2)),
+)
 
 const rentalPayments = computed(() => {
   const rentalId = String(props.rental.id || '')
@@ -114,60 +190,103 @@ const rentalPayments = computed(() => {
   return store.list('rentalPayments').filter(row => String(row.rentalId) === rentalId)
 })
 
-const paidTenderedKhr = computed(() =>
-  rentalPayments.value.reduce((sum, row) => {
-    if (normalizePaymentCurrency(row.currency) !== 'KHR') return sum
-    const tendered = Number(row.tenderedAmount || 0)
-    return sum + (tendered > 0 ? tendered : 0)
-  }, 0),
-)
-
-const returnKhr = computed(() => {
-  const rentalBaseTotal = Math.max(0, projectedTotalDue.value - returnChargesTotal.value)
-  const base = invoiceKhrAmounts({
-    subtotal: rentalBaseTotal,
-    deposit: depositAmount.value,
-    paid: alreadyPaid.value,
-    rentalCurrency: rentalCurrencyCode.value,
-    exchangeRate: returnExchangeRate.value,
-    depositTendered: Number(props.rental.depositTenderedAmount || 0),
-    depositCurrency: String(props.rental.depositCurrency || props.rental.paymentCurrency || rentalCurrencyCode.value),
-    paidTendered: paidTenderedKhr.value,
-    paidCurrency: paidTenderedKhr.value > 0 ? 'KHR' : rentalCurrencyCode.value,
-  })
-  const chargesKhr = fromRentalCurrencyAmount(
-    returnChargesTotal.value,
+const chargesKhr = computed(() =>
+  fromRentalCurrencyAmount(
+    returnChargesRental.value,
     'KHR',
     rentalCurrencyCode.value,
     returnExchangeRate.value,
-  )
-  const totalDueKhr = base.subtotalKhr + chargesKhr
-  const balanceDueKhr = Math.max(0, base.outstandingKhr + chargesKhr)
-  const outstandingAfterPayKhr = normalizePaymentCurrency(returnPaymentCurrency.value) === 'KHR'
-    ? Math.max(0, balanceDueKhr - Math.round(Number(returnTenderedAmount.value) || 0))
-    : Math.max(0, balanceDueKhr - fromRentalCurrencyAmount(
-      returnPaidAmount.value,
-      'KHR',
-      rentalCurrencyCode.value,
-      returnExchangeRate.value,
-    ))
-  return {
-    totalDueKhr,
-    depositKhr: base.depositKhr,
-    paidKhr: base.paidKhr,
-    balanceDueKhr,
-    outstandingAfterPayKhr,
-    chargesKhr,
-  }
-})
+  ),
+)
 
-watch([returnTenderedAmount, returnPaymentCurrency, returnExchangeRate], () => {
-  returnPaidAmount.value = toRentalCurrencyAmount(
-    returnTenderedAmount.value,
+/** The editable total converted back into the rental currency. */
+const settlementRental = computed(() =>
+  convertSigned(
+    returnSettlementInput.value,
     returnPaymentCurrency.value,
     rentalCurrencyCode.value,
     returnExchangeRate.value,
+  ),
+)
+const returnPaidAmount = computed(() => Math.max(0, settlementRental.value))
+const depositRefundTenderAmount = computed(() => depositSettlementTender.value.refundToCustomer)
+const depositRefundAmount = computed(() => convertSigned(
+  depositRefundTenderAmount.value,
+  returnPaymentCurrency.value,
+  rentalCurrencyCode.value,
+  returnExchangeRate.value,
+))
+
+const projectedOutstanding = computed(() =>
+  Number(Math.max(Math.max(netSettlement.value, 0) - returnPaidAmount.value, 0).toFixed(2)),
+)
+
+let syncingSettlement = false
+function syncSettlementFromNet() {
+  syncingSettlement = true
+  returnSettlementInput.value = convertSigned(
+    netSettlement.value,
+    rentalCurrencyCode.value,
+    returnPaymentCurrency.value,
+    returnExchangeRate.value,
   )
+  void nextTick(() => {
+    syncingSettlement = false
+  })
+}
+
+watch([netSettlement, returnPaymentCurrency, returnExchangeRate], () => {
+  if (settlementTouched.value) return
+  syncSettlementFromNet()
+})
+
+// Adding/changing return charges recalculates the suggested settlement.
+watch(returnChargesTotal, () => {
+  settlementTouched.value = false
+  syncSettlementFromNet()
+})
+
+watch(returnSettlementInput, () => {
+  if (syncingSettlement) return
+  settlementTouched.value = true
+})
+
+// Keep charge and settlement rental-currency values stable when the tender currency changes.
+watch(returnPaymentCurrency, (next, prev) => {
+  if (next === prev) return
+
+  returnCharges.value = returnCharges.value.map(row => ({
+    ...row,
+    amount: convertSigned(
+      convertSigned(
+        Math.max(0, Number(row.amount) || 0),
+        prev,
+        rentalCurrencyCode.value,
+        returnExchangeRate.value,
+      ),
+      rentalCurrencyCode.value,
+      next,
+      returnExchangeRate.value,
+    ),
+  }))
+
+  if (!settlementTouched.value) return
+  const rentalValue = convertSigned(
+    returnSettlementInput.value,
+    prev,
+    rentalCurrencyCode.value,
+    returnExchangeRate.value,
+  )
+  syncingSettlement = true
+  returnSettlementInput.value = convertSigned(
+    rentalValue,
+    rentalCurrencyCode.value,
+    next,
+    returnExchangeRate.value,
+  )
+  void nextTick(() => {
+    syncingSettlement = false
+  })
 })
 
 function onCreateReturnChargeType(item: string, row: ReturnChargeLine) {
@@ -189,24 +308,38 @@ function latestPaymentFx() {
 function resetForm() {
   returnAt.value = new Date().toISOString().slice(0, 16)
   returnPaymentMethod.value = PAYMENT_METHODS[0]
-  const fx = latestPaymentFx()
-  if (fx) {
-    returnPaymentCurrency.value = normalizePaymentCurrency(fx.currency || rentalCurrencyCode.value)
-    returnExchangeRate.value = normalizeExchangeRate(fx.exchangeRate, DEFAULT_USD_KHR_RATE)
-  }
-  else if (props.rental.depositCurrency || props.rental.exchangeRate) {
+  const hasTenderedDeposit = Math.max(0, Number(props.rental.depositTenderedAmount) || 0) > 0
+  if (hasTenderedDeposit || props.rental.depositCurrency) {
     returnPaymentCurrency.value = normalizePaymentCurrency(
       props.rental.depositCurrency || props.rental.paymentCurrency || rentalCurrencyCode.value,
     )
-    returnExchangeRate.value = normalizeExchangeRate(props.rental.exchangeRate, DEFAULT_USD_KHR_RATE)
+    returnExchangeRate.value = exchangeRateForCurrencies(
+      props.rental.exchangeRate,
+      returnPaymentCurrency.value,
+      rentalCurrencyCode.value,
+      DEFAULT_USD_KHR_RATE,
+    )
   }
   else {
-    returnPaymentCurrency.value = rentalCurrencyCode.value
-    returnExchangeRate.value = DEFAULT_USD_KHR_RATE
+    const fx = latestPaymentFx()
+    if (fx) {
+      returnPaymentCurrency.value = normalizePaymentCurrency(fx.currency || rentalCurrencyCode.value)
+      returnExchangeRate.value = exchangeRateForCurrencies(
+        fx.exchangeRate,
+        returnPaymentCurrency.value,
+        rentalCurrencyCode.value,
+        DEFAULT_USD_KHR_RATE,
+      )
+    }
+    else {
+      returnPaymentCurrency.value = rentalCurrencyCode.value
+      returnExchangeRate.value = DEFAULT_USD_KHR_RATE
+    }
   }
   returnCharges.value = []
   chargeSeq = 1
-  returnPaidAmount.value = rentalReturnBalance(props.rental, 0, 0).suggestedPayment
+  settlementTouched.value = false
+  syncSettlementFromNet()
 }
 
 watch(open, (isOpenNow) => {
@@ -230,7 +363,6 @@ function removeReturnChargeLine(key: string) {
 async function saveClose() {
   const invalidCharge = returnCharges.value.some(row => row.amount > 0 && !row.chargeType)
   if (invalidCharge) return
-  if (returnPaidAmount.value > returnChargesTotal.value + 0.001) return
 
   const rentalNo = String(props.rental.rentalNo || props.rental.id || '')
   const ok = await confirm({
@@ -253,21 +385,27 @@ async function saveClose() {
         condition: null,
         returnNote: null,
         lateFee: 0,
+        depositRefund: Number(depositRefundAmount.value.toFixed(2)),
         charges: returnCharges.value
           .filter(row => Number(row.amount) > 0)
           .map(row => ({
             chargeType: row.chargeType,
             description: row.description || null,
-            amount: Number(row.amount),
+            amount: convertSigned(
+              Number(row.amount),
+              returnPaymentCurrency.value,
+              rentalCurrencyCode.value,
+              returnExchangeRate.value,
+            ),
             chargeToCustomer: 'Yes',
           })),
         finalPayment: returnPaidAmount.value > 0
           ? {
-              amount: Number(returnPaidAmount.value),
+              amount: Number(returnPaidAmount.value.toFixed(2)),
               paymentMethod: returnPaymentMethod.value,
               currency: returnPaymentCurrency.value,
               exchangeRate: returnExchangeRate.value,
-              tenderedAmount: returnTenderedAmount.value,
+              tenderedAmount: returnSettlementInput.value,
               reference: null,
               note: tx('rental.ui.paymentOnReturn', 'Payment on return'),
               paidAt: toIsoZonedOrNow(returnAt.value),
@@ -316,7 +454,7 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
           </UFormField>
           <UFormField :label="tx('rental.ui.deposit', 'Deposit')">
             <UInput
-              :model-value="money(depositAmount)"
+              :model-value="formatMoney(depositTenderAmount, returnPaymentCurrency)"
               size="md"
               class="w-full"
               disabled
@@ -364,12 +502,11 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
                     <UInput v-model="row.description" size="md" class="w-full min-w-40" />
                   </td>
                   <td class="px-2 py-1.5">
-                    <UInput
-                      v-model.number="row.amount"
-                      type="number"
-                      min="0"
-                      size="md"
-                      class="w-28 text-center"
+                    <RentalMoneyInput
+                      v-model="row.amount"
+                      :currency="returnPaymentCurrency"
+                      :min="0"
+                      class="w-32"
                     />
                   </td>
                   <td class="px-1 py-1.5">
@@ -387,7 +524,7 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
           </div>
           <p v-if="returnChargesTotal > 0" class="mt-2 text-center text-sm">
             {{ tx('rental.ui.chargesTotal', 'Charges total') }}:
-            <span class="font-semibold tabular-nums">{{ moneyBoth(returnChargesTotal, returnKhr.chargesKhr) }}</span>
+            <span class="font-semibold tabular-nums">{{ moneyTender(returnChargesTotal, chargesKhr) }}</span>
           </p>
         </div>
 
@@ -405,13 +542,22 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
           <RentalPaymentCurrencyFields
             v-model:payment-currency="returnPaymentCurrency"
             v-model:exchange-rate="returnExchangeRate"
-            v-model:tendered-amount="returnTenderedAmount"
             :rental-currency="rentalCurrencyCode"
-            :target-rental-amount="returnChargesTotal"
-            :amount-label="tx('rental.ui.total', 'Total')"
-            amount-disabled
+            :show-amount="false"
             :show-converted-hint="false"
           />
+          <UFormField :label="tx('rental.ui.refundToCustomer', 'Refund to customer')">
+            <UInput
+              :model-value="formatMoney(depositRefundTenderAmount, returnPaymentCurrency)"
+              size="md"
+              class="w-full"
+              disabled
+            />
+          </UFormField>
+          <p v-if="returnPaidAmount > 0" class="text-xs text-muted">
+            {{ tx('rental.ui.customerPays', 'Customer pays') }}:
+            <span class="font-semibold tabular-nums">{{ moneyBoth(returnPaidAmount) }}</span>
+          </p>
         </div>
       </div>
     </template>

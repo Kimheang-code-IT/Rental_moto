@@ -78,6 +78,30 @@ def test_deadline_message_uses_configured_lead_time():
     assert "———————————————————" in message
 
 
+def test_deadline_message_localizes_title_for_khmer():
+    message = _format_message(
+        "deadline_approaching",
+        {
+            "rental_no": "RNT-2026-002",
+            "customer": "Sok Dara",
+            "due_date": "2026-09-03T12:00:00+00:00",
+            "reminder_label": "1 day",
+        },
+        language="km",
+    )
+    assert message.startswith("<b>⏰ ជិតដល់កំណត់ត្រឡប់ម៉ូតូ</b>")
+    assert "Reminder: 1 day before due time" in message
+    assert "Due Date:" in message
+
+
+def test_deadline_message_defaults_to_english_title():
+    message = _format_message(
+        "deadline_approaching",
+        {"rental_no": "RNT-2026-003", "reminder_label": "1 day"},
+    )
+    assert message.startswith("<b>⏰ Rental return deadline approaching</b>")
+
+
 def test_completed_message_uses_readable_business_layout():
     message = _format_message(
         "rental_completed",

@@ -184,6 +184,7 @@ function onHeaderRefresh() {
         <UButton
           v-if="actions?.save"
           :loading="actions.save.loading"
+          :disabled="actions.save.disabled"
           icon="i-lucide-save"
           :label="actions.save.label"
           class="rounded-md"

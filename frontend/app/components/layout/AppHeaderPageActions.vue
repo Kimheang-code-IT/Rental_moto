@@ -34,6 +34,7 @@ const props = withDefaults(defineProps<{
   isCreate?: boolean
   showSave?: boolean
   saveLabel?: string
+  saveDisabled?: boolean
   saving?: boolean
   showCancel?: boolean
   cancelTo?: string
@@ -62,6 +63,7 @@ const props = withDefaults(defineProps<{
   isCreate: false,
   showSave: false,
   saveLabel: '',
+  saveDisabled: false,
   saving: false,
   showCancel: false,
   cancelTo: '',
@@ -185,6 +187,7 @@ function syncActions() {
       ? {
           label: resolvedSaveLabel.value,
           loading: Boolean(props.saving),
+          disabled: Boolean(props.saveDisabled),
           onClick: () => emit('save'),
         }
       : undefined,
@@ -226,6 +229,7 @@ watch(
     props.isCreate,
     props.showSave,
     resolvedSaveLabel.value,
+    props.saveDisabled,
     props.saving,
     props.showCancel,
     props.cancelTo,

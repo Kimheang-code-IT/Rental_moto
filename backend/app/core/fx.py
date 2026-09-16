@@ -28,6 +28,14 @@ def normalize_exchange_rate(value) -> Decimal:
     return rate.quantize(Decimal("0.0001"))
 
 
+def exchange_rate_for_currencies(value, payment_currency: str | None, rental_currency: str | None) -> Decimal:
+    """Reject the placeholder rate 1 when USD and KHR actually differ."""
+    rate = normalize_exchange_rate(value)
+    if normalize_payment_currency(payment_currency) != normalize_payment_currency(rental_currency) and rate <= 1:
+        return DEFAULT_USD_KHR_RATE
+    return rate
+
+
 def to_rental_currency_amount(
     tendered_amount,
     payment_currency: str | None,
@@ -35,9 +43,9 @@ def to_rental_currency_amount(
     exchange_rate=DEFAULT_USD_KHR_RATE,
 ) -> Decimal:
     tendered = money(tendered_amount)
-    rate = normalize_exchange_rate(exchange_rate)
     rental = normalize_payment_currency(rental_currency)
     payment = normalize_payment_currency(payment_currency)
+    rate = exchange_rate_for_currencies(exchange_rate, payment, rental)
     if payment == rental:
         return tendered
     if rental == "USD" and payment == "KHR":
@@ -58,7 +66,11 @@ def resolve_payment_money(
     """Return ``(amount_in_rental_currency, tendered_amount, exchange_rate, payment_currency)``."""
     rental = normalize_payment_currency(rental_currency)
     payment = normalize_payment_currency(payment_currency or rental)
-    rate = normalize_exchange_rate(exchange_rate if exchange_rate is not None else DEFAULT_USD_KHR_RATE)
+    rate = exchange_rate_for_currencies(
+        exchange_rate if exchange_rate is not None else DEFAULT_USD_KHR_RATE,
+        payment,
+        rental,
+    )
     if payment == rental:
         rate = Decimal("1.0000") if payment == "USD" else rate
 

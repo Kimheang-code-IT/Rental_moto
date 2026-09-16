@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import {
   configureFormats,
+  currencySymbolPosition,
   DEFAULT_FORMAT_CONFIG,
   formatCompact,
   formatDate,
@@ -50,10 +51,15 @@ describe('format-service', () => {
     expect(formatted).toMatch(/USD|\$/)
   })
 
-  it('formats KHR as whole riels with ៛ and no decimals', () => {
+  it('formats KHR as whole riels with a trailing symbol and no decimals', () => {
     configureFormats({ currency: 'USD', locale: 'en-US', numberFormat: '1,234.56' })
-    expect(formatMoney(41000, 'KHR')).toBe('៛41,000')
-    expect(formatMoney(10004.4, 'KHR')).toBe('៛10,004')
+    expect(formatMoney(41000, 'KHR')).toBe('41,000៛')
+    expect(formatMoney(10004.4, 'KHR')).toBe('10,004៛')
+  })
+
+  it('places the currency symbol by grammar', () => {
+    expect(currencySymbolPosition('USD')).toBe('prefix')
+    expect(currencySymbolPosition('KHR')).toBe('suffix')
   })
 
   it('formats compact numbers', () => {

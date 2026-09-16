@@ -25,6 +25,8 @@ export type ModuleField = {
   computed?: boolean
   createOnly?: boolean
   hideOnCreate?: boolean
+  /** Render this number field with the currency stored in the sibling field key. */
+  currencyField?: string
   helpKey?: string
   help?: string
   labelKey?: string

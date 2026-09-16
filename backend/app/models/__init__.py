@@ -1,5 +1,5 @@
 from app.core.database import Base
-from app.models.auth import PasswordResetChallenge, RefreshTokenSession, TelegramLinkCode
+from app.models.auth import RefreshTokenSession
 from app.models.customer import RentalCustomer
 from app.models.motorcycle import Motorcycle
 from app.models.rental import Rental, RentalCharge, RentalExpense, RentalLine, RentalPayment
@@ -9,7 +9,6 @@ from app.models.system import (
     DocumentSequence,
     ExportJob,
     OutboxEvent,
-    StorageProvider,
     TaskProgress,
 )
 from app.models.user import Role, User
@@ -22,7 +21,6 @@ __all__ = [
     "ExportJob",
     "Motorcycle",
     "OutboxEvent",
-    "PasswordResetChallenge",
     "RefreshTokenSession",
     "Rental",
     "RentalCharge",
@@ -31,8 +29,6 @@ __all__ = [
     "RentalLine",
     "RentalPayment",
     "Role",
-    "StorageProvider",
     "TaskProgress",
-    "TelegramLinkCode",
     "User",
 ]

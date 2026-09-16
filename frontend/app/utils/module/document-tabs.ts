@@ -93,6 +93,7 @@ export function moduleFieldToDocumentField(
     type,
     options: type === 'boolean' ? extra.options : options,
     optionsEndpoint: field.optionsEndpoint,
+    currencyField: field.currencyField,
     readOnly: Boolean(field.computed || extra.readOnly),
     meta: Object.keys(meta).length ? meta : extra.meta,
     labelKm: extra.labelKm ?? field.labelKm,

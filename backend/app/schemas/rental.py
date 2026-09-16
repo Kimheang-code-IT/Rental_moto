@@ -52,6 +52,7 @@ class RentalCloseRequest(CamelModel):
     condition: str | None = None
     return_note: str | None = None
     late_fee: Decimal = Decimal("0")
+    deposit_refund: Decimal = Decimal("0")
     charges: list[CloseChargeInput] = []
     final_payment: FinalPaymentInput | None = None
     motorcycle_status: str | None = None
@@ -70,6 +71,7 @@ class RentalUpdateRequest(CamelModel):
     discount: Decimal | None = None  # Ignored; document/extra discount is not used.
     paid_amount: Decimal | None = None
     payment_method: str | None = Field(default=None, max_length=40)
+    currency: str | None = None
     payment_currency: str | None = None
     exchange_rate: Decimal | None = None
     tendered_amount: Decimal | None = None
@@ -214,6 +216,7 @@ class RentalResponse(CamelModel):
     rate_type: str
     rate_amount: Decimal
     deposit: Decimal
+    deposit_refund: Decimal = Decimal("0")
     deposit_tendered_amount: Decimal | None = None
     deposit_currency: str | None = None
     discount: Decimal

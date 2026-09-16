@@ -47,6 +47,19 @@ describe('document lifecycle status', () => {
     expect(fields.some(field => field.key === 'status')).toBe(false)
   })
 
+  it('carries currencyField from module number fields to document fields', () => {
+    const tabs = moduleDocumentTabs(moduleFixture({
+      fields: [
+        { key: 'dailyRate', label: '1 Day Rate', section: 'Rates', type: 'number', currencyField: 'currency' },
+        { key: 'year', label: 'Year', section: 'General', type: 'number' },
+        { key: 'currency', label: 'Currency', section: 'Rates', type: 'select', options: ['USD', 'KHR'] },
+      ],
+    }))
+    const fields = tabs.flatMap(tab => tab.sections.flatMap(section => section.fields))
+    expect(fields.find(field => field.key === 'dailyRate')?.currencyField).toBe('currency')
+    expect(fields.find(field => field.key === 'year')?.currencyField).toBeUndefined()
+  })
+
   it('also removes status from custom module tabs', () => {
     const tabs = moduleDocumentTabs(moduleFixture({
       tabs: [{

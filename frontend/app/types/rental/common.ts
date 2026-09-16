@@ -100,6 +100,8 @@ export interface DocumentFieldSchema {
   colSpan?: 1 | 2
   options?: FieldOption[]
   optionsEndpoint?: string
+  /** Render this number field with the currency stored in the sibling field key. */
+  currencyField?: string
   helpKey?: string
   help?: string
   hintKey?: string

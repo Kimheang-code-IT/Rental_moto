@@ -13,6 +13,22 @@ export function normalizeExchangeRate(value: unknown, fallback = DEFAULT_USD_KHR
   return Number(rate.toFixed(4))
 }
 
+/** A cross-currency USD/KHR rate of 1 is invalid; recover with the market fallback. */
+export function exchangeRateForCurrencies(
+  value: unknown,
+  paymentCurrency: unknown,
+  rentalCurrency: unknown,
+  fallback = DEFAULT_USD_KHR_RATE,
+): number {
+  const rate = normalizeExchangeRate(value, fallback)
+  return needsExchangeRate(
+    normalizePaymentCurrency(paymentCurrency),
+    normalizePaymentCurrency(rentalCurrency),
+  ) && rate <= 1
+    ? normalizeExchangeRate(fallback)
+    : rate
+}
+
 /** Convert a tendered payment into the rental's accounting currency. */
 export function toRentalCurrencyAmount(
   tenderedAmount: number,
@@ -21,9 +37,9 @@ export function toRentalCurrencyAmount(
   exchangeRate: number = DEFAULT_USD_KHR_RATE,
 ): number {
   const tendered = Math.max(0, Number(tenderedAmount) || 0)
-  const rate = normalizeExchangeRate(exchangeRate)
   const rental = normalizePaymentCurrency(rentalCurrency)
   const payment = normalizePaymentCurrency(paymentCurrency)
+  const rate = exchangeRateForCurrencies(exchangeRate, payment, rental)
   if (payment === rental) return Number(tendered.toFixed(2))
   if (rental === 'USD' && payment === 'KHR') return Number((tendered / rate).toFixed(2))
   if (rental === 'KHR' && payment === 'USD') return Number((tendered * rate).toFixed(2))
@@ -38,9 +54,9 @@ export function fromRentalCurrencyAmount(
   exchangeRate: number = DEFAULT_USD_KHR_RATE,
 ): number {
   const amount = Math.max(0, Number(rentalAmount) || 0)
-  const rate = normalizeExchangeRate(exchangeRate)
   const rental = normalizePaymentCurrency(rentalCurrency)
   const payment = normalizePaymentCurrency(paymentCurrency)
+  const rate = exchangeRateForCurrencies(exchangeRate, payment, rental)
   if (payment === rental) return Number(amount.toFixed(2))
   if (rental === 'USD' && payment === 'KHR') return Number((amount * rate).toFixed(0))
   if (rental === 'KHR' && payment === 'USD') return Number((amount / rate).toFixed(2))
@@ -49,6 +65,22 @@ export function fromRentalCurrencyAmount(
 
 export function needsExchangeRate(paymentCurrency: PaymentCurrency, rentalCurrency: string): boolean {
   return normalizePaymentCurrency(paymentCurrency) !== normalizePaymentCurrency(rentalCurrency)
+}
+
+/**
+ * Smallest editable increment for an entered amount by currency.
+ * KHR has no subunit, so entered riels step by 1; USD allows cents.
+ */
+export function currencyInputStep(currency: unknown): number {
+  return normalizePaymentCurrency(currency) === 'KHR' ? 1 : 0.01
+}
+
+/** Round an entered amount to the smallest unit of its currency. */
+export function roundCurrencyAmount(amount: unknown, currency: unknown): number {
+  const value = Math.max(0, Number(amount) || 0)
+  return normalizePaymentCurrency(currency) === 'KHR'
+    ? Math.round(value)
+    : Number(value.toFixed(2))
 }
 
 /**
@@ -88,7 +120,8 @@ export function invoiceKhrAmounts(input: {
     ? Math.round(paidTendered)
     : fromRentalCurrencyAmount(input.paid, 'KHR', rentalCurrency, rate)
 
-  const totalKhr = Math.max(0, subtotalKhr - depositKhr)
+  // A security deposit is held separately and never reduces the rental total.
+  const totalKhr = subtotalKhr
   const outstandingKhr = Math.max(0, totalKhr - paidKhr)
   return { subtotalKhr, depositKhr, totalKhr, paidKhr, outstandingKhr }
 }

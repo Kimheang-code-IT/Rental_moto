@@ -101,16 +101,35 @@ def test_suggested_deposit():
     assert suggested_deposit(rates_low) == Decimal("50.00")
 
 
-def test_rental_balance_credits_deposit_then_payment():
+def test_rental_balance_keeps_security_deposit_separate():
     after_deposit = rental_balance(10, 5, 0)
-    assert after_deposit.total_after_deposit == Decimal("5.00")
-    assert after_deposit.outstanding == Decimal("5.00")
+    assert after_deposit.total_after_deposit == Decimal("10.00")
+    assert after_deposit.outstanding == Decimal("10.00")
     after_payment = rental_balance(10, 5, 5)
-    assert after_payment.total_after_deposit == Decimal("5.00")
-    assert after_payment.outstanding == Decimal("0.00")
+    assert after_payment.total_after_deposit == Decimal("10.00")
+    assert after_payment.outstanding == Decimal("5.00")
     covered = rental_balance(10, 10, 0)
-    assert covered.total_after_deposit == Decimal("0.00")
-    assert covered.outstanding == Decimal("0.00")
+    assert covered.total_after_deposit == Decimal("10.00")
+    assert covered.outstanding == Decimal("10.00")
+
+
+def test_security_deposit_settlement_refunds_or_collects_difference():
+    from app.core.pricing import security_deposit_settlement
+
+    no_damage = security_deposit_settlement(25, 0)
+    assert no_damage.applied_to_charges == Decimal("0.00")
+    assert no_damage.refund_to_customer == Decimal("25.00")
+    assert no_damage.customer_pays == Decimal("0.00")
+
+    partial = security_deposit_settlement(25, 10)
+    assert partial.applied_to_charges == Decimal("10.00")
+    assert partial.refund_to_customer == Decimal("15.00")
+    assert partial.customer_pays == Decimal("0.00")
+
+    excess = security_deposit_settlement(25, 30)
+    assert excess.applied_to_charges == Decimal("25.00")
+    assert excess.refund_to_customer == Decimal("0.00")
+    assert excess.customer_pays == Decimal("5.00")
 
 
 def test_duration_days():

@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import JSON, DateTime, Integer, Numeric, String, Text, func
+from sqlalchemy import JSON, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -48,37 +47,6 @@ class AppSetting(Base, TimestampMixin):
 
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-
-class StorageProvider(Base, TimestampMixin):
-    __tablename__ = "storage_providers"
-
-    id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), nullable=False)
-    type: Mapped[str] = mapped_column(String(40), nullable=False)
-    active: Mapped[bool] = mapped_column(default=False, nullable=False)
-    is_default: Mapped[bool] = mapped_column(default=False, nullable=False)
-    max_file_size_mb: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
-    allowed_file_types: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    access_mode: Mapped[str] = mapped_column(String(20), default="private", nullable=False)
-    upload_path_pattern: Mapped[str] = mapped_column(String(200), default="{entity}/{yyyy}/{mm}/{id}", nullable=False)
-    connection_status: Mapped[str] = mapped_column(String(20), default="not_tested", nullable=False)
-    last_tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_test_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    endpoint: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    region: Mapped[str | None] = mapped_column(String(60), nullable=True)
-    bucket: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    access_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    secret_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    public_url: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    path_style: Mapped[bool | None] = mapped_column(nullable=True)
-    folder_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    client_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    client_secret: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    credential_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    sync_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    sync_schedule: Mapped[str | None] = mapped_column(String(60), nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
@@ -128,7 +96,6 @@ class TaskProgress(Base, TimestampMixin):
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     related_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

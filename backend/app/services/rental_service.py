@@ -7,13 +7,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, NotFoundError, ValidationError
-from app.core.fx import normalize_exchange_rate, normalize_payment_currency, resolve_payment_money
+from app.core.fx import exchange_rate_for_currencies, normalize_exchange_rate, normalize_payment_currency, resolve_payment_money
 from app.core.money import distribute_document_discount, money
 from app.core.pricing import (
     duration_days,
     line_charge,
     rate_type_for,
     resolve_motorcycle_rates,
+    security_deposit_settlement,
 )
 from app.models import (
     AuditLog,
@@ -165,7 +166,11 @@ def _apply_deposit_tendered(rental: Rental, request) -> None:
         or getattr(request, "deposit_currency", None)
         or rental.currency
     )
-    rate = normalize_exchange_rate(getattr(request, "exchange_rate", None))
+    rate = exchange_rate_for_currencies(
+        getattr(request, "exchange_rate", None),
+        payment_currency,
+        rental.currency,
+    )
     tendered = getattr(request, "deposit_tendered_amount", None)
     if tendered is None:
         if payment_currency == normalize_payment_currency(rental.currency):
@@ -258,7 +263,7 @@ class RentalService:
         rental = Rental(
             id=rental_id,
             rental_no=rental_no,
-            currency=request.currency,
+            currency=normalize_payment_currency(request.currency),
             late_fee=Decimal("0.00"),
             additional_charges=Decimal("0.00"),
             payment_method=initial_payment_method,
@@ -268,9 +273,6 @@ class RentalService:
             status="Active",
         )
         _apply_rental_header(rental, customer, built, deposit)
-        if rental.deposit > rental.total_due:
-            rental.deposit = rental.total_due
-            built = _with_header_deposit(built, rental.deposit)
         _apply_deposit_tendered(rental, request)
         # Customers settle the full rental price up front; outstanding stays 0.
         initial_paid = money(rental.total_due)
@@ -409,10 +411,9 @@ class RentalService:
         else:
             deposit = money(sum((money(getattr(line, "deposit", 0)) for line in line_inputs), Decimal("0")))
         built = _with_header_deposit(priced, deposit)
+        if getattr(request, "currency", None) is not None:
+            rental.currency = normalize_payment_currency(request.currency)
         _apply_rental_header(rental, customer, built, deposit)
-        if rental.deposit > rental.total_due:
-            rental.deposit = rental.total_due
-            built = _with_header_deposit(built, rental.deposit)
         _apply_deposit_tendered(rental, request)
         await self._replace_rental_lines(rental, built)
 
@@ -551,9 +552,16 @@ class RentalService:
         rental.return_note = request.return_note
         rental.duration_days = max(duration_days(rental.start_date, return_date), 1)
         rental.total_due = money(rental.rental_charge + rental.late_fee + rental.additional_charges)
+        # The deposit is security held separately from rental payment.  Only
+        # return charges/fines may consume it; refund every unused amount.
+        security_charges = money(rental.late_fee + rental.additional_charges)
+        deposit_settlement = security_deposit_settlement(rental.deposit, security_charges)
+        deposit_applied = deposit_settlement.applied_to_charges
+        deposit_refund = deposit_settlement.refund_to_customer
+        rental.deposit_refund = deposit_refund
         payments_sum = money(sum((p.amount for p in rental.payments), Decimal("0")) + final_payment_amount)
         completed_outstanding = money(
-            max(rental.total_due - rental.deposit - payments_sum, Decimal("0"))
+            max(rental.total_due - deposit_applied - payments_sum, Decimal("0"))
         )
         rental.status = "Completed"
         rental.completed_at = now
@@ -573,7 +581,7 @@ class RentalService:
                 entity_type="rental",
                 entity_id=rental.id,
                 entity_label=rental.rental_no,
-                details={"totalDue": float(rental.total_due), "paid": float(payments_sum), "outstanding": float(completed_outstanding)},
+                details={"totalDue": float(rental.total_due), "paid": float(payments_sum), "outstanding": float(completed_outstanding), "depositRefund": float(deposit_refund)},
             )
         )
         self.session.add(
@@ -587,6 +595,7 @@ class RentalService:
                     "amount": float(rental.total_due),
                     "paid": float(payments_sum),
                     "outstanding": float(completed_outstanding),
+                    "deposit_refund": float(deposit_refund),
                     "currency": rental.currency,
                     "status": "Completed",
                     "start_date": rental.start_date.isoformat(),
@@ -730,7 +739,7 @@ class RentalService:
         )
         self.session.add(payment)
         payment_total = money(sum((p.amount for p in rental.payments), Decimal("0")) + payment.amount)
-        payment_outstanding = money(max(rental.total_due - rental.deposit - payment_total, Decimal("0")))
+        payment_outstanding = money(max(rental.total_due - payment_total, Decimal("0")))
         rental.payment_method = payment_method
         await self.audit.add(
             AuditLog(
@@ -981,6 +990,3 @@ class RentalService:
 
     async def _next_entity_id(self, prefix: str, model_cls) -> str:
         return await self.sequences.next_value(f"{prefix.upper()}_ID", prefix, 3, None)
-
-
-

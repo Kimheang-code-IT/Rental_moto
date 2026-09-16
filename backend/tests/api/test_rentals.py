@@ -176,6 +176,48 @@ async def test_close_rental_completes_and_frees_motorcycle(client, admin_headers
     assert duplicate.status_code == 409
 
 
+async def test_close_rental_refunds_deposit_after_charges(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    payload = _rental_payload(moto, customer, paid=27)
+    payload["lines"][0]["deposit"] = 20
+    created = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
+    rental = created.json()["data"][0]
+    assert rental["deposit"] == "20.00"
+    assert rental["paid"] == "27.00"
+
+    closed = await client.post(
+        f"/api/v2/rentals/{rental['id']}/close",
+        headers=admin_headers,
+        json={
+            "condition": "Good",
+            "charges": [{"chargeType": "Cleaning", "amount": 5}],
+            "depositRefund": 15,
+        },
+    )
+    assert closed.status_code == 200, closed.text
+    data = closed.json()["data"]
+    assert data["status"] == "Completed"
+    assert data["depositRefund"] == "15.00"
+    assert data["totalDue"] == "32.00"
+    assert data["outstanding"] == "0.00"
+
+
+async def test_close_rental_refund_is_capped_at_deposit(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    payload = _rental_payload(moto, customer, paid=27)
+    payload["lines"][0]["deposit"] = 20
+    created = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
+    rental = created.json()["data"][0]
+
+    closed = await client.post(
+        f"/api/v2/rentals/{rental['id']}/close",
+        headers=admin_headers,
+        json={"condition": "Good", "depositRefund": 999},
+    )
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["data"]["depositRefund"] == "20.00"
+
+
 async def test_cancel_rental(client, admin_headers):
     moto, customer = await _setup(client, admin_headers)
     created = await client.post("/api/v2/rentals", headers=admin_headers, json=_rental_payload(moto, customer))
@@ -382,12 +424,12 @@ async def test_create_rental_multiple_motorcycles_one_row(client, admin_headers)
     assert len(rental["lines"]) == 2
     assert {line["motorcycleId"] for line in rental["lines"]} == {moto_a["id"], moto_b["id"]}
     # 27 + 27 gross, line discount 2 only (document/extra discount ignored).
-    # Line deposits 50+25 are capped to total due 52.
+    # Security deposits are preserved in full and do not reduce rental charges.
     assert rental["rateAmount"] == "54.00"
     assert rental["discount"] == "2.00"
     assert rental["rentalCharge"] == "52.00"
     assert rental["paid"] == "52.00"
-    assert rental["deposit"] == "52.00"
+    assert rental["deposit"] == "75.00"
     assert rental["outstanding"] == "0.00"
     assert rental["tax"] == "0.00"
     assert "Second Test Bike" in rental["motorcycle"]
@@ -474,5 +516,33 @@ async def test_viewer_cannot_create_rental(client, admin_headers):
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "ACCESS_DENIED"
 
+
+async def test_create_rental_persists_currency(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    payload = _rental_payload(moto, customer)
+    payload["currency"] = "KHR"
+    created = await client.post("/api/v2/rentals", headers=admin_headers, json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["data"][0]["currency"] == "KHR"
+
+
+async def test_rental_update_persists_currency(client, admin_headers):
+    moto, customer = await _setup(client, admin_headers)
+    created = await client.post("/api/v2/rentals", headers=admin_headers, json=_rental_payload(moto, customer))
+    rental = created.json()["data"][0]
+    assert rental["currency"] == "USD"
+
+    updated = await client.put(
+        f"/api/v2/rentals/{rental['id']}",
+        headers=admin_headers,
+        json={"currency": "KHR"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["data"]["currency"] == "KHR"
+
+    # Reopening the rental keeps the saved currency (no silent reset to USD).
+    fetched = await client.get(f"/api/v2/rentals/{rental['id']}", headers=admin_headers)
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["data"]["currency"] == "KHR"
 
 

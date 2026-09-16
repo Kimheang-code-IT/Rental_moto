@@ -94,8 +94,8 @@ def _clear_export_files() -> int:
 async def reset_all_data() -> dict:
     """Delete operational business data and export files; keep auth and config.
 
-    Preserved: users, roles, document sequences, app settings, storage providers,
-    and refresh-token sessions. Missing sequences/app-info are re-seeded only if
+    Preserved: users, roles, document sequences, app settings, and
+    refresh-token sessions. Missing sequences/app-info are re-seeded only if
     absent. Callers that hold an open request session must rollback/expire it
     first so TRUNCATE is not blocked by locks on truncated tables.
     """
@@ -110,8 +110,6 @@ async def reset_all_data() -> dict:
         "export_jobs",
         "outbox_events",
         "task_progress",
-        "password_reset_challenges",
-        "telegram_link_codes",
     ]
     async with engine.begin() as conn:
         for table in tables:
