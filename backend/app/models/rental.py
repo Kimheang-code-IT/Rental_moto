@@ -58,8 +58,12 @@ class Rental(Base, TimestampMixin):
     overdue_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     deadline_alerted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    payments: Mapped[list["RentalPayment"]] = relationship(back_populates="rental", lazy="selectin")
-    charges: Mapped[list["RentalCharge"]] = relationship(back_populates="rental", lazy="selectin")
+    payments: Mapped[list["RentalPayment"]] = relationship(
+        back_populates="rental", lazy="selectin", cascade="all, delete-orphan"
+    )
+    charges: Mapped[list["RentalCharge"]] = relationship(
+        back_populates="rental", lazy="selectin", cascade="all, delete-orphan"
+    )
     lines: Mapped[list["RentalLine"]] = relationship(
         back_populates="rental",
         lazy="selectin",

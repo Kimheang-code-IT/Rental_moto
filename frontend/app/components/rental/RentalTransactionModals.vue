@@ -103,7 +103,6 @@ const closeBalance = computed(() =>
   rentalReturnBalance(props.rental, returnChargesTotal.value, returnPaidAmount.value),
 )
 
-const balanceDueBeforePay = computed(() => closeBalance.value.balanceDue)
 const projectedOutstanding = computed(() => closeBalance.value.outstandingAfterPay)
 const projectedTotalDue = computed(() => closeBalance.value.totalDue)
 const depositAmount = computed(() => closeBalance.value.deposit)
@@ -231,7 +230,7 @@ function removeReturnChargeLine(key: string) {
 async function saveClose() {
   const invalidCharge = returnCharges.value.some(row => row.amount > 0 && !row.chargeType)
   if (invalidCharge) return
-  if (returnPaidAmount.value > balanceDueBeforePay.value + 0.001) return
+  if (returnPaidAmount.value > returnChargesTotal.value + 0.001) return
 
   const rentalNo = String(props.rental.rentalNo || props.rental.id || '')
   const ok = await confirm({
@@ -307,57 +306,23 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
     <template #body>
       <div class="space-y-4">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <UFormField :label="tx('rental.ui.rentalNo', 'Rental Number')">
+          <UFormField :label="tx('rental.ui.actualReturn', 'Actual Return')" required>
             <UInput
-              :model-value="String(rental.rentalNo || rental.id || '—')"
+              v-model="returnAt"
+              type="datetime-local"
               size="md"
               class="w-full"
-              disabled
             />
           </UFormField>
-          <UFormField :label="tx('rental.ui.customer', 'Customer')">
+          <UFormField :label="tx('rental.ui.deposit', 'Deposit')">
             <UInput
-              :model-value="String(rental.customer || '—')"
+              :model-value="money(depositAmount)"
               size="md"
               class="w-full"
               disabled
             />
           </UFormField>
         </div>
-
-        <div class="grid grid-cols-2 gap-2 rounded-md bg-elevated/60 p-3 text-sm sm:grid-cols-4">
-          <div>
-            <p class="text-xs text-muted">{{ tx('rental.ui.totalDue', 'Total Due') }}</p>
-            <p class="font-semibold tabular-nums">{{ moneyBoth(projectedTotalDue, returnKhr.totalDueKhr) }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-muted">{{ tx('rental.ui.deposit', 'Deposit') }}</p>
-            <p class="font-semibold tabular-nums">{{ moneyBoth(depositAmount, returnKhr.depositKhr) }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-muted">{{ tx('rental.ui.alreadyPaid', 'Already Paid') }}</p>
-            <p class="font-semibold tabular-nums">{{ moneyBoth(alreadyPaid, returnKhr.paidKhr) }}</p>
-          </div>
-          <div>
-            <p class="text-xs text-muted">{{ tx('rental.ui.outstanding', 'Outstanding') }}</p>
-            <p class="font-semibold tabular-nums" :class="balanceDueBeforePay > 0 ? 'text-warning' : 'text-success'">
-              {{ moneyBoth(balanceDueBeforePay, returnKhr.balanceDueKhr) }}
-            </p>
-          </div>
-        </div>
-        <p v-if="showKhrTotals" class="text-xs text-muted">
-          {{ tx('rental.ui.exchangeRate', 'Exchange rate') }}:
-          1 USD = {{ returnExchangeRate }} KHR
-        </p>
-
-        <UFormField :label="tx('rental.ui.actualReturn', 'Actual Return')" required>
-          <UInput
-            v-model="returnAt"
-            type="datetime-local"
-            size="md"
-            class="w-full max-w-sm"
-          />
-        </UFormField>
 
         <div>
           <div class="mb-2 flex items-center justify-between gap-2">
@@ -442,19 +407,11 @@ const canConfirmClose = computed(() => Boolean(returnAt.value))
             v-model:exchange-rate="returnExchangeRate"
             v-model:tendered-amount="returnTenderedAmount"
             :rental-currency="rentalCurrencyCode"
-            :target-rental-amount="balanceDueBeforePay"
+            :target-rental-amount="returnChargesTotal"
+            :amount-label="tx('rental.ui.total', 'Total')"
+            amount-disabled
+            :show-converted-hint="false"
           />
-          <p class="text-xs text-muted">
-            {{ tx('rental.ui.balanceDue', 'Balance due') }}:
-            <span class="font-semibold text-highlighted tabular-nums">{{ moneyBoth(balanceDueBeforePay, returnKhr.balanceDueKhr) }}</span>
-            ·
-            {{ tx('rental.ui.outstandingAfterPay', 'Outstanding after payment') }}:
-            <span class="font-semibold text-highlighted tabular-nums">{{ moneyBoth(projectedOutstanding, returnKhr.outstandingAfterPayKhr) }}</span>
-          </p>
-          <p v-if="showKhrTotals" class="text-xs text-muted">
-            {{ tx('rental.ui.exchangeRate', 'Exchange rate') }}:
-            1 USD = {{ returnExchangeRate }} KHR
-          </p>
         </div>
       </div>
     </template>

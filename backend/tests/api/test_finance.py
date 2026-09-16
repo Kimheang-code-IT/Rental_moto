@@ -48,7 +48,9 @@ async def _setup_with_rental(client, admin_headers, paid=10):
 
 async def test_record_payment_updates_balances(client, admin_headers):
     rental = await _setup_with_rental(client, admin_headers, paid=10)
-    assert rental["outstanding"] == "20.00"
+    # Full price is collected automatically at rental time.
+    assert rental["paid"] == "30.00"
+    assert rental["outstanding"] == "0.00"
 
     payment = await client.post(
         "/api/v2/payments",
@@ -59,7 +61,7 @@ async def test_record_payment_updates_balances(client, admin_headers):
     assert payment.json()["data"]["paymentNo"].startswith("RNP-")
 
     updated = await client.get(f"/api/v2/rentals/{rental['id']}", headers=admin_headers)
-    assert updated.json()["data"]["paid"] == "30.00"
+    assert updated.json()["data"]["paid"] == "50.00"
     assert updated.json()["data"]["outstanding"] == "0.00"
 
     listing = await client.get("/api/v2/payments", headers=admin_headers, params={"rentalId": rental["id"]})
@@ -99,7 +101,7 @@ async def test_record_charge_updates_totals(client, admin_headers):
     updated = await client.get(f"/api/v2/rentals/{rental['id']}", headers=admin_headers)
     assert updated.json()["data"]["additionalCharges"] == "25.00"
     assert updated.json()["data"]["totalDue"] == "55.00"
-    assert updated.json()["data"]["outstanding"] == "55.00"
+    assert updated.json()["data"]["outstanding"] == "25.00"
 
     custom_charge = await client.post(
         "/api/v2/charges",

@@ -250,19 +250,7 @@ class RentalService:
         )
         deposit = money(sum((money(getattr(line, "deposit", 0)) for line in request.lines), Decimal("0")))
         built = _with_header_deposit(priced, deposit)
-        paid_credit, paid_tendered, paid_rate, paid_currency = resolve_payment_money(
-            rental_currency=request.currency,
-            payment_currency=getattr(request, "payment_currency", None) or request.currency,
-            amount=request.paid_amount,
-            tendered_amount=getattr(request, "tendered_amount", None),
-            exchange_rate=getattr(request, "exchange_rate", None),
-        )
-        paid = paid_credit
-        initial_payment_method = (
-            normalize_payment_method(request.payment_method or "Cash")
-            if paid > 0 or deposit > 0
-            else None
-        )
+        initial_payment_method = normalize_payment_method(request.payment_method or "Cash")
 
         year = now.year
         rental_no = await self.sequences.next_value("RENTAL", f"RNT-{year}-", 6, year)
@@ -284,7 +272,8 @@ class RentalService:
             rental.deposit = rental.total_due
             built = _with_header_deposit(built, rental.deposit)
         _apply_deposit_tendered(rental, request)
-        initial_paid = min(money(paid), money(rental.total_due))
+        # Customers settle the full rental price up front; outstanding stays 0.
+        initial_paid = money(rental.total_due)
         self.session.add(rental)
         await self.session.flush()
         await self._replace_rental_lines(rental, built)
@@ -298,12 +287,12 @@ class RentalService:
                     payment_no=payment_no,
                     rental_id=rental.id,
                     amount=initial_paid,
-                    currency=paid_currency,
-                    tendered_amount=paid_tendered,
-                    exchange_rate=paid_rate,
-                    payment_method=initial_payment_method or "Cash",
+                    currency=rental.currency,
+                    tendered_amount=initial_paid,
+                    exchange_rate=Decimal("1.0000"),
+                    payment_method=initial_payment_method,
                     paid_at=now,
-                    note="Initial payment",
+                    note="Full payment",
                     created_by=_actor_label(self.actor),
                     created_by_user_id=self.actor.id if self.actor else None,
                 )

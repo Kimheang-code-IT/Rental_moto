@@ -54,8 +54,9 @@ async def test_create_rental_sets_progressing_and_payment(client, admin_headers)
     assert rental["status"] == "Active"
     assert rental["identityNumber"] == "KH-9999"
     assert rental["rentalCharge"] == "27.00"
-    assert rental["paid"] == "15.00"
-    assert rental["outstanding"] == "12.00"
+    # Full price is collected automatically at rental time (no outstanding).
+    assert rental["paid"] == "27.00"
+    assert rental["outstanding"] == "0.00"
 
     moto_after = await client.get(f"/api/v2/motorcycles/{moto['id']}", headers=admin_headers)
     assert moto_after.json()["data"]["status"] == "Progressing"
@@ -85,18 +86,18 @@ async def test_create_rental_credits_deposit_then_payment(client, admin_headers)
     assert rental["deposit"] == "5.00"
     assert rental["taxPercent"] == "0.00"
     assert rental["tax"] == "0.00"
-    assert rental["paid"] == "0.00"
-    assert rental["outstanding"] == "5.00"
+    assert rental["paid"] == "10.00"
+    assert rental["outstanding"] == "0.00"
 
-    paid = await client.post(
+    payments = await client.get(
         "/api/v2/payments",
         headers=admin_headers,
-        json={"rentalId": rental["id"], "amount": 5, "paymentMethod": "Cash"},
+        params={"rentalId": rental["id"]},
     )
-    assert paid.status_code == 201, paid.text
-    updated = await client.get(f"/api/v2/rentals/{rental['id']}", headers=admin_headers)
-    assert updated.json()["data"]["paid"] == "5.00"
-    assert updated.json()["data"]["outstanding"] == "0.00"
+    assert payments.status_code == 200, payments.text
+    rows = payments.json()["data"]
+    assert len(rows) == 1
+    assert rows[0]["amount"] == "10.00"
 
 
 async def test_create_rental_applies_line_discount(client, admin_headers):
@@ -148,20 +149,20 @@ async def test_close_rental_completes_and_frees_motorcycle(client, admin_headers
         json={
             "condition": "Good",
             "returnNote": "All good",
-            "lateFee": 5,
+            "lateFee": 0,
             "charges": [{"chargeType": "Cleaning", "amount": 3, "description": "wash"}],
-            "finalPayment": {"amount": 15, "paymentMethod": "Cash"},
+            "finalPayment": {"amount": 3, "paymentMethod": "Cash"},
         },
     )
     assert closed.status_code == 200, closed.text
     data = closed.json()["data"]
     assert data["status"] == "Completed"
-    assert data["paymentStatus"] == "Partial"
+    assert data["paymentStatus"] == "Paid"
     assert data["additionalCharges"] == "3.00"
-    assert data["lateFee"] == "5.00"
-    assert data["totalDue"] == "35.00"
-    assert data["paid"] == "25.00"
-    assert data["outstanding"] == "10.00"
+    assert data["lateFee"] == "0.00"
+    assert data["totalDue"] == "30.00"
+    assert data["paid"] == "30.00"
+    assert data["outstanding"] == "0.00"
     assert data["returnDate"] is not None
 
     moto_after = await client.get(f"/api/v2/motorcycles/{moto['id']}", headers=admin_headers)
@@ -252,8 +253,8 @@ async def test_rental_update_paid_amount(client, admin_headers):
         json=_rental_payload(moto, customer, paid=10),
     )
     rental = created.json()["data"][0]
-    assert rental["paid"] == "10.00"
-    assert rental["outstanding"] == "17.00"
+    assert rental["paid"] == "27.00"
+    assert rental["outstanding"] == "0.00"
 
     increased = await client.put(
         f"/api/v2/rentals/{rental['id']}",
@@ -385,7 +386,7 @@ async def test_create_rental_multiple_motorcycles_one_row(client, admin_headers)
     assert rental["rateAmount"] == "54.00"
     assert rental["discount"] == "2.00"
     assert rental["rentalCharge"] == "52.00"
-    assert rental["paid"] == "20.00"
+    assert rental["paid"] == "52.00"
     assert rental["deposit"] == "52.00"
     assert rental["outstanding"] == "0.00"
     assert rental["tax"] == "0.00"
