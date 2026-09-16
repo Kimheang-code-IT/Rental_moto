@@ -52,6 +52,7 @@ async def test_create_rental_sets_progressing_and_payment(client, admin_headers)
     rental = rentals[0]
     assert rental["rentalNo"].startswith("RNT-2026-")
     assert rental["status"] == "Active"
+    assert rental["identityNumber"] == "KH-9999"
     assert rental["rentalCharge"] == "27.00"
     assert rental["paid"] == "15.00"
     assert rental["outstanding"] == "12.00"

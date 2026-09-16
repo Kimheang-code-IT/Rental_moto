@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ListParams, envelope, get_db_session, parse_date_range, require_permission
@@ -23,7 +23,7 @@ def _to_dict(charge, rental_no: str | None = None, customer: str | None = None) 
 @router.get("")
 async def list_charges(
     params: ListParams = Depends(),
-    rental_id: str | None = None,
+    rental_id: str | None = Query(default=None, alias="rentalId"),
     charge_type: str | None = None,
     user=Depends(require_permission("rental.finance.view")),
     session: AsyncSession = Depends(get_db_session),

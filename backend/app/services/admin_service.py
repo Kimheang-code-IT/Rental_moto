@@ -609,10 +609,12 @@ class DashboardService:
         income = await self.payments.sum_between(start, end)
         expense = await self.expenses.sum_between(start, end)
 
-        outstanding_result = await self.session.execute(
-            select(func.coalesce(func.sum(Rental.outstanding), 0)).where(Rental.status.in_(["Active", "Overdue", "Completed"]))
-        )
-        outstanding = Decimal(str(outstanding_result.scalar() or 0))
+        outstanding_rows = (
+            await self.session.execute(
+                select(Rental).where(Rental.status.in_(["Active", "Overdue", "Completed"]))
+            )
+        ).scalars().all()
+        outstanding = sum((rental.outstanding for rental in outstanding_rows), Decimal("0"))
 
         rentals_by_day: list[dict] = []
         income_by_day: list[dict] = []

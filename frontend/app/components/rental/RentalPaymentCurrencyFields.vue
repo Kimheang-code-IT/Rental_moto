@@ -20,12 +20,14 @@ const props = withDefaults(defineProps<{
   amountDisabled?: boolean
   amountLabel?: string
   showConvertedHint?: boolean
+  showAmount?: boolean
 }>(), {
   rentalCurrency: 'USD',
   targetRentalAmount: null,
   disabled: false,
   amountDisabled: false,
   showConvertedHint: true,
+  showAmount: true,
 })
 
 const paymentCurrency = defineModel<PaymentCurrency>('paymentCurrency', { default: 'USD' })
@@ -130,6 +132,7 @@ watch(exchangeRate, (rate) => {
     </UFormField>
 
     <UFormField
+      v-if="showAmount"
       :label="amountLabel || tx('rental.ui.amountPaid', 'Amount paid')"
       class="sm:col-span-2"
     >

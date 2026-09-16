@@ -2,24 +2,30 @@
 
 Use this before going live. Development defaults are **not** safe for production.
 
-## 1. Publish images (CI)
+## 1. Build images locally
 
-GitHub Actions builds and pushes these images to GHCR on every push to `main`, on `v*` tags, and via workflow dispatch:
+Images are built from source on the host with `docker compose ... up -d --build`.
+No GitHub login, GHCR account, or CI is required. The three images are:
 
-| Image | GHCR name |
+| Image | Local name |
 | --- | --- |
-| API + Celery workers + scheduler | `ghcr.io/kimheang-code-it/rental_moto/api` |
-| Nginx frontend | `ghcr.io/kimheang-code-it/rental_moto/frontend` |
-| Telegram bot | `ghcr.io/kimheang-code-it/rental_moto/telegram-bot` |
+| API + Celery workers + scheduler | `hollywing-motor/api:${IMAGE_TAG:-local}` |
+| Nginx frontend | `hollywing-motor/frontend:${IMAGE_TAG:-local}` |
+| Telegram bot | `hollywing-motor/telegram-bot:${IMAGE_TAG:-local}` |
 
-Tags published: `latest` (main), `sha-<short>`, and semver when you push a `v*` git tag.
+The host only needs Docker plus this git repo. The first build downloads base
+images (`python:3.12-slim`, `node:22-alpine`, `nginx:1.27-alpine`, `postgres:16-alpine`,
+`redis:7-alpine`) and Python/Node dependencies, so it takes a few minutes.
 
-**GitHub setup (once):**
+This stack is tuned for a small host (under 5 users). Container CPU/memory
+limits live in `docker-compose.prod.yml` and can be overridden in `.env`
+(`DB_MEMORY`, `API_MEMORY`, `WORKER_MEMORY`, and so on).
 
-1. Repo **Settings → Actions → General → Workflow permissions** → **Read and write**.
-2. After the first successful workflow, open **Packages** and confirm the three images exist.
-3. For a private repository, create a GitHub PAT with `read:packages` (and `write:packages` if you also push from a laptop). On the production host: `docker login ghcr.io`.
-4. Optional: make each package public if another machine should pull without login.
+The `worker-telegram` service only delivers outbound Telegram notifications. Set
+`TELEGRAM_WORKER_REPLICAS=0` in `.env` to stop it and save ~100–200 MB. The API,
+reports, exports, and the two-way `telegram-bot` keep working; outbound
+notifications are queued in Redis instead of delivered, and password-reset codes
+expire after ~5 minutes.
 
 ## 2. Secrets and environment
 
@@ -29,7 +35,7 @@ Tags published: `latest` (main), `sha-<short>`, and semver when you push a `v*` 
 4. Set `CORS_ORIGINS` to your real HTTPS origin(s), for example `https://app.your-domain.com`.
 5. Set `CORS_ALLOW_PRIVATE_NETWORKS=false` and `DEBUG=false`.
 6. Set `ENVIRONMENT=production`.
-7. Set `IMAGE_TAG` to `latest` or a specific version/SHA tag from GHCR.
+7. Optionally set `IMAGE_TAG` to a label such as the current git short SHA (`IMAGE_TAG=sha-abc1234`) so local builds are easy to tell apart; otherwise leave it as `local`.
 8. Rotate the Telegram bot token in BotFather if it was ever shared in chat, screenshots, or git history.
 
 Generate secrets:
@@ -45,33 +51,38 @@ Or:
 openssl rand -base64 48
 ```
 
-## 3. Start production stack (pull, do not build)
+## 3. Start production stack (build locally)
 
-The production host only needs this git repo (for compose files) plus Docker. Application images come from GHCR.
+The production host only needs this git repo plus Docker. Every image is built
+from source on the host; nothing is pulled from a registry.
 
 ```powershell
-docker login ghcr.io
-.\scripts\deploy-from-registry.ps1
+.\scripts\deploy-local.ps1
 ```
 
 Or:
 
 ```bash
-docker login ghcr.io
-chmod +x scripts/deploy-from-registry.sh
-./scripts/deploy-from-registry.sh
+chmod +x scripts/deploy-local.sh
+./scripts/deploy-local.sh
 ```
 
 Manual equivalent:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
 ```
 
-This keeps DB / Redis / API off the public host ports, sets `ENVIRONMENT=production`, and **does not rebuild images**. `/docs` and `/openapi.json` are disabled in production.
+This keeps DB / Redis / API off the public host ports, sets `ENVIRONMENT=production`,
+builds the images locally, applies the small-host CPU/memory limits, and disables
+`/docs` and `/openapi.json` in production.
 
-To pin a version: set `IMAGE_TAG=sha-abc1234` (or `v1.0.0`) in `.env`.
+After changing code, pull and rebuild:
+
+```powershell
+git pull
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
+```
 
 ## 4. Optional: wipe development data
 
@@ -115,4 +126,4 @@ After reset, users, roles, document sequences, and settings remain; you stay sig
 .\scripts\prepare-production.ps1
 ```
 
-That script resets the database, clears local archived files, and removes local caches. It does **not** publish images; use GitHub Actions for that.
+That script resets the database, clears local archived files, and removes local caches. It does **not** build or publish images; rebuild locally with `scripts/deploy-local.ps1`.

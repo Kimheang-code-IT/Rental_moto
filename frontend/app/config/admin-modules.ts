@@ -175,9 +175,7 @@ export const adminModules: ModuleConfig[] = [
     columns: [
       col('occurredAt', 'Date / Time', 'កាលបរិច្ឆេទ / ពេលវេលា'),
       col('user', 'User', 'អ្នកប្រើ'),
-      col('eventType', 'Event Type', 'ប្រភេទព្រឹត្តិការណ៍'),
       col('action', 'Action', 'សកម្មភាព'),
-      col('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ'),
       col('entity', 'Entity', 'អង្គភាពទិន្នន័យ'),
       col('result', 'Result', 'លទ្ធផល'),
       col('ipDevice', 'IP Device', 'ឧបករណ៍ IP'),
@@ -185,9 +183,7 @@ export const adminModules: ModuleConfig[] = [
     fields: [
       f('occurredAt', 'Time', 'ពេលវេលា', 'Log', 'កំណត់ហេតុ', 'datetime'),
       f('user', 'User', 'អ្នកប្រើ', 'Log', 'កំណត់ហេតុ'),
-      f('eventType', 'Event Type', 'ប្រភេទព្រឹត្តិការណ៍', 'Log', 'កំណត់ហេតុ'),
       f('action', 'Action', 'សកម្មភាព', 'Log', 'កំណត់ហេតុ'),
-      f('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ', 'Entity', 'អង្គភាពទិន្នន័យ'),
       f('entity', 'Entity', 'អង្គភាពទិន្នន័យ', 'Entity', 'អង្គភាពទិន្នន័យ'),
       f('result', 'Result', 'លទ្ធផល', 'Result', 'លទ្ធផល'),
       f('ipDevice', 'IP Device', 'ឧបករណ៍ IP', 'Traceability', 'ការតាមដាន'),
@@ -197,8 +193,6 @@ export const adminModules: ModuleConfig[] = [
     ],
     filters: [
       f('user', 'Actor', 'អ្នកប្រើ', '', ''),
-      f('eventType', 'Event Type', 'ប្រភេទព្រឹត្តិការណ៍', '', ''),
-      f('entityType', 'Entity Type', 'ប្រភេទអង្គភាពទិន្នន័យ', '', ''),
       f('result', 'Result', 'លទ្ធផល', '', '', 'select', ['SUCCESS', 'FAILED', 'DENIED']),
     ],
   }),

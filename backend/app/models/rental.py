@@ -5,7 +5,9 @@ from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, Uni
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
+from app.core.money import money
 from app.models.base import TimestampMixin
+from app.models.customer import RentalCustomer
 
 
 class Rental(Base, TimestampMixin):
@@ -31,8 +33,6 @@ class Rental(Base, TimestampMixin):
     deposit_tendered_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     deposit_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
     discount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
-    tax_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0, nullable=False)
-    tax: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
     exchange_rate: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
 
@@ -40,11 +40,8 @@ class Rental(Base, TimestampMixin):
     late_fee: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
     additional_charges: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
     total_due: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
-    paid: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
-    outstanding: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
 
     payment_method: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    payment_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     return_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     condition: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -69,6 +66,44 @@ class Rental(Base, TimestampMixin):
         cascade="all, delete-orphan",
         order_by="RentalLine.sort_order",
     )
+    customer_record: Mapped[RentalCustomer] = relationship(
+        "RentalCustomer",
+        lazy="selectin",
+        viewonly=True,
+    )
+
+    @property
+    def identity_number(self) -> str | None:
+        """Customer identity number, denormalized into the API response for invoices."""
+        customer = self.customer_record
+        return customer.identity_number if customer is not None else None
+
+    @property
+    def paid(self) -> Decimal:
+        """Total received, derived from recorded payments (not stored)."""
+        return money(sum((payment.amount for payment in self.payments), Decimal("0")))
+
+    @property
+    def outstanding(self) -> Decimal:
+        """Remaining after deposit and recorded payments (not stored)."""
+        due = max(money(self.total_due), Decimal("0"))
+        deposit = max(money(self.deposit), Decimal("0"))
+        after_deposit = max(due - deposit, Decimal("0"))
+        return money(max(after_deposit - self.paid, Decimal("0")))
+
+    @property
+    def payment_status(self) -> str | None:
+        if not self.payments:
+            return None
+        return "Paid" if self.outstanding <= 0 else "Partial"
+
+    @property
+    def tax(self) -> Decimal:
+        return Decimal("0.00")
+
+    @property
+    def tax_percent(self) -> Decimal:
+        return Decimal("0.00")
 
 
 class RentalLine(Base, TimestampMixin):

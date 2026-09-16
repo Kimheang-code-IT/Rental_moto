@@ -175,8 +175,6 @@ class AuditRepository:
         q: str | None,
         page: int,
         limit: int,
-        entity_type: str | None = None,
-        action: str | None = None,
         user_id: int | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
@@ -190,10 +188,6 @@ class AuditRepository:
                 | (func.lower(func.coalesce(AuditLog.entity_label, "")).like(term))
                 | (func.lower(func.coalesce(AuditLog.user_name, "")).like(term))
             )
-        if entity_type:
-            stmt = stmt.where(AuditLog.entity_type == entity_type)
-        if action:
-            stmt = stmt.where(func.lower(AuditLog.action) == action.lower())
         if user_id is not None:
             stmt = stmt.where(AuditLog.user_id == user_id)
         if start_date:

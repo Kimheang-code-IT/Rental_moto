@@ -19,7 +19,6 @@ class RentalCreateRequest(CamelModel):
     customer_id: str
     lines: list[RentalLineInput] = Field(min_length=1)
     discount: Decimal = Decimal("0")  # Ignored; document/extra discount is not used.
-    tax_percent: Decimal = Decimal("0")  # Ignored; tax is always stored as 0.
     paid_amount: Decimal = Decimal("0")
     payment_method: str | None = Field(default=None, max_length=40)
     currency: str = "USD"
@@ -69,7 +68,6 @@ class RentalUpdateRequest(CamelModel):
     due_date: datetime | None = None
     deposit: Decimal | None = None
     discount: Decimal | None = None  # Ignored; document/extra discount is not used.
-    tax_percent: Decimal | None = None  # Ignored; tax is always stored as 0.
     paid_amount: Decimal | None = None
     payment_method: str | None = Field(default=None, max_length=40)
     payment_currency: str | None = None
@@ -207,6 +205,7 @@ class RentalResponse(CamelModel):
     motorcycle_id: str
     customer: str
     phone: str | None = None
+    identity_number: str | None = None
     motorcycle: str
     plate: str | None = None
     start_date: datetime

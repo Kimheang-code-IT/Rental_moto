@@ -40,7 +40,6 @@ if [[ ! -f .env ]]; then
 fi
 
 export IMAGE_TAG=local
-export PULL_POLICY=build
 
 echo "Building and starting from source (no app image pull)..."
 docker compose -f docker-compose.yml up -d --build --pull missing

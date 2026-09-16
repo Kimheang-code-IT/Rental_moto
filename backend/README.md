@@ -82,20 +82,21 @@ There are no `SEED_ADMIN_*` variables and no default admin credentials.
 
 See [`docs/PRODUCTION_CHECKLIST.md`](../docs/PRODUCTION_CHECKLIST.md).
 
-Images are built in GitHub Actions and pushed to GHCR (`ghcr.io/kimheang-code-it/rental_moto/{api,frontend,telegram-bot}`).
+Images are built from source on the production host. No GitHub login, GHCR
+account, or CI is required.
 
 ```powershell
 # On the production host: copy .env.production.example -> .env, set secrets, then:
-docker login ghcr.io
-.\scripts\deploy-from-registry.ps1
+.\scripts\deploy-local.ps1
 ```
 
 ```bash
-docker login ghcr.io
-./scripts/deploy-from-registry.sh
+./scripts/deploy-local.sh
 ```
 
-Do not pass `--build` on production. The API refuses to start if development secrets are still in `.env`. Swagger `/docs` is disabled when `ENVIRONMENT=production`.
+Pass `--build` (already included in the scripts) to rebuild after pulling new
+code. The API refuses to start if development secrets are still in `.env`.
+Swagger `/docs` is disabled when `ENVIRONMENT=production`.
 
 ## First login and accounts
 
@@ -115,7 +116,7 @@ passwords anywhere in the application or seed.
 | `frontend` | Static Nuxt client served by nginx (host port from `FRONTEND_PORT`, default 80) |
 | `db` | PostgreSQL 16 on :5432 (authoritative store) |
 | `redis` | Redis 7 — cache `/0`, telegram-bot `/1`, Celery results `/2`, Celery broker `/3` |
-| `worker-telegram` | Celery worker for `critical` + `telegram` queues (text notifications only) |
+| `worker-telegram` | Celery worker for `critical` + `telegram` queues (text notifications only). Optional: set `TELEGRAM_WORKER_REPLICAS=0` to disable and save RAM |
 | `telegram-bot` | Telegram bot (polling), talks to the API with service JWTs only |
 
 ### Local file storage

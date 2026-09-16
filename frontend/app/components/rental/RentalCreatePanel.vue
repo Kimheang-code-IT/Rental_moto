@@ -20,7 +20,6 @@ import {
   lineAmounts,
   lineCharge,
   lineDueFromPlan,
-  rentalBalance,
   rentalRateType,
   todayDateTimeLocal,
   type RentalRatePlan,
@@ -29,7 +28,6 @@ import { toIsoZoned } from '~/utils/api/datetime'
 import {
   DEFAULT_USD_KHR_RATE,
   fromRentalCurrencyAmount,
-  invoiceKhrAmounts,
   needsExchangeRate,
   normalizeExchangeRate,
   normalizePaymentCurrency,
@@ -111,7 +109,6 @@ const tenderedAmount = ref(0)
 /** Deposit as entered in the selected payment currency. */
 const deposit = ref(0)
 const existingPaid = ref(0)
-const outstandingBalance = ref(0)
 const rentalNo = ref('')
 const rentalStatus = ref('Active')
 const currency = ref(preferences.currency)
@@ -132,19 +129,11 @@ const depositInRental = computed(() =>
     exchangeRate.value,
   ),
 )
-const depositMax = computed(() =>
-  fromRentalCurrencyAmount(
-    totals.value.subtotal,
-    paymentCurrency.value,
-    currency.value,
-    exchangeRate.value,
-  ),
-)
 const depositStep = computed(() =>
   normalizePaymentCurrency(paymentCurrency.value) === 'KHR' ? 100 : 0.01,
 )
 const depositHelpText = computed(() => {
-  const base = help('deposit', 'Deposit is credited against the total. Cannot exceed subtotal.')
+  const base = help('deposit', 'Deposit is recorded for reference only. It does not affect the total.')
   if (!needsExchangeRate(paymentCurrency.value, currency.value)) return base
   return `${base} ${tx('rental.ui.creditedInRentalCurrency', 'Credited to rental')}: ${formatMoney(depositInRental.value, currency.value)}.`
 })
@@ -270,6 +259,11 @@ function onSelectModel(line: RentalLine, model: string | number) {
   }
 }
 
+function syncRentalCurrencyFromMoto(moto: Record<string, unknown> | null | undefined) {
+  const code = String(moto?.currency || '').trim().toUpperCase()
+  if (code === 'USD' || code === 'KHR') currency.value = code
+}
+
 function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
   if (isFormReadOnly.value) return
   line.motorcycleId = String(motorcycleId || '')
@@ -278,6 +272,7 @@ function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
   line.model = String(moto.model || line.model)
   if (!line.days) line.days = daysForRatePlan(line.ratePlan, daysBetween(startDate.value, dueDate.value) || 1)
   repriceLine(line)
+  syncRentalCurrencyFromMoto(moto)
 }
 
 const lineComputed = computed(() => lines.value.map(line => {
@@ -310,46 +305,8 @@ const totals = computed(() => {
   }
 })
 
-const payableTotal = computed(() => rentalBalance({
-  totalDue: totals.value.total,
-  deposit: depositInRental.value,
-}).totalAfterDeposit)
-
-const showKhrTotals = computed(() =>
-  normalizePaymentCurrency(paymentCurrency.value) === 'KHR'
-  || normalizePaymentCurrency(currency.value) === 'KHR',
-)
-
-const formKhrTotals = computed(() =>
-  invoiceKhrAmounts({
-    subtotal: totals.value.subtotal,
-    deposit: depositInRental.value,
-    paid: isFormReadOnly.value ? existingPaid.value : paidAmount.value,
-    rentalCurrency: currency.value,
-    exchangeRate: exchangeRate.value,
-    depositTendered: deposit.value,
-    depositCurrency: paymentCurrency.value,
-    paidTendered: tenderedAmount.value,
-    paidCurrency: paymentCurrency.value,
-  }),
-)
-
-const depositError = computed(() => {
-  if (isFormReadOnly.value) return undefined
-  if (depositInRental.value > totals.value.subtotal + 0.001) {
-    return tx('rental.ui.depositExceedsSubtotal', 'Deposit cannot exceed subtotal.')
-  }
-  return undefined
-})
-
-const outstandingPreview = computed(() => {
-  if (isFormReadOnly.value) return Math.max(0, Number(outstandingBalance.value) || 0)
-  return rentalBalance({
-    totalDue: totals.value.total,
-    deposit: depositInRental.value,
-    paid: paidAmount.value,
-  }).outstanding
-})
+const totalDue = computed(() => totals.value.total)
+const showExchangeRate = computed(() => normalizePaymentCurrency(currency.value) === 'KHR')
 
 const rentalSiblingIds = computed(() => store.list('rentals').map(row => String(row.id)))
 const rentalSiblingIndex = computed(() => rentalSiblingIds.value.indexOf(String(props.rentalId || '')))
@@ -380,18 +337,6 @@ const createCustomerButtons = computed(() => {
     label: tx('rental.ui.addNewCustomer', 'Create customer'),
     icon: 'i-lucide-user-plus',
   }]
-})
-
-watch(() => totals.value.subtotal, (subtotal) => {
-  if (isFormReadOnly.value) return
-  if (depositInRental.value > subtotal) {
-    deposit.value = fromRentalCurrencyAmount(
-      subtotal,
-      paymentCurrency.value,
-      currency.value,
-      exchangeRate.value,
-    )
-  }
 })
 
 watch(paymentCurrency, (next, prev) => {
@@ -605,7 +550,6 @@ function hydrateDetail() {
   startDate.value = String(found.startDate || '')
   dueDate.value = String(found.dueDate || '')
   existingPaid.value = Number(found.paid || 0)
-  outstandingBalance.value = Number(found.outstanding || 0)
   currency.value = String(found.currency || preferences.currency)
   lateFee.value = Number(found.lateFee || 0)
   additionalCharges.value = Number(found.additionalCharges || 0)
@@ -805,7 +749,7 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     discount: Number(lineDiscountTotal.toFixed(2)),
     taxPercent: 0,
     tax: 0,
-    currency: moto?.currency || preferences.currency,
+    currency: currency.value || moto?.currency || preferences.currency,
     exchangeRate: exchangeRate.value,
     paymentCurrency: paymentCurrency.value,
     depositTenderedAmount: deposit.value,
@@ -816,7 +760,10 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     additionalCharges: 0,
     totalDue: totals.value.total,
     paid: isDetail.value ? existingPaid.value : paidAmount.value,
-    outstanding: outstandingPreview.value,
+    outstanding: Math.max(
+      0,
+      Number((totals.value.total - depositInRental.value - (isDetail.value ? existingPaid.value : paidAmount.value)).toFixed(2)),
+    ),
     paymentMethod: paymentMethod.value,
     status: 'Draft',
     invoiceLines,
@@ -856,11 +803,9 @@ const rentalExportFields = computed<ExportFieldOption[]>(() => [
   { label: tx('rental.ui.motorcycle', 'Motorcycle'), value: 'motorcycle' },
   { label: tx('rental.ui.plate', 'Plate'), value: 'plate' },
   { label: tx('rental.ui.startDate', 'Start Date'), value: 'startDate' },
-  { label: tx('rental.ui.returnDate', 'Return Date'), value: 'dueDate' },
+  { label: tx('rental.ui.dueDate', 'End Date'), value: 'dueDate' },
   { label: tx('rental.ui.paymentMethod', 'Payment Method'), value: 'paymentMethod' },
   { label: tx('rental.ui.total', 'Total'), value: 'totalDue' },
-  { label: tx('rental.ui.paid', 'Paid'), value: 'paid' },
-  { label: tx('rental.ui.outstanding', 'Outstanding'), value: 'outstanding' },
   { label: tx('rental.ui.status', 'Status'), value: 'status' },
 ])
 
@@ -888,7 +833,7 @@ async function createRental() {
   const ok = await confirm({
     kind: 'submit',
     title: tx('rental.ui.confirmCreate', 'Create this rental?'),
-    description: `${selectedCustomer.value.fullName} · ${validLines.length} ${tx('rental.ui.motorcycles', 'motorcycles')} · ${tx('rental.ui.total', 'Total')}: ${formatMoney(payableTotal.value, preferences.currency)}`,
+    description: `${selectedCustomer.value.fullName} · ${validLines.length} ${tx('rental.ui.motorcycles', 'motorcycles')} · ${tx('rental.ui.total', 'Total')}: ${formatMoney(totals.value.total, currency.value || preferences.currency)}`,
     confirmLabel: tx('rental.ui.createRental', 'Create Rental'),
   })
   if (!ok) return
@@ -1077,7 +1022,6 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
             </UFormField>
             <UFormField
               :label="tx('rental.ui.dueDate', 'Due')"
-              :help="help('dueDate', 'Latest motorcycle return. Each line keeps its own package unless you edit this date.')"
               required
             >
               <CommonAppInputDate
@@ -1216,13 +1160,8 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
             <div class="mt-4 flex justify-end">
               <div class="flex w-full max-w-sm flex-col gap-4">
                 <div class="flex items-center justify-between gap-4 rounded-md bg-elevated/40 px-3 py-2.5 text-sm">
-                  <span class="text-muted">{{ tx('rental.ui.subtotal', 'Subtotal') }}</span>
-                  <span class="text-right font-semibold tabular-nums">
-                    <span class="block">{{ money(totals.subtotal) }}</span>
-                    <span v-if="showKhrTotals" class="block text-xs font-medium text-muted">
-                      {{ formatMoney(formKhrTotals.subtotalKhr, 'KHR') }}
-                    </span>
-                  </span>
+                  <span class="text-muted">{{ tx('rental.ui.rentalFee', 'Rental fee') }}</span>
+                  <span class="text-right font-semibold tabular-nums">{{ money(totals.subtotal) }}</span>
                 </div>
 
                 <UFormField
@@ -1243,21 +1182,18 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
                 <RentalPaymentCurrencyFields
                   v-model:payment-currency="paymentCurrency"
                   v-model:exchange-rate="exchangeRate"
-                  v-model:tendered-amount="tenderedAmount"
                   :rental-currency="currency"
                   :disabled="isFormReadOnly"
-                  :amount-label="tx('rental.ui.amountPaid', 'Amount paid')"
+                  :show-amount="false"
+                  :show-converted-hint="false"
                 />
 
                 <UFormField
                   :label="tx('rental.ui.deposit', 'Deposit')"
                   :help="depositHelpText"
-                  :error="depositError"
                 >
                   <UInputNumber
                     v-model="deposit"
-                    :min="0"
-                    :max="depositMax"
                     :step="depositStep"
                     :increment="false"
                     :decrement="false"
@@ -1269,22 +1205,10 @@ const money = (value: unknown) => formatMoney(value, currency.value || preferenc
 
                 <div class="flex items-center justify-between gap-4 border-t border-default pt-3 text-base">
                   <span class="font-semibold">{{ tx('rental.ui.total', 'Total') }}</span>
-                  <span class="text-right font-semibold tabular-nums">
-                    <span class="block">{{ money(payableTotal) }}</span>
-                    <span v-if="showKhrTotals" class="block text-sm font-medium text-muted">
-                      {{ formatMoney(formKhrTotals.totalKhr, 'KHR') }}
-                    </span>
-                  </span>
+                  <span class="text-right font-semibold tabular-nums">{{ money(totalDue) }}</span>
                 </div>
 
-                <p class="text-xs text-muted">
-                  {{ tx('rental.ui.outstanding', 'Outstanding') }}:
-                  <span class="font-semibold text-highlighted">{{ money(outstandingPreview) }}</span>
-                  <span v-if="showKhrTotals" class="font-semibold text-highlighted">
-                    · {{ formatMoney(formKhrTotals.outstandingKhr, 'KHR') }}
-                  </span>
-                </p>
-                <p v-if="showKhrTotals" class="text-xs text-muted">
+                <p v-if="showExchangeRate" class="text-xs text-muted">
                   {{ tx('rental.ui.exchangeRate', 'Exchange rate') }}:
                   1 USD = {{ exchangeRate }} KHR
                 </p>

@@ -4,12 +4,9 @@ import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { formatInvoiceDateTime } from '~/utils/format/format-service'
 import {
   DEFAULT_USD_KHR_RATE,
-  fromRentalCurrencyAmount,
-  invoiceKhrAmounts,
   normalizeExchangeRate,
   normalizePaymentCurrency,
 } from '~/utils/rental/fx'
-import { rentalBalance } from '~/utils/rental/pricing'
 
 const props = defineProps<{
   rental: Record<string, unknown> | null
@@ -43,16 +40,14 @@ const L = {
   days: { km: 'ថ្ងៃ', en: 'Day(s)' },
   unitPrice: { km: 'តម្លៃឯកតា', en: 'Unit price' },
   amount: { km: 'ចំនួនទឹកប្រាក់', en: 'Amount' },
-  subtotal: { km: 'សរុបរង', en: 'Subtotal' },
+  rentalFee: { km: 'ថ្លៃជួល', en: 'Rental fee' },
   deposit: { km: 'ប្រាក់កក់', en: 'Deposit' },
   discount: { km: 'បញ្ចុះតម្លៃ', en: 'Discount' },
   total: { km: 'សរុប', en: 'Total' },
-  paid: { km: 'បានបង់', en: 'Paid' },
-  outstanding: { km: 'នៅជំពាក់', en: 'Outstanding' },
   terms: { km: 'លក្ខខណ្ឌ', en: 'Terms & Conditions' },
   paymentTerms: {
-    km: 'ត្រូវបង់ប្រាក់តាមកិច្ចសន្យាជួល។ ប្រាក់កក់ត្រូវដកពីសរុប។ ចំនួននៅជំពាក់គឺសរុបដកប្រាក់កក់ និងចំនួនបានបង់រួច។',
-    en: 'Payment is due according to the rental agreement. The deposit is credited against the total. Outstanding is the total due minus deposit and amounts already paid.',
+    km: 'ត្រូវបង់ប្រាក់តាមកិច្ចសន្យាជួល។ ប្រាក់កក់ត្រូវបានកត់ត្រាសម្រាប់ជាឯកសារយោង មិនរាប់បញ្ចូលក្នុងសរុបទេ។',
+    en: 'Payment is due according to the rental agreement. The deposit is recorded for reference and is not included in the total.',
   },
   noItems: { km: 'មិនមានធាតុវិក្កយបត្រ', en: 'No invoice items' },
   thankYou: { km: 'អរគុណដែលបានជ្រើសរើស', en: 'Thank you for choosing' },
@@ -63,6 +58,7 @@ const L = {
 } as const
 
 const currencyCode = computed(() => normalizePaymentCurrency(props.rental?.currency || preferences.currency || 'USD'))
+const showExchangeRate = computed(() => currencyCode.value === 'KHR')
 const money = (value: unknown) => formatMoney(value, currencyCode.value)
 
 const invoiceNo = computed(() =>
@@ -84,22 +80,6 @@ const invoiceExchangeRate = computed(() => {
   return DEFAULT_USD_KHR_RATE
 })
 
-function moneyBoth(value: unknown, khrOverride?: number) {
-  const amount = Number(value)
-  const safe = Number.isFinite(amount) ? amount : 0
-  const abs = Math.abs(safe)
-  const sign = safe < 0 ? '-' : ''
-  const primary = `${sign}${formatMoney(abs, currencyCode.value)}`
-  const khr = khrOverride != null
-    ? Math.abs(Math.round(khrOverride))
-    : fromRentalCurrencyAmount(abs, 'KHR', currencyCode.value, invoiceExchangeRate.value)
-  const usd = fromRentalCurrencyAmount(abs, 'USD', currencyCode.value, invoiceExchangeRate.value)
-  if (currencyCode.value === 'USD') {
-    return `${primary} / ${sign}${formatMoney(khr, 'KHR')}`
-  }
-  return `${primary} / ${sign}${formatMoney(usd, 'USD')}`
-}
-
 function dateTime(value: unknown) {
   return formatInvoiceDateTime(value)
 }
@@ -112,7 +92,6 @@ const paymentMethod = computed(() => {
 const createdAt = computed(() => dateTime(props.rental?.createdAt || props.rental?.startDate))
 const depositAmount = computed(() => Math.max(0, Number(props.rental?.deposit || 0)))
 const returnDate = computed(() => dateTime(props.rental?.returnDate || props.rental?.dueDate))
-const paidAmount = computed(() => Math.max(0, Number(props.rental?.paid || 0)))
 const identityNumber = computed(() => {
   const fromRental = String(props.rental?.identityNumber || '').trim()
   if (fromRental) return fromRental
@@ -237,46 +216,7 @@ const discount = computed(() => {
   if (stored > 0) return stored
   return lineItems.value.reduce((sum, item) => sum + Math.max(0, Number(item.discount || 0)), 0)
 })
-const tax = computed(() => Math.max(0, Number(props.rental?.tax || 0)))
-const chargeTotal = computed(() => Number(props.rental?.totalDue || subtotal.value - discount.value + tax.value))
-const balance = computed(() => rentalBalance({
-  totalDue: chargeTotal.value,
-  deposit: depositAmount.value,
-  paid: paidAmount.value,
-}))
-const total = computed(() => balance.value.totalAfterDeposit)
-const outstandingAmount = computed(() => balance.value.outstanding)
-
-const khrBreakdown = computed(() => {
-  const paymentTendered = payments.value.reduce((sum, row) => {
-    if (normalizePaymentCurrency(row.currency) !== 'KHR') return sum
-    const amount = Number(row.tenderedAmount || 0)
-    return sum + (amount > 0 ? amount : 0)
-  }, 0)
-  const draftTendered = Number(props.rental?.tenderedAmount || 0)
-  const paidTendered = paymentTendered > 0 ? paymentTendered : draftTendered
-  const paidCurrency = paymentTendered > 0
-    ? 'KHR'
-    : (props.rental?.paymentCurrency || props.rental?.depositCurrency || currencyCode.value)
-
-  return invoiceKhrAmounts({
-    subtotal: subtotal.value,
-    deposit: depositAmount.value,
-    paid: paidAmount.value,
-    rentalCurrency: currencyCode.value,
-    exchangeRate: invoiceExchangeRate.value,
-    depositTendered: Number(props.rental?.depositTenderedAmount || 0),
-    depositCurrency: String(props.rental?.depositCurrency || props.rental?.paymentCurrency || currencyCode.value),
-    paidTendered,
-    paidCurrency: String(paidCurrency),
-  })
-})
-
-const paidAmountKhr = computed(() => khrBreakdown.value.paidKhr)
-const depositAmountKhr = computed(() => khrBreakdown.value.depositKhr)
-const totalAmountKhr = computed(() => khrBreakdown.value.totalKhr)
-const outstandingAmountKhr = computed(() => khrBreakdown.value.outstandingKhr)
-
+const total = computed(() => Math.max(0, Number((subtotal.value - discount.value).toFixed(2))))
 
 const companyName = 'HollyWing Motor'
 const companyAddress = DEFAULT_ADDRESS
@@ -461,8 +401,8 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
         <p class="mt-1">{{ L.paymentTerms.en }}</p>
       </div>
 
-      <dl class="text-[12px]">
-        <div class="flex justify-between gap-3 py-1">
+      <dl class="border-t border-[#172033] pt-3 text-[12px]">
+        <div v-if="showExchangeRate" class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
             <span class="block font-semibold">{{ L.exchangeRate.km }}</span>
             <span class="block text-[9px] text-slate-500">{{ L.exchangeRate.en }}</span>
@@ -471,40 +411,31 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
         </div>
         <div class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
-            <span class="block font-semibold">{{ L.subtotal.km }}</span>
-            <span class="block text-[9px] text-slate-500">{{ L.subtotal.en }}</span>
+            <span class="block font-semibold">{{ L.rentalFee.km }}</span>
+            <span class="block text-[9px] text-slate-500">{{ L.rentalFee.en }}</span>
           </dt>
-          <dd class="self-center text-right font-medium tabular-nums">{{ moneyBoth(subtotal, khrBreakdown.subtotalKhr) }}</dd>
+          <dd class="self-center text-right font-medium tabular-nums">{{ money(subtotal) }}</dd>
+        </div>
+        <div v-if="discount > 0" class="flex justify-between gap-3 py-1">
+          <dt class="leading-tight">
+            <span class="block font-semibold">{{ L.discount.km }}</span>
+            <span class="block text-[9px] text-slate-500">{{ L.discount.en }}</span>
+          </dt>
+          <dd class="self-center text-right font-medium tabular-nums">-{{ money(discount) }}</dd>
         </div>
         <div class="flex justify-between gap-3 py-1">
           <dt class="leading-tight">
             <span class="block font-semibold">{{ L.deposit.km }}</span>
             <span class="block text-[9px] text-slate-500">{{ L.deposit.en }}</span>
           </dt>
-          <dd class="self-center text-right font-medium tabular-nums">
-            {{ moneyBoth(depositAmount > 0 ? -depositAmount : 0, depositAmount > 0 ? -depositAmountKhr : 0) }}
-          </dd>
+          <dd class="self-center text-right font-medium tabular-nums">{{ money(depositAmount) }}</dd>
         </div>
         <div class="flex justify-between gap-3 border-b border-[#172033] py-2 text-[16px] font-extrabold">
           <dt class="leading-tight">
             <span class="block">{{ L.total.km }}</span>
             <span class="block text-[11px] font-bold uppercase tracking-wide">{{ L.total.en }}</span>
           </dt>
-          <dd class="self-center text-right tabular-nums">{{ moneyBoth(total, totalAmountKhr) }}</dd>
-        </div>
-        <div class="flex justify-between gap-3 py-1">
-          <dt class="leading-tight">
-            <span class="block font-semibold">{{ L.paid.km }}</span>
-            <span class="block text-[9px] text-slate-500">{{ L.paid.en }}</span>
-          </dt>
-          <dd class="self-center text-right font-medium tabular-nums">{{ moneyBoth(paidAmount, paidAmountKhr) }}</dd>
-        </div>
-        <div class="flex justify-between gap-3 py-1">
-          <dt class="leading-tight">
-            <span class="block font-semibold">{{ L.outstanding.km }}</span>
-            <span class="block text-[9px] text-slate-500">{{ L.outstanding.en }}</span>
-          </dt>
-          <dd class="self-center text-right font-medium tabular-nums">{{ moneyBoth(outstandingAmount, outstandingAmountKhr) }}</dd>
+          <dd class="self-center text-right tabular-nums">{{ money(total) }}</dd>
         </div>
       </dl>
     </section>

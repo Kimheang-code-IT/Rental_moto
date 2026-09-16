@@ -3,7 +3,6 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 
 set "IMAGE_TAG=local"
-set "PULL_POLICY=build"
 
 where git >nul 2>&1
 if errorlevel 1 (

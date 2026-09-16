@@ -13,7 +13,6 @@ from app.core.pricing import (
     duration_days,
     line_charge,
     rate_type_for,
-    rental_balance,
     resolve_motorcycle_rates,
 )
 from app.models import (
@@ -126,13 +125,12 @@ def _apply_line_discounts(priced: list[dict], doc_discount) -> list[dict]:
     return built
 
 
-def _apply_rental_header(rental: Rental, customer, built: list[dict], tax_percent, deposit: Decimal | None = None) -> None:
+def _apply_rental_header(rental: Rental, customer, built: list[dict], deposit: Decimal | None = None) -> None:
     first = built[0]
     start_date = min(row["start_date"] for row in built)
     due_date = max(row["due_date"] for row in built)
     duration = duration_days(start_date, due_date)
     rental_charge = money(sum((row["rental_charge"] for row in built), Decimal("0")))
-    tax = money(rental_charge * money(tax_percent) / Decimal("100"))
     rate_types = {rate_type_for(row["days"], row["start_date"], row["due_date"]) for row in built}
     rental.customer_id = customer.id
     rental.customer = customer.full_name
@@ -147,15 +145,8 @@ def _apply_rental_header(rental: Rental, customer, built: list[dict], tax_percen
     rental.rate_amount = money(sum((row["charge"] for row in built), Decimal("0")))
     rental.deposit = money(deposit) if deposit is not None else money(sum((row["deposit"] for row in built), Decimal("0")))
     rental.discount = money(sum((row["discount"] for row in built), Decimal("0")))
-    rental.tax_percent = money(tax_percent)
-    rental.tax = tax
     rental.rental_charge = rental_charge
-    rental.total_due = money(rental_charge + tax + rental.late_fee + rental.additional_charges)
-    _refresh_outstanding(rental)
-
-
-def _refresh_outstanding(rental: Rental) -> None:
-    rental.outstanding = rental_balance(rental.total_due, rental.deposit, rental.paid).outstanding
+    rental.total_due = money(rental_charge + rental.late_fee + rental.additional_charges)
 
 
 def _with_header_deposit(built: list[dict], deposit) -> list[dict]:
@@ -282,27 +273,23 @@ class RentalService:
             currency=request.currency,
             late_fee=Decimal("0.00"),
             additional_charges=Decimal("0.00"),
-            paid=Decimal("0.00"),
             payment_method=initial_payment_method,
-            payment_status=None,
             note=request.note or next((row["note"] for row in built if row["note"]), None),
             created_by=_actor_label(self.actor),
             created_by_user_id=self.actor.id if self.actor else None,
             status="Active",
         )
-        _apply_rental_header(rental, customer, built, Decimal("0"), deposit)
+        _apply_rental_header(rental, customer, built, deposit)
         if rental.deposit > rental.total_due:
             rental.deposit = rental.total_due
             built = _with_header_deposit(built, rental.deposit)
         _apply_deposit_tendered(rental, request)
-        payable = rental_balance(rental.total_due, rental.deposit).total_after_deposit
-        rental.paid = min(paid, payable)
-        _refresh_outstanding(rental)
+        initial_paid = min(money(paid), money(rental.total_due))
         self.session.add(rental)
         await self.session.flush()
         await self._replace_rental_lines(rental, built)
 
-        if rental.paid > 0:
+        if initial_paid > 0:
             payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
             payment_id = await self._next_entity_id("rp", RentalPayment)
             self.session.add(
@@ -310,7 +297,7 @@ class RentalService:
                     id=payment_id,
                     payment_no=payment_no,
                     rental_id=rental.id,
-                    amount=rental.paid,
+                    amount=initial_paid,
                     currency=paid_currency,
                     tendered_amount=paid_tendered,
                     exchange_rate=paid_rate,
@@ -350,7 +337,7 @@ class RentalService:
                     "motorcycle": rental.motorcycle,
                     "plate": rental.plate,
                     "amount": float(rental.total_due),
-                    "paid": float(rental.paid),
+                    "paid": float(initial_paid),
                     "currency": rental.currency,
                     "status": rental.status,
                     "start_date": rental.start_date.isoformat(),
@@ -362,7 +349,7 @@ class RentalService:
         )
         await self.session.commit()
         loaded = await self.rentals.get(rental.id)
-        return [loaded] if loaded is not None else [rental]
+        return [await self._reload_with_payments(loaded or rental)]
 
     async def update_rental(self, rental_id: str, request) -> Rental:
         rental = await self.rentals.for_update(rental_id)
@@ -433,7 +420,7 @@ class RentalService:
         else:
             deposit = money(sum((money(getattr(line, "deposit", 0)) for line in line_inputs), Decimal("0")))
         built = _with_header_deposit(priced, deposit)
-        _apply_rental_header(rental, customer, built, Decimal("0"), deposit)
+        _apply_rental_header(rental, customer, built, deposit)
         if rental.deposit > rental.total_due:
             rental.deposit = rental.total_due
             built = _with_header_deposit(built, rental.deposit)
@@ -471,9 +458,9 @@ class RentalService:
         elif request.payment_method is not None:
             rental.payment_method = normalize_payment_method(request.payment_method)
         else:
-            payable = rental_balance(rental.total_due, rental.deposit).total_after_deposit
-            if rental.paid > payable:
-                await self._sync_rental_paid(rental, payable, rental.payment_method)
+            current_paid = money(sum((row.amount for row in rental.payments), Decimal("0")))
+            if current_paid > money(rental.total_due):
+                await self._sync_rental_paid(rental, rental.total_due, rental.payment_method)
 
         await self.audit.add(
             AuditLog(
@@ -493,7 +480,7 @@ class RentalService:
         )
         await self.session.commit()
         loaded = await self.rentals.get(rental.id)
-        return loaded if loaded is not None else rental
+        return await self._reload_with_payments(loaded or rental)
 
     async def close_rental(self, rental_id: str, request) -> Rental:
         rental = await self.rentals.for_update(rental_id)
@@ -574,11 +561,11 @@ class RentalService:
         rental.condition = request.condition
         rental.return_note = request.return_note
         rental.duration_days = max(duration_days(rental.start_date, return_date), 1)
-        rental.total_due = money(rental.rental_charge + rental.tax + rental.late_fee + rental.additional_charges)
-        payments_sum = sum((p.amount for p in rental.payments), Decimal("0")) + final_payment_amount
-        rental.paid = money(payments_sum)
-        _refresh_outstanding(rental)
-        rental.payment_status = "Paid" if rental.outstanding <= 0 else "Partial"
+        rental.total_due = money(rental.rental_charge + rental.late_fee + rental.additional_charges)
+        payments_sum = money(sum((p.amount for p in rental.payments), Decimal("0")) + final_payment_amount)
+        completed_outstanding = money(
+            max(rental.total_due - rental.deposit - payments_sum, Decimal("0"))
+        )
         rental.status = "Completed"
         rental.completed_at = now
 
@@ -597,7 +584,7 @@ class RentalService:
                 entity_type="rental",
                 entity_id=rental.id,
                 entity_label=rental.rental_no,
-                details={"totalDue": float(rental.total_due), "paid": float(rental.paid), "outstanding": float(rental.outstanding)},
+                details={"totalDue": float(rental.total_due), "paid": float(payments_sum), "outstanding": float(completed_outstanding)},
             )
         )
         self.session.add(
@@ -609,8 +596,8 @@ class RentalService:
                     "motorcycle": rental.motorcycle,
                     "plate": rental.plate,
                     "amount": float(rental.total_due),
-                    "paid": float(rental.paid),
-                    "outstanding": float(rental.outstanding),
+                    "paid": float(payments_sum),
+                    "outstanding": float(completed_outstanding),
                     "currency": rental.currency,
                     "status": "Completed",
                     "start_date": rental.start_date.isoformat(),
@@ -624,7 +611,7 @@ class RentalService:
         )
         await self.session.commit()
         loaded = await self.rentals.get(rental.id)
-        return loaded if loaded is not None else rental
+        return await self._reload_with_payments(loaded or rental)
 
     async def cancel_rental(self, rental_id: str, reason: str | None) -> Rental:
         rental = await self.rentals.for_update(rental_id)
@@ -638,7 +625,6 @@ class RentalService:
         rental.status = "Cancelled"
         rental.cancelled_at = now
         rental.cancel_reason = reason
-        rental.outstanding = Decimal("0.00")
         for moto in motorcycles:
             moto.status = "Available"
 
@@ -754,11 +740,9 @@ class RentalService:
             created_by_user_id=self.actor.id if self.actor else None,
         )
         self.session.add(payment)
-        rental.paid = money(sum((p.amount for p in rental.payments), Decimal("0")) + payment.amount)
-        _refresh_outstanding(rental)
+        payment_total = money(sum((p.amount for p in rental.payments), Decimal("0")) + payment.amount)
+        payment_outstanding = money(max(rental.total_due - rental.deposit - payment_total, Decimal("0")))
         rental.payment_method = payment_method
-        if rental.status == "Completed":
-            rental.payment_status = "Paid" if rental.outstanding <= 0 else "Partial"
         await self.audit.add(
             AuditLog(
                 user_id=self.actor.id if self.actor else None,
@@ -782,8 +766,8 @@ class RentalService:
                     "payment_method": payment.payment_method,
                     "motorcycle": rental.motorcycle,
                     "plate": rental.plate,
-                    "paid": float(rental.paid),
-                    "outstanding": float(rental.outstanding),
+                    "paid": float(payment_total),
+                    "outstanding": float(payment_outstanding),
                     "start_date": rental.start_date.isoformat(),
                     "due_date": rental.due_date.isoformat(),
                     "status": rental.status,
@@ -794,7 +778,7 @@ class RentalService:
         )
         await self.session.commit()
         await self.session.refresh(payment)
-        await self.session.refresh(rental)
+        await self.session.refresh(rental, ["payments"])
         return payment, rental
 
     async def record_charge(self, request) -> tuple[RentalCharge, Rental]:
@@ -820,8 +804,7 @@ class RentalService:
         self.session.add(charge)
         if charge.charge_to_customer == "Yes" and rental.status != "Completed":
             rental.additional_charges = money(rental.additional_charges + charge.amount)
-            rental.total_due = money(rental.rental_charge + rental.tax + rental.late_fee + rental.additional_charges)
-            _refresh_outstanding(rental)
+            rental.total_due = money(rental.rental_charge + rental.late_fee + rental.additional_charges)
         await self.audit.add(
             AuditLog(
                 user_id=self.actor.id if self.actor else None,
@@ -917,8 +900,8 @@ class RentalService:
     ) -> None:
         """Set rental.paid to the requested total and keep rental_payments in sync."""
         now = datetime.now(timezone.utc)
-        payable = rental_balance(rental.total_due, rental.deposit).total_after_deposit
-        target = min(max(money(paid_amount), Decimal("0")), payable)
+        cap = money(rental.total_due)
+        target = min(max(money(paid_amount), Decimal("0")), cap)
         method = normalize_payment_method(payment_method or rental.payment_method or "Cash")
         pay_currency = currency or rental.currency
         pay_rate = normalize_exchange_rate(exchange_rate if exchange_rate is not None else Decimal("1"))
@@ -997,11 +980,15 @@ class RentalService:
                     latest.exchange_rate = pay_rate
                     latest.tendered_amount = pay_tendered
 
-        rental.paid = target
         if target > 0 or payment_method is not None:
             rental.payment_method = method
-        _refresh_outstanding(rental)
-        self.session.expire(rental, ["payments"])
+        await self.session.flush()
+        await self.session.refresh(rental, ["payments"])
+
+    async def _reload_with_payments(self, rental: Rental) -> Rental:
+        """Reload payments so derived paid/outstanding reflect newly written rows."""
+        await self.session.refresh(rental, ["payments"])
+        return rental
 
     async def _next_entity_id(self, prefix: str, model_cls) -> str:
         return await self.sequences.next_value(f"{prefix.upper()}_ID", prefix, 3, None)

@@ -15,15 +15,13 @@ def _to_dict(log) -> dict:
 @router.get("")
 async def list_audit_logs(
     params: ListParams = Depends(),
-    entity_type: str | None = None,
-    action: str | None = None,
     user_id: int | None = None,
     user=Depends(require_permission("admin.audit_logs.view")),
     session: AsyncSession = Depends(get_db_session),
 ) -> dict:
     start, end = parse_date_range(params.start_date, params.end_date)
     rows, total = await AuditRepository(session).list(
-        params.q, params.page, params.limit, entity_type=entity_type, action=action, user_id=user_id, start_date=start, end_date=end
+        params.q, params.page, params.limit, user_id=user_id, start_date=start, end_date=end
     )
     meta = {"page": params.page, "limit": params.limit, "total": total}
     return envelope([_to_dict(log) for log in rows], meta)

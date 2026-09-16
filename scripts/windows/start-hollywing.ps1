@@ -145,8 +145,7 @@ function Start-ComposeStack {
     Write-Log 'Building missing images (first run can take several minutes)...' 'WARN'
     docker compose -f $ComposeFile up -d --build
   } else {
-    # Avoid forced rebuilds from pull_policy: build on every launch.
-    $env:PULL_POLICY = 'missing'
+    # Images are built locally; `up -d` reuses them without a rebuild.
     docker compose -f $ComposeFile up -d
   }
   if ($LASTEXITCODE -ne 0) {

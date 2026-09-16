@@ -3,19 +3,19 @@
 # Local development (build on this machine):
 #   docker compose up -d --build --remove-orphans
 #
-# Production on another host (pull images published to GHCR):
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+# Production on the same host (build locally, no registry login):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
+#
+# All images are built from source on this machine. Nothing is pulled from
+# GitHub or any other registry.
 #
 # Services: frontend, api, db, redis, worker-telegram, telegram-bot
 # Redis DBs: /0 cache, /1 telegram-bot, /2 celery results, /3 celery broker
 
-x-api-build: &api-build
-  image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/api:${IMAGE_TAG:-local}
-  pull_policy: ${PULL_POLICY:-build}
-  build:
-    context: ./backend
-    dockerfile: Dockerfile
+# The API image is shared by `api` and `worker-telegram`. It is built once by
+# the `api` service and reused by the worker to avoid concurrent builds racing
+# on the same tag.
+x-api-image: &api-image hollywing-motor/api:${IMAGE_TAG:-local}
 
 services:
   db:
@@ -25,6 +25,19 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-rental}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rental}
       POSTGRES_DB: ${POSTGRES_DB:-rental_moto}
+    # Tuned for a small (< 5 concurrent users) deployment.
+    command:
+      - postgres
+      - -c
+      - max_connections=50
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -38,7 +51,18 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    # Small-host tuning: AOF only (no RDB), capped memory. volatile-lru keeps
+    # the Celery broker/queue keys (no TTL) safe while letting cache keys expire.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - ""
+      - --maxmemory
+      - 160mb
+      - --maxmemory-policy
+      - volatile-lru
     volumes:
       - redisdata:/data
     ports:
@@ -50,7 +74,10 @@ services:
       retries: 10
 
   api:
-    <<: *api-build
+    image: *api-image
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -88,8 +115,7 @@ services:
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   frontend:
-    image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/frontend:${IMAGE_TAG:-local}
-    pull_policy: ${PULL_POLICY:-build}
+    image: hollywing-motor/frontend:${IMAGE_TAG:-local}
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -111,9 +137,14 @@ services:
       retries: 12
 
   worker-telegram:
-    <<: *api-build
+    image: *api-image
     restart: unless-stopped
-    command: celery -A app.tasks.celery_app worker -Q critical,telegram --concurrency=2 --loglevel=INFO
+    # Set TELEGRAM_WORKER_REPLICAS=0 in `.env` to stop the worker and save RAM.
+    # Outbound Telegram notifications are then queued in Redis (not delivered),
+    # and password-reset codes expire after ~5 minutes. Everything else works.
+    deploy:
+      replicas: ${TELEGRAM_WORKER_REPLICAS:-1}
+    command: celery -A app.tasks.celery_app worker -Q critical,telegram --concurrency=${CELERY_CONCURRENCY:-2} --max-tasks-per-child=${CELERY_MAX_TASKS_PER_CHILD:-50} --loglevel=INFO
     healthcheck:
       test: ["CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping", "--timeout", "15"]
       interval: 30s
@@ -135,8 +166,7 @@ services:
         condition: service_healthy
 
   telegram-bot:
-    image: ${IMAGE_REGISTRY:-ghcr.io/kimheang-code-it/rental_moto}/telegram-bot:${IMAGE_TAG:-local}
-    pull_policy: ${PULL_POLICY:-build}
+    image: hollywing-motor/telegram-bot:${IMAGE_TAG:-local}
     build:
       context: ./backend
       dockerfile: Dockerfile.telegram

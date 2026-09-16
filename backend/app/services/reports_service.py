@@ -198,16 +198,12 @@ class TransactionsReportService:
                 or 0
             )
         )
-        overdue_outstanding = Decimal(
-            str(
-                (
-                    await self.session.execute(
-                        select(func.coalesce(func.sum(Rental.outstanding), 0)).where(Rental.status.in_(["Active", "Overdue"]))
-                    )
-                ).scalar()
-                or 0
+        outstanding_rows = (
+            await self.session.execute(
+                select(Rental).where(Rental.status.in_(["Active", "Overdue"]))
             )
-        )
+        ).scalars().all()
+        overdue_outstanding = sum((rental.outstanding for rental in outstanding_rows), Decimal("0"))
         return {
             "income": float(income),
             "expense": float(expense),

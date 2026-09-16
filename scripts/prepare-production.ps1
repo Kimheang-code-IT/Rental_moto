@@ -60,7 +60,6 @@ Write-Host ""
 Write-Host "Done." -ForegroundColor Green
 Write-Host "Next:"
 Write-Host "  1. Copy .env.production.example -> .env and set strong secrets"
-Write-Host "  2. docker login ghcr.io"
-Write-Host "  3. .\scripts\deploy-from-registry.ps1"
+Write-Host "  2. .\scripts\deploy-local.ps1"
 Write-Host "  4. Follow docs/PRODUCTION_CHECKLIST.md"
 Write-Host "After reset, register the first administrator at /auth/setup (email + password)."

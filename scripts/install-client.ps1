@@ -193,7 +193,6 @@ if (-not (Test-Path -LiteralPath $envFile)) {
 Start-DockerDesktopIfNeeded
 
 $env:IMAGE_TAG = 'local'
-$env:PULL_POLICY = 'build'
 
 Write-Step 'Building and starting Docker stack (this can take several minutes on first run)...'
 docker compose -f docker-compose.yml up -d --build --pull missing

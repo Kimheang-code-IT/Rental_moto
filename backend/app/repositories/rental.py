@@ -10,6 +10,14 @@ from app.models import Motorcycle, Rental, RentalCharge, RentalCustomer, RentalE
 from app.repositories.base import apply_sorting, build_q_filter, paginate
 
 
+_RENTAL_PAID_SUBQUERY = (
+    select(func.coalesce(func.sum(RentalPayment.amount), 0))
+    .where(RentalPayment.rental_id == Rental.id)
+    .correlate(Rental)
+    .scalar_subquery()
+)
+
+
 class MotorcycleRepository:
     SORTABLE = {
         "code": Motorcycle.code,
@@ -174,8 +182,8 @@ class RentalRepository:
         "return_date": Rental.return_date,
         "totalDue": Rental.total_due,
         "total_due": Rental.total_due,
-        "paid": Rental.paid,
-        "outstanding": Rental.outstanding,
+        "paid": _RENTAL_PAID_SUBQUERY,
+        "outstanding": Rental.total_due - Rental.deposit - _RENTAL_PAID_SUBQUERY,
         "status": Rental.status,
         "createdAt": Rental.created_at,
         "created_at": Rental.created_at,
