@@ -14,6 +14,7 @@ import {
   daysBetween,
   detectRatePlan,
   documentTotals,
+  completePaymentTotal,
   applySharedDurationToLines,
   dueDateFromRatePlan,
   latestLineDueDate,
@@ -135,7 +136,7 @@ const depositInRental = computed(() =>
   ),
 )
 const depositHelpText = computed(() => {
-  const base = help('deposit', 'Deposit is recorded for reference only. It does not affect the total.')
+  const base = help('deposit', 'Enter the deposit in the selected payment currency. It is included in the complete total.')
   if (!needsExchangeRate(paymentCurrency.value, currency.value)) return base
   return `${base} ${tx('rental.ui.creditedInRentalCurrency', 'Credited to rental')}: ${formatMoney(depositInRental.value, currency.value)}.`
 })
@@ -306,19 +307,24 @@ const lineComputed = computed(() => lines.value.map(line => {
 
 const totals = computed(() => {
   const base = documentTotals({
-    lineTotals: lineComputed.value.map(row => row.amount),
-    discount: 0,
+    lineTotals: lineComputed.value.map(row => row.gross),
+    discount: lineComputed.value.reduce((sum, row) => sum + row.discount, 0),
     taxPercent: 0,
   })
   if (!isDetail.value || isEditable.value) return base
   const extras = Math.max(0, Number(lateFee.value) || 0) + Math.max(0, Number(additionalCharges.value) || 0)
   return {
     ...base,
+    subtotal: Number((base.subtotal + extras).toFixed(2)),
     total: Number((base.total + extras).toFixed(2)),
   }
 })
 
-const totalDue = computed(() => totals.value.total)
+const totalDue = computed(() => completePaymentTotal(
+  totals.value.subtotal,
+  depositInRental.value,
+  totals.value.discount,
+))
 
 const rentalSiblingIds = computed(() => store.list('rentals').map(row => String(row.id)))
 const rentalSiblingIndex = computed(() => rentalSiblingIds.value.indexOf(String(props.rentalId || '')))
@@ -810,11 +816,11 @@ function buildInvoicePayload(): Record<string, unknown> | null {
     rentalCharge: first?.amount || totals.value.subtotal,
     lateFee: 0,
     additionalCharges: 0,
-    totalDue: totals.value.total,
+    totalDue: totalDue.value,
     paid: isDetail.value ? existingPaid.value : paidAmount.value,
     outstanding: Math.max(
       0,
-      Number((totals.value.total - depositInRental.value - (isDetail.value ? existingPaid.value : paidAmount.value)).toFixed(2)),
+      Number((totalDue.value - depositInRental.value - (isDetail.value ? existingPaid.value : paidAmount.value)).toFixed(2)),
     ),
     paymentMethod: paymentMethod.value,
     status: 'Draft',
@@ -885,7 +891,7 @@ async function createRental() {
   const ok = await confirm({
     kind: 'submit',
     title: tx('rental.ui.confirmCreate', 'Create this rental?'),
-    description: `${selectedCustomer.value.fullName} · ${validLines.length} ${tx('rental.ui.motorcycles', 'motorcycles')} · ${tx('rental.ui.total', 'Total')}: ${formatMoney(totals.value.total, currency.value || preferences.currency)}`,
+    description: `${selectedCustomer.value.fullName} · ${validLines.length} ${tx('rental.ui.motorcycles', 'motorcycles')} · ${tx('rental.ui.total', 'Total')}: ${formatMoney(totalDue.value, currency.value || preferences.currency)}`,
     confirmLabel: tx('rental.ui.createRental', 'Create Rental'),
   })
   if (!ok) return
@@ -1000,6 +1006,11 @@ const toDisplay = (value: unknown) =>
   fromRentalCurrencyAmount(Number(value) || 0, displayCurrency.value, currency.value, exchangeRate.value)
 const rentalMoney = (value: unknown) => formatMoney(value, currency.value || preferences.currency)
 const paymentMoney = (value: unknown) => formatMoney(value, displayCurrency.value)
+const paymentTotal = computed(() => completePaymentTotal(
+  toDisplay(totals.value.subtotal),
+  deposit.value,
+  toDisplay(totals.value.discount),
+))
 </script>
 
 <template>
@@ -1225,6 +1236,16 @@ const paymentMoney = (value: unknown) => formatMoney(value, displayCurrency.valu
                   </span>
                 </div>
 
+                <div v-if="totals.discount > 0" class="flex items-center justify-between gap-4 px-3 text-sm">
+                  <span class="text-muted">{{ tx('rental.ui.discount', 'Discount') }}</span>
+                  <span class="text-right font-medium tabular-nums">
+                    <span class="block">-{{ rentalMoney(totals.discount) }}</span>
+                    <span v-if="showExchangeRate" class="block text-xs text-muted">
+                      -{{ paymentMoney(toDisplay(totals.discount)) }}
+                    </span>
+                  </span>
+                </div>
+
                 <UFormField
                   :label="tx('rental.ui.paymentMethod', 'Payment Method')"
                 >
@@ -1266,7 +1287,7 @@ const paymentMoney = (value: unknown) => formatMoney(value, displayCurrency.valu
                   <span class="text-right font-semibold tabular-nums">
                     <span class="block">{{ rentalMoney(totalDue) }}</span>
                     <span v-if="showExchangeRate" class="block text-xs font-medium text-muted">
-                      {{ paymentMoney(toDisplay(totalDue)) }}
+                      {{ paymentMoney(paymentTotal) }}
                     </span>
                   </span>
                 </div>

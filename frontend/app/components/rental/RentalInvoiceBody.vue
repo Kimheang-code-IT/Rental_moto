@@ -3,6 +3,7 @@ import { formatMoney } from '~/composables/module/useModule'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { formatInvoiceDateTime } from '~/utils/format/format-service'
 import { isSecurityDepositPayment } from '~/utils/rental/payments'
+import { completePaymentTotal } from '~/utils/rental/pricing'
 import {
   DEFAULT_USD_KHR_RATE,
   fromRentalCurrencyAmount,
@@ -48,8 +49,8 @@ const L = {
   total: { km: 'សរុប', en: 'Total' },
   terms: { km: 'លក្ខខណ្ឌ', en: 'Terms & Conditions' },
   paymentTerms: {
-    km: 'ត្រូវបង់ប្រាក់តាមកិច្ចសន្យាជួល។ ប្រាក់កក់ត្រូវបានកត់ត្រាសម្រាប់ជាឯកសារយោង មិនរាប់បញ្ចូលក្នុងសរុបទេ។',
-    en: 'Payment is due according to the rental agreement. The deposit is recorded for reference and is not included in the total.',
+    km: 'ត្រូវបង់ប្រាក់តាមកិច្ចសន្យាជួល។ សរុបគឺ ថ្លៃជួល បូកប្រាក់កក់ ដកបញ្ចុះតម្លៃ។',
+    en: 'Payment is due according to the rental agreement. Total equals rental fee plus deposit minus discount.',
   },
   noItems: { km: 'មិនមានធាតុវិក្កយបត្រ', en: 'No invoice items' },
   thankYou: { km: 'អរគុណដែលបានជ្រើសរើស', en: 'Thank you for choosing' },
@@ -262,7 +263,15 @@ const discount = computed(() => {
   if (stored > 0) return stored
   return lineItems.value.reduce((sum, item) => sum + Math.max(0, Number(item.discount || 0)), 0)
 })
-const total = computed(() => Math.max(0, Number((subtotal.value - discount.value).toFixed(2))))
+const depositForTotal = computed(() => {
+  if (depositCurrency.value === displayCurrency.value) return depositDisplay.value
+  return toDisplay(depositAmount.value)
+})
+const totalDisplay = computed(() => completePaymentTotal(
+  toDisplay(subtotal.value),
+  depositForTotal.value,
+  toDisplay(discount.value),
+))
 
 const companyName = 'HollyWing Motor'
 const companyAddress = DEFAULT_ADDRESS
@@ -481,7 +490,7 @@ const companyContact = [companyPhone, companyEmail].filter(Boolean).join(' · ')
             <span class="block">{{ L.total.km }}</span>
             <span class="block text-[11px] font-bold uppercase tracking-wide">{{ L.total.en }}</span>
           </dt>
-          <dd class="self-center text-right tabular-nums">{{ money(toDisplay(total)) }}</dd>
+          <dd class="self-center text-right tabular-nums">{{ money(totalDisplay) }}</dd>
         </div>
       </dl>
     </section>

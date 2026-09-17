@@ -4,6 +4,7 @@ import {
   appliedUnitPrice,
   applySharedDurationToLines,
   calendarMonthsBetween,
+  completePaymentTotal,
   detectRatePlan,
   dueDateFromRatePlan,
   latestLineDueDate,
@@ -142,6 +143,16 @@ describe('rentalBalance', () => {
       totalAfterDeposit: 10,
       outstanding: 10,
     })
+  })
+})
+
+describe('completePaymentTotal', () => {
+  it('adds the deposit and subtracts the discount from the rental fee', () => {
+    expect(completePaymentTotal(100, 25, 10)).toBe(115)
+  })
+
+  it('never returns a negative customer total', () => {
+    expect(completePaymentTotal(10, 0, 20)).toBe(0)
   })
 })
 

@@ -1039,7 +1039,7 @@
       "startDate": "Rental start date and time. Defaults to now.",
       "dueDate": "Latest motorcycle return. Each bike keeps its own package and days. Edit this date only if you want every motorcycle to use the same duration. 1 month uses the same calendar day next month.",
       "depositDate": "Date the deposit was received.",
-      "deposit": "Enter deposit in the selected payment currency. Recorded for reference only and does not affect the total.",
+      "deposit": "Enter deposit in the selected payment currency. It is included in the complete total.",
       "maintenanceDescription": "What work is being done on this motorcycle.",
       "maintenanceAmount": "Maintenance cost recorded as an expense.",
       "lines": "Select model, then plate. Each motorcycle has its own rate package and days. Amount uses that motorcycle package rate minus any line discount.",

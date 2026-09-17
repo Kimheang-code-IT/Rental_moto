@@ -90,6 +90,7 @@ export function roundCurrencyAmount(amount: unknown, currency: unknown): number 
 export function invoiceKhrAmounts(input: {
   subtotal: number
   deposit: number
+  discount?: number
   paid: number
   rentalCurrency?: string
   exchangeRate?: number
@@ -100,6 +101,7 @@ export function invoiceKhrAmounts(input: {
 }): {
   subtotalKhr: number
   depositKhr: number
+  discountKhr: number
   totalKhr: number
   paidKhr: number
   outstandingKhr: number
@@ -113,6 +115,7 @@ export function invoiceKhrAmounts(input: {
   const depositKhr = depositCurrency === 'KHR' && depositTendered > 0
     ? Math.round(depositTendered)
     : fromRentalCurrencyAmount(input.deposit, 'KHR', rentalCurrency, rate)
+  const discountKhr = fromRentalCurrencyAmount(input.discount || 0, 'KHR', rentalCurrency, rate)
 
   const paidCurrency = normalizePaymentCurrency(input.paidCurrency || rentalCurrency)
   const paidTendered = Number(input.paidTendered || 0)
@@ -120,8 +123,7 @@ export function invoiceKhrAmounts(input: {
     ? Math.round(paidTendered)
     : fromRentalCurrencyAmount(input.paid, 'KHR', rentalCurrency, rate)
 
-  // A security deposit is held separately and never reduces the rental total.
-  const totalKhr = subtotalKhr
+  const totalKhr = Math.max(0, subtotalKhr + depositKhr - discountKhr)
   const outstandingKhr = Math.max(0, totalKhr - paidKhr)
-  return { subtotalKhr, depositKhr, totalKhr, paidKhr, outstandingKhr }
+  return { subtotalKhr, depositKhr, discountKhr, totalKhr, paidKhr, outstandingKhr }
 }

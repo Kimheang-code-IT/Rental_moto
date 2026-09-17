@@ -60,6 +60,7 @@ describe('rental fx', () => {
     const amounts = invoiceKhrAmounts({
       subtotal: 10,
       deposit: 2.44,
+      discount: 1,
       paid: 4.88,
       rentalCurrency: 'USD',
       exchangeRate: 4100,
@@ -70,8 +71,9 @@ describe('rental fx', () => {
     })
     expect(amounts.subtotalKhr).toBe(41000)
     expect(amounts.depositKhr).toBe(10000)
+    expect(amounts.discountKhr).toBe(4100)
     expect(amounts.paidKhr).toBe(20000)
-    expect(amounts.totalKhr).toBe(41000)
-    expect(amounts.outstandingKhr).toBe(21000)
+    expect(amounts.totalKhr).toBe(46900)
+    expect(amounts.outstandingKhr).toBe(26900)
   })
 })

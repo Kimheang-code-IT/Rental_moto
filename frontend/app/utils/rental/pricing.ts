@@ -244,6 +244,18 @@ export function documentTotals(input: {
   }
 }
 
+/** Complete amount shown to the customer: rental fee + deposit - discount. */
+export function completePaymentTotal(
+  rentalFee: number,
+  deposit: number = 0,
+  discount: number = 0,
+): number {
+  const fee = Math.max(0, Number(rentalFee) || 0)
+  const heldDeposit = Math.max(0, Number(deposit) || 0)
+  const appliedDiscount = Math.max(0, Number(discount) || 0)
+  return round2(Math.max(fee + heldDeposit - appliedDiscount, 0))
+}
+
 /** Rental balance excludes the separately held security deposit. */
 export function rentalBalance(input: {
   totalDue: number
