@@ -19,7 +19,7 @@ from app.repositories.admin import (
 )
 from app.repositories.rental import CustomerRepository, ExpenseRepository, MotorcycleRepository, PaymentRepository, RentalRepository
 
-DASHBOARD_CACHE_PREFIX = "dashboard:v1:"
+DASHBOARD_CACHE_PREFIX = "dashboard:v2:"
 SETTINGS_CACHE_PREFIX = "settings:v1:"
 
 
@@ -672,4 +672,3 @@ def default_document_sequences() -> list[dict]:
         {"document_type": "CUSTOMER", "prefix": "CUS", "padding_length": 3},
         {"document_type": "MOTORCYCLE", "prefix": "MC", "padding_length": 3},
     ]
-

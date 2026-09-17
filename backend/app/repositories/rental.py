@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Select, case, exists, func, or_, select, update
+from sqlalchemy import Select, exists, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,15 +16,6 @@ _RENTAL_PAID_SUBQUERY = (
     .correlate(Rental)
     .scalar_subquery()
 )
-
-_RENTAL_DEPOSIT_APPLIED = case(
-    (
-        Rental.status == "Completed",
-        func.greatest(Rental.deposit - Rental.deposit_refund, 0),
-    ),
-    else_=0,
-)
-
 
 class MotorcycleRepository:
     SORTABLE = {
@@ -191,7 +182,7 @@ class RentalRepository:
         "totalDue": Rental.total_due,
         "total_due": Rental.total_due,
         "paid": _RENTAL_PAID_SUBQUERY,
-        "outstanding": Rental.total_due - _RENTAL_DEPOSIT_APPLIED - _RENTAL_PAID_SUBQUERY,
+        "outstanding": Rental.total_due - _RENTAL_PAID_SUBQUERY,
         "status": Rental.status,
         "createdAt": Rental.created_at,
         "created_at": Rental.created_at,

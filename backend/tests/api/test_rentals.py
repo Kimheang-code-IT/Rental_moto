@@ -199,7 +199,22 @@ async def test_close_rental_refunds_deposit_after_charges(client, admin_headers)
     assert data["status"] == "Completed"
     assert data["depositRefund"] == "15.00"
     assert data["totalDue"] == "32.00"
+    assert data["paid"] == "32.00"
     assert data["outstanding"] == "0.00"
+
+    payments = await client.get(
+        "/api/v2/payments",
+        headers=admin_headers,
+        params={"rentalId": rental["id"]},
+    )
+    assert payments.status_code == 200, payments.text
+    deposit_income = [
+        row for row in payments.json()["data"]
+        if row["paymentMethod"] == "Security Deposit"
+    ]
+    assert len(deposit_income) == 1
+    assert deposit_income[0]["amount"] == "5.00"
+    assert deposit_income[0]["note"] == "Security deposit applied to return charges"
 
 
 async def test_close_rental_refund_is_capped_at_deposit(client, admin_headers):
@@ -544,5 +559,4 @@ async def test_rental_update_persists_currency(client, admin_headers):
     fetched = await client.get(f"/api/v2/rentals/{rental['id']}", headers=admin_headers)
     assert fetched.status_code == 200, fetched.text
     assert fetched.json()["data"]["currency"] == "KHR"
-
 

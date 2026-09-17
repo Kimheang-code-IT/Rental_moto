@@ -562,9 +562,35 @@ class RentalService:
         deposit_applied = deposit_settlement.applied_to_charges
         deposit_refund = deposit_settlement.refund_to_customer
         rental.deposit_refund = deposit_refund
-        payments_sum = money(sum((p.amount for p in rental.payments), Decimal("0")) + final_payment_amount)
+        # A refundable security deposit is not revenue.  At close, only the
+        # portion retained for return charges becomes recognized income.
+        if deposit_applied > 0:
+            deposit_payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
+            deposit_payment_id = await self._next_entity_id("rp", RentalPayment)
+            self.session.add(
+                RentalPayment(
+                    id=deposit_payment_id,
+                    payment_no=deposit_payment_no,
+                    rental_id=rental.id,
+                    amount=deposit_applied,
+                    currency=rental.currency,
+                    tendered_amount=deposit_applied,
+                    exchange_rate=Decimal("1.0000"),
+                    payment_method="Security Deposit",
+                    paid_at=now,
+                    reference=rental.rental_no,
+                    note="Security deposit applied to return charges",
+                    created_by=_actor_label(self.actor),
+                    created_by_user_id=self.actor.id if self.actor else None,
+                )
+            )
+        payments_sum = money(
+            sum((p.amount for p in rental.payments), Decimal("0"))
+            + final_payment_amount
+            + deposit_applied
+        )
         completed_outstanding = money(
-            max(rental.total_due - deposit_applied - payments_sum, Decimal("0"))
+            max(rental.total_due - payments_sum, Decimal("0"))
         )
         rental.status = "Completed"
         rental.completed_at = now

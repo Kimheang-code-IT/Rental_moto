@@ -90,14 +90,9 @@ class Rental(Base, TimestampMixin):
 
     @property
     def outstanding(self) -> Decimal:
-        """Remaining rent/charges; security deposit applies only after return."""
+        """Remaining rent/charges after all recognized payment income."""
         due = max(money(self.total_due), Decimal("0"))
-        deposit_applied = (
-            max(money(self.deposit) - money(self.deposit_refund), Decimal("0"))
-            if self.status == "Completed"
-            else Decimal("0")
-        )
-        return money(max(due - deposit_applied - self.paid, Decimal("0")))
+        return money(max(due - self.paid, Decimal("0")))
 
     @property
     def payment_status(self) -> str | None:
@@ -189,4 +184,3 @@ class RentalExpense(Base, TimestampMixin):
     currency: Mapped[str] = mapped_column(String(8), default="USD", nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
