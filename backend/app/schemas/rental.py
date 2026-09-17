@@ -77,6 +77,7 @@ class RentalUpdateRequest(CamelModel):
     exchange_rate: Decimal | None = None
     tendered_amount: Decimal | None = None
     deposit_tendered_amount: Decimal | None = None
+    sync_rental_payment: bool = False
     note: str | None = None
     lines: list[RentalLineInput] | None = None
 

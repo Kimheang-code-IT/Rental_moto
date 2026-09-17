@@ -21,4 +21,18 @@ describe('latestRentalPaymentMethods', () => {
 
     expect(methods.size).toBe(0)
   })
+
+  it('does not replace the customer payment method with retained deposit income', () => {
+    const methods = latestRentalPaymentMethods([
+      { rentalId: 'rental-1', paymentMethod: 'Bank Transfer', paidAt: '2026-08-01T09:00' },
+      {
+        rentalId: 'rental-1',
+        paymentMethod: 'Security Deposit',
+        note: 'Security deposit applied to return charges',
+        paidAt: '2026-08-03T09:00',
+      },
+    ])
+
+    expect(methods.get('rental-1')).toBe('Bank Transfer')
+  })
 })

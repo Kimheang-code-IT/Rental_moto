@@ -101,6 +101,7 @@ export interface RentalUpdateInput {
   exchangeRate?: number
   tenderedAmount?: number
   depositTenderedAmount?: number
+  syncRentalPayment?: boolean
   note?: string | null
   lines?: RentalLineInput[]
 }

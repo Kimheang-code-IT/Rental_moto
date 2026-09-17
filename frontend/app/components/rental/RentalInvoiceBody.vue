@@ -2,6 +2,7 @@
 import { formatMoney } from '~/composables/module/useModule'
 import { useAppLocalization } from '~/composables/settings/useAppLocalization'
 import { formatInvoiceDateTime } from '~/utils/format/format-service'
+import { isSecurityDepositPayment } from '~/utils/rental/payments'
 import {
   DEFAULT_USD_KHR_RATE,
   fromRentalCurrencyAmount,
@@ -116,7 +117,10 @@ function dateTime(value: unknown) {
 }
 
 const paymentMethod = computed(() => {
-  const methods = [...new Set(payments.value.map(row => String(row.paymentMethod || '')).filter(Boolean))]
+  const methods = [...new Set(payments.value
+    .filter(row => !isSecurityDepositPayment(row))
+    .map(row => String(row.paymentMethod || ''))
+    .filter(Boolean))]
   return methods.join(', ') || String(props.rental?.paymentMethod || '—')
 })
 

@@ -290,16 +290,42 @@ async def test_rental_update_active(client, admin_headers):
     created = await client.post("/api/v2/rentals", headers=admin_headers, json=_rental_payload(moto, customer))
     rental = created.json()["data"][0]
 
-    new_due = datetime.now(timezone.utc) + timedelta(days=7)
+    rental_start = datetime.fromisoformat(rental["startDate"].replace("Z", "+00:00"))
+    new_due = rental_start + timedelta(days=7)
     updated = await client.put(
         f"/api/v2/rentals/{rental['id']}",
         headers=admin_headers,
-        json={"dueDate": new_due.isoformat(), "discount": 2},
+        json={
+            "dueDate": new_due.isoformat(),
+            "discount": 2,
+            "paymentMethod": "Bank Transfer",
+            "paymentCurrency": "KHR",
+            "exchangeRate": 4100,
+            "syncRentalPayment": True,
+        },
     )
     assert updated.status_code == 200, updated.text
     data = updated.json()["data"]
     assert data["discount"] == "2.00"
     assert data["durationDays"] == 7
+    assert data["rentalCharge"] == "58.00"
+    assert data["paid"] == "58.00"
+    assert data["outstanding"] == "0.00"
+
+    payments = await client.get(
+        "/api/v2/payments",
+        headers=admin_headers,
+        params={"rentalId": rental["id"]},
+    )
+    assert payments.status_code == 200, payments.text
+    rows = payments.json()["data"]
+    assert len(rows) == 1
+    assert rows[0]["amount"] == "58.00"
+    assert rows[0]["paymentMethod"] == "Bank Transfer"
+    assert rows[0]["currency"] == "KHR"
+    assert rows[0]["tenderedAmount"] == "237800.00"
+    assert rows[0]["exchangeRate"] == "4100.0000"
+    assert rows[0]["note"] == "Full payment"
 
 
 async def test_rental_update_paid_amount(client, admin_headers):
@@ -559,4 +585,3 @@ async def test_rental_update_persists_currency(client, admin_headers):
     fetched = await client.get(f"/api/v2/rentals/{rental['id']}", headers=admin_headers)
     assert fetched.status_code == 200, fetched.text
     assert fetched.json()["data"]["currency"] == "KHR"
-

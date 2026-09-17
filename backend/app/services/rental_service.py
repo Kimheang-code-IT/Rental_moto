@@ -432,7 +432,15 @@ class RentalService:
         if rental.status == "Overdue" and rental.due_date > datetime.now(timezone.utc):
             rental.status = "Active"
 
-        if request.paid_amount is not None:
+        if request.sync_rental_payment:
+            await self._sync_rental_base_payment(
+                rental,
+                rental.rental_charge,
+                request.payment_method,
+                currency=getattr(request, "payment_currency", None),
+                exchange_rate=getattr(request, "exchange_rate", None),
+            )
+        elif request.paid_amount is not None:
             paid_credit, paid_tendered, paid_rate, paid_currency = resolve_payment_money(
                 rental_currency=rental.currency,
                 payment_currency=getattr(request, "payment_currency", None) or rental.currency,
@@ -1011,6 +1019,75 @@ class RentalService:
             rental.payment_method = method
         await self.session.flush()
         await self.session.refresh(rental, ["payments"])
+
+    async def _sync_rental_base_payment(
+        self,
+        rental: Rental,
+        amount,
+        payment_method: str | None = None,
+        *,
+        currency: str | None = None,
+        exchange_rate=None,
+    ) -> None:
+        """Keep one system-generated rental-fee income row in sync.
+
+        Manual payments, return payments, and retained security deposits are
+        separate accounting events and are never rewritten here.
+        """
+        managed_notes = {"Full payment", "Payment update", "Initial payment"}
+        managed = sorted(
+            [row for row in (rental.payments or []) if row.note in managed_notes],
+            key=lambda row: (row.paid_at, row.id),
+        )
+        target = max(money(amount), Decimal("0.00"))
+        method = normalize_payment_method(payment_method or rental.payment_method or "Cash")
+        existing = managed[0] if managed else None
+        pay_currency = currency or (existing.currency if existing else rental.currency)
+        _, pay_tendered, pay_rate, pay_currency = resolve_payment_money(
+            rental_currency=rental.currency,
+            payment_currency=pay_currency,
+            amount=target,
+            exchange_rate=exchange_rate if exchange_rate is not None else (
+                existing.exchange_rate if existing else None
+            ),
+        )
+        rental.payment_method = method
+
+        if target <= 0:
+            for row in managed:
+                await self.session.delete(row)
+            return
+
+        if managed:
+            primary = managed[0]
+            primary.amount = target
+            primary.currency = pay_currency
+            primary.tendered_amount = pay_tendered
+            primary.exchange_rate = pay_rate
+            primary.payment_method = method
+            primary.note = "Full payment"
+            for duplicate in managed[1:]:
+                await self.session.delete(duplicate)
+            return
+
+        payment_no = await self.sequences.next_value("PAYMENT", "RNP-", 6, None)
+        payment_id = await self._next_entity_id("rp", RentalPayment)
+        self.session.add(
+            RentalPayment(
+                id=payment_id,
+                payment_no=payment_no,
+                rental_id=rental.id,
+                amount=target,
+                currency=pay_currency,
+                tendered_amount=pay_tendered,
+                exchange_rate=pay_rate,
+                payment_method=method,
+                paid_at=datetime.now(timezone.utc),
+                note="Full payment",
+                created_by=_actor_label(self.actor),
+                created_by_user_id=self.actor.id if self.actor else None,
+            )
+        )
 
     async def _reload_with_payments(self, rental: Rental) -> Rental:
         """Reload payments so derived paid/outstanding reflect newly written rows."""

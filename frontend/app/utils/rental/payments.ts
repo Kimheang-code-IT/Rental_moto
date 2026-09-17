@@ -1,7 +1,13 @@
+export function isSecurityDepositPayment(payment: Record<string, unknown>) {
+  return String(payment.paymentMethod || '') === 'Security Deposit'
+    || String(payment.note || '') === 'Security deposit applied to return charges'
+}
+
 /** Resolve the most recent recorded payment method for each rental. */
 export function latestRentalPaymentMethods(payments: Array<Record<string, unknown>>) {
   const latest = new Map<string, { method: string, paidAt: string }>()
   for (const payment of payments) {
+    if (isSecurityDepositPayment(payment)) continue
     const rentalId = String(payment.rentalId || '')
     const method = String(payment.paymentMethod || '')
     const paidAt = String(payment.paidAt || '')

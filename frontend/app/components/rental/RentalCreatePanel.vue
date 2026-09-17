@@ -958,6 +958,7 @@ async function updateRental() {
       paymentCurrency: paymentCurrency.value,
       exchangeRate: exchangeRate.value,
       depositTenderedAmount: deposit.value,
+      syncRentalPayment: true,
       note: null,
       lines: validLines.map((row, index) => ({
         motorcycleId: String(row.line.motorcycleId),
