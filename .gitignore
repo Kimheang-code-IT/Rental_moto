@@ -1,44 +1,43 @@
-# Nuxt dev/build outputs
-.output
-.nuxt
-.nitro
-.cache
-.data
-dist
+# Repository root
 .env
 .env.*
 !.env.example
+!.env.production.example
+.production-credentials.txt
 
-# Node dependencies
-node_modules
-# Commit lockfile to ensure same dependencies across dev envs
-# pnpm-lock.yaml
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# Python / backend caches
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.ruff_cache/
+**/htmlcov/
+**/.coverage
+**/.mypy_cache/
 
-# IDE/Tools
-.history
-.vscode/*
-!.vscode/extensions.json
-!.vscode/launch.json
-!.vscode/settings.json
-.idea
-.fleet
-.DS_Store
-Thumbs.db
+# Frontend / Node
+**/node_modules/
+**/.nuxt/
+**/.output/
+**/.nitro/
+**/.cache/
+**/dist/
+**/.pnpm-store/
 
-# Logs (runtime/output only — do not ignore app page folders)
-/logs
+# Local scratch / tooling
+tmp/
+.temp/
+.ruff_cache/
+.pytest_cache/
 *.log
 
-# Misc
-*.swp
-*.local
-coverage/
-.temp
-.pnpm-store
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
 
-.vercel
-
+# Docker / data volumes (never commit)
+data/
+*.sql.gz

@@ -1,0 +1,99 @@
+# Production overlay for HollyWing Motor — single small host, under 5 users.
+#
+# Images are built locally from this repository. No GitHub / registry login and
+# no `pull` step are required. Keep `IMAGE_TAG` empty (defaults to `local`) or
+# set it to a short label such as the current git SHA to tell builds apart.
+#
+# First-time setup on the host:
+#   1. Copy `.env.production.example` to `.env` and fill real secrets
+#   2. docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
+#
+# Updating after code changes:
+#   git pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
+#
+# Differences from development:
+# - ENVIRONMENT=production, DEBUG=false
+# - CORS private-network helper disabled
+# - Database / Redis ports are not published to the host
+# - API port is not published (nginx proxies `/api` and `/health`)
+# - Container CPU/memory limits tuned for a ~2 GB host (see below)
+#
+# Resource profile (worst-case limits, ~1.5 GB total). Override any value in `.env`:
+#   db            DB_MEMORY=512M     DB_CPUS=1.0
+#   redis         REDIS_MEMORY=192M  REDIS_CPUS=0.5
+#   api           API_MEMORY=640M    API_CPUS=1.0
+#   worker        WORKER_MEMORY=384M WORKER_CPUS=0.5
+#   telegram-bot  BOT_MEMORY=192M    BOT_CPUS=0.25
+#   frontend      FRONTEND_MEMORY=128M FRONTEND_CPUS=0.25
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    ports: !reset []
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${DB_CPUS:-1.0}"
+          memory: ${DB_MEMORY:-512M}
+
+  redis:
+    ports: !reset []
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${REDIS_CPUS:-0.5}"
+          memory: ${REDIS_MEMORY:-192M}
+
+  api:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      CORS_ALLOW_PRIVATE_NETWORKS: ${CORS_ALLOW_PRIVATE_NETWORKS:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports: !reset []
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS:-1.0}"
+          memory: ${API_MEMORY:-640M}
+
+  frontend:
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${FRONTEND_CPUS:-0.25}"
+          memory: ${FRONTEND_MEMORY:-128M}
+
+  worker-telegram:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPUS:-0.5}"
+          memory: ${WORKER_MEMORY:-384M}
+
+  telegram-bot:
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${BOT_CPUS:-0.25}"
+          memory: ${BOT_MEMORY:-192M}

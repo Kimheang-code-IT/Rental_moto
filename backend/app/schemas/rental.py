@@ -1,0 +1,248 @@
+from datetime import datetime
+from decimal import Decimal
+
+from pydantic import Field
+
+from app.schemas.common import CamelModel
+
+
+class RentalLineInput(CamelModel):
+    motorcycle_id: str
+    start_date: datetime
+    due_date: datetime
+    rate_amount: Decimal | None = Field(default=None, gt=0)
+    deposit: Decimal = Decimal("0")
+    discount: Decimal = Decimal("0")
+    note: str | None = None
+
+
+class RentalCreateRequest(CamelModel):
+    customer_id: str
+    lines: list[RentalLineInput] = Field(min_length=1)
+    discount: Decimal = Decimal("0")  # Ignored; document/extra discount is not used.
+    paid_amount: Decimal = Decimal("0")
+    payment_method: str | None = Field(default=None, max_length=40)
+    currency: str = "USD"
+    payment_currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
+    deposit_tendered_amount: Decimal | None = None
+    note: str | None = None
+
+
+class CloseChargeInput(CamelModel):
+    charge_type: str = Field(default="Other", min_length=1, max_length=40)
+    description: str | None = None
+    amount: Decimal = Field(ge=0)
+    charge_to_customer: str = "Yes"
+
+
+class FinalPaymentInput(CamelModel):
+    amount: Decimal = Field(ge=0)
+    payment_method: str = Field(default="Cash", min_length=1, max_length=40)
+    currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
+    reference: str | None = None
+    note: str | None = None
+    paid_at: datetime | None = None
+
+
+class RentalCloseRequest(CamelModel):
+    return_date: datetime | None = None
+    condition: str | None = None
+    return_note: str | None = None
+    late_fee: Decimal = Decimal("0")
+    deposit_refund: Decimal = Decimal("0")
+    charges: list[CloseChargeInput] = []
+    final_payment: FinalPaymentInput | None = None
+    motorcycle_status: str | None = None
+
+
+class RentalCancelRequest(CamelModel):
+    reason: str | None = None
+
+
+class RentalUpdateRequest(CamelModel):
+    customer_id: str | None = None
+    motorcycle_id: str | None = None
+    start_date: datetime | None = None
+    due_date: datetime | None = None
+    deposit: Decimal | None = None
+    discount: Decimal | None = None  # Ignored; document/extra discount is not used.
+    paid_amount: Decimal | None = None
+    payment_method: str | None = Field(default=None, max_length=40)
+    currency: str | None = None
+    payment_currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
+    deposit_tendered_amount: Decimal | None = None
+    sync_rental_payment: bool = False
+    note: str | None = None
+    lines: list[RentalLineInput] | None = None
+
+
+class PaymentRecordRequest(CamelModel):
+    rental_id: str
+    amount: Decimal = Field(gt=0)
+    payment_method: str = Field(default="Cash", min_length=1, max_length=40)
+    currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
+    paid_at: datetime | None = None
+    reference: str | None = None
+    note: str | None = None
+
+
+class PaymentUpdateRequest(CamelModel):
+    amount: Decimal | None = None
+    payment_method: str | None = Field(default=None, min_length=1, max_length=40)
+    currency: str | None = None
+    exchange_rate: Decimal | None = None
+    tendered_amount: Decimal | None = None
+    paid_at: datetime | None = None
+    reference: str | None = None
+    note: str | None = None
+
+
+class ChargeRecordRequest(CamelModel):
+    rental_id: str
+    charge_type: str = Field(default="Other", min_length=1, max_length=40)
+    description: str | None = None
+    amount: Decimal = Field(gt=0)
+    charge_to_customer: str = "Yes"
+
+
+class ChargeUpdateRequest(CamelModel):
+    charge_type: str | None = Field(default=None, min_length=1, max_length=40)
+    description: str | None = None
+    amount: Decimal | None = None
+    charge_to_customer: str | None = None
+
+
+class ExpenseRecordRequest(CamelModel):
+    date: datetime
+    expense_type: str = Field(default="Other", min_length=1, max_length=40)
+    description: str | None = None
+    amount: Decimal = Field(gt=0)
+    currency: str = "USD"
+
+
+class ExpenseUpdateRequest(CamelModel):
+    date: datetime | None = None
+    expense_type: str | None = Field(default=None, min_length=1, max_length=40)
+    description: str | None = None
+    amount: Decimal | None = None
+    currency: str | None = None
+
+
+class PaymentResponse(CamelModel):
+    id: str
+    payment_no: str
+    rental_id: str
+    rental_no: str | None = None
+    customer: str | None = None
+    amount: Decimal
+    currency: str
+    tendered_amount: Decimal | None = None
+    exchange_rate: Decimal = Decimal("1")
+    payment_method: str
+    paid_at: datetime
+    reference: str | None = None
+    note: str | None = None
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChargeResponse(CamelModel):
+    id: str
+    charge_no: str
+    rental_id: str
+    rental_no: str | None = None
+    customer: str | None = None
+    charge_type: str
+    description: str | None = None
+    amount: Decimal
+    currency: str
+    charge_to_customer: str
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExpenseResponse(CamelModel):
+    id: str
+    expense_no: str
+    date: datetime
+    expense_type: str
+    description: str | None = None
+    amount: Decimal
+    currency: str
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RentalLineResponse(CamelModel):
+    id: str
+    rental_id: str
+    motorcycle_id: str
+    sort_order: int = 0
+    motorcycle: str
+    plate: str | None = None
+    start_date: datetime
+    due_date: datetime
+    duration_days: int
+    rate_type: str
+    rate_amount: Decimal
+    deposit: Decimal
+    discount: Decimal
+    rental_charge: Decimal
+    note: str | None = None
+
+
+class RentalResponse(CamelModel):
+    id: str
+    rental_no: str
+    customer_id: str
+    motorcycle_id: str
+    customer: str
+    phone: str | None = None
+    identity_number: str | None = None
+    motorcycle: str
+    plate: str | None = None
+    start_date: datetime
+    due_date: datetime
+    duration_days: int
+    rate_type: str
+    rate_amount: Decimal
+    deposit: Decimal
+    deposit_refund: Decimal = Decimal("0")
+    deposit_tendered_amount: Decimal | None = None
+    deposit_currency: str | None = None
+    discount: Decimal
+    tax_percent: Decimal
+    tax: Decimal
+    currency: str
+    exchange_rate: Decimal | None = None
+    rental_charge: Decimal
+    late_fee: Decimal
+    additional_charges: Decimal
+    total_due: Decimal
+    paid: Decimal
+    outstanding: Decimal
+    payment_method: str | None = None
+    payment_status: str | None = None
+    return_date: datetime | None = None
+    condition: str | None = None
+    return_note: str | None = None
+    note: str | None = None
+    created_by: str | None = None
+    status: str
+    cancelled_at: datetime | None = None
+    cancel_reason: str | None = None
+    completed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    lines: list[RentalLineResponse] = Field(default_factory=list)
