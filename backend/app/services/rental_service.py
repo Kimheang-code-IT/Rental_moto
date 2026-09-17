@@ -98,7 +98,10 @@ def _price_line_rows(moto_map: dict[str, Motorcycle], lines) -> list[dict]:
             raise ValidationError("Due date must be after start date")
         days = duration_days(line.start_date, line.due_date)
         rates = resolve_motorcycle_rates(moto.daily_rate, moto.three_day_rate, moto.weekly_rate, moto.monthly_rate)
-        charge = line_charge(rates, days, line.start_date, line.due_date)
+        requested_charge = getattr(line, "rate_amount", None)
+        charge = money(requested_charge) if requested_charge is not None else line_charge(
+            rates, days, line.start_date, line.due_date
+        )
         if charge <= 0:
             raise ValidationError(f"Cannot compute charge for motorcycle {moto.code}")
         priced.append(

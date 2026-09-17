@@ -37,6 +37,8 @@ export interface RentalLineInput {
   motorcycleId: string
   startDate: string
   dueDate: string
+  /** Gross rental charge for this line after the operator's rate selection/edit. */
+  rateAmount?: number
   deposit?: number
   discount?: number
   note?: string | null

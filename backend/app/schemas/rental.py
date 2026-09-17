@@ -10,6 +10,7 @@ class RentalLineInput(CamelModel):
     motorcycle_id: str
     start_date: datetime
     due_date: datetime
+    rate_amount: Decimal | None = Field(default=None, gt=0)
     deposit: Decimal = Decimal("0")
     discount: Decimal = Decimal("0")
     note: str | None = None

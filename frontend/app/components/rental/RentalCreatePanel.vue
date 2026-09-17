@@ -17,7 +17,6 @@ import {
   applySharedDurationToLines,
   dueDateFromRatePlan,
   latestLineDueDate,
-  lineAmounts,
   lineCharge,
   lineDueFromPlan,
   rentalRateType,
@@ -284,9 +283,17 @@ function onSelectPlate(line: RentalLine, motorcycleId: string | number) {
 const lineComputed = computed(() => lines.value.map(line => {
   const moto = motoById(line.motorcycleId)
   const due = lineDueDate(line)
-  const priced = moto
-    ? lineAmounts(moto, line.days, line.discount, startDate.value, due)
-    : { charge: 0, discount: 0, lineTotal: 0 }
+  const gross = Math.max(0, Number(line.unitPrice) || 0) * (
+    line.ratePlan === 'custom' && (line.days < 28 || line.days > 31)
+      ? Math.max(1, Number(line.days) || 1)
+      : 1
+  )
+  const discount = Math.min(Math.max(0, Number(line.discount) || 0), gross)
+  const priced = {
+    charge: Number(gross.toFixed(2)),
+    discount: Number(discount.toFixed(2)),
+    lineTotal: Number(Math.max(gross - discount, 0).toFixed(2)),
+  }
   return {
     line,
     moto,
@@ -679,8 +686,8 @@ function hydrateDetail() {
   void nextTick(() => {
     refreshHeaderDueFromLines()
     syncingDates.value = false
+    hydratingDetail.value = false
   })
-  markFormClean(true)
 }
 
 watch(
@@ -703,53 +710,6 @@ watch(
   },
 )
 
-/** Comparable snapshot of editable rental fields, used to detect unsaved edits. */
-function formSignature() {
-  return JSON.stringify({
-    customerId: customerId.value,
-    startDate: startDate.value,
-    dueDate: dueDate.value,
-    paymentMethod: paymentMethod.value,
-    paymentCurrency: paymentCurrency.value,
-    exchangeRate: exchangeRate.value,
-    deposit: deposit.value,
-    tenderedAmount: tenderedAmount.value,
-    lateFee: lateFee.value,
-    additionalCharges: additionalCharges.value,
-    lines: lines.value.map(line => ({
-      motorcycleId: line.motorcycleId,
-      ratePlan: line.ratePlan,
-      days: line.days,
-      unitPrice: line.unitPrice,
-      discount: line.discount,
-    })),
-  })
-}
-
-const savedSignature = ref('')
-let baselineTimer: ReturnType<typeof setTimeout> | null = null
-let baselineGeneration = 0
-
-/** Snapshot the current form as the saved state so later edits re-enable update. */
-function markFormClean(finishHydration = false) {
-  const generation = ++baselineGeneration
-  if (baselineTimer) clearTimeout(baselineTimer)
-  void nextTick(() => {
-    if (generation !== baselineGeneration) return
-    baselineTimer = setTimeout(() => {
-      if (generation !== baselineGeneration) return
-      savedSignature.value = formSignature()
-      if (finishHydration) hydratingDetail.value = false
-    }, 0)
-  })
-}
-
-const hasUnsavedChanges = computed(() =>
-  !hydratingDetail.value
-  && savedSignature.value !== ''
-  && formSignature() !== savedSignature.value,
-)
-
 const showHeaderSave = computed(() =>
   (!isDetail.value && auth.canAccessPage('rental.rentals.create')) || isEditable.value,
 )
@@ -757,7 +717,7 @@ const showHeaderSave = computed(() =>
 const saveDisabled = computed(() => {
   if (saving.value) return true
   if (!isDetail.value) return !canCreate.value
-  return !canEditRental.value || !hasUnsavedChanges.value
+  return !canEditRental.value
 })
 
 const headerSaveLabel = computed(() =>
@@ -938,6 +898,7 @@ async function createRental() {
           motorcycleId: String(row.line.motorcycleId),
           startDate: toIsoZoned(startDate.value)!,
           dueDate: toIsoZoned(row.due || lineDueDate(row.line))!,
+          rateAmount: Number(row.gross),
           deposit: index === 0 ? Number(depositInRental.value || 0) : 0,
           discount: Number(row.line.discount || 0),
           note: null,
@@ -992,18 +953,17 @@ async function updateRental() {
       deposit: depositInRental.value,
       discount: 0,
       taxPercent: 0,
-      paidAmount: paidAmount.value,
       paymentMethod: paymentMethod.value,
       currency: currency.value,
       paymentCurrency: paymentCurrency.value,
       exchangeRate: exchangeRate.value,
-      tenderedAmount: tenderedAmount.value,
       depositTenderedAmount: deposit.value,
       note: null,
       lines: validLines.map((row, index) => ({
         motorcycleId: String(row.line.motorcycleId),
         startDate: toIsoZoned(startDate.value)!,
         dueDate: toIsoZoned(row.due || lineDueDate(row.line))!,
+        rateAmount: Number(row.gross),
         deposit: index === 0 ? Number(depositInRental.value || 0) : 0,
         discount: Number(row.line.discount || 0),
         note: null,
@@ -1012,7 +972,6 @@ async function updateRental() {
     await store.fetchOne('rentals', String(props.rentalId))
     await store.fetchList('rentalPayments', { rentalId: String(props.rentalId) })
     await store.fetchList('motorcycles')
-    markFormClean()
     toast.add({ title: tx('rental.ui.rentalUpdated', 'Rental updated'), color: 'success' })
     await navigateTo('/rentals')
   }
